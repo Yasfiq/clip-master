@@ -6,6 +6,10 @@ export interface StageContext {
   workDir: string; // Absolute path to job working directory
   outputDir: string; // Absolute path to exports directory
   config: any; // Active PipelineConfig schema data
+  /** Source title from yt-dlp metadata or filename. Feeds the ad filter. */
+  sourceTitle: string;
+  /** Source description from yt-dlp metadata, when available. */
+  sourceDescription?: string;
   metadata: {
     duration?: number;
     width?: number;
@@ -13,6 +17,12 @@ export interface StageContext {
     format?: string;
     hasAudio?: boolean;
     fps?: number;
+    codec?: string;
+    audioCodec?: string;
+    sampleRate?: number;
+    channels?: number;
+    bitRate?: number;
+    fileSize?: number;
   };
   // Incremental outputs passed between stages
   stageData: {
