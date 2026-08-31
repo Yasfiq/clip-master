@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+dist/
+
+# Environment
+.env
+.env.local
+
+# Database
+*.db
+*.db-journal
+
+# Media artifacts (keep directory structure)
+media/*
+!media/*/
+media/*/*
+!media/*/.keep
+
+# OS
+.DS_Store
+
+# Test coverage
+coverage/
