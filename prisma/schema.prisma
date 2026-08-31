@@ -1,0 +1,161 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = []
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+  REJECTED_AD
+}
+
+enum JobErrorCode {
+  VALIDATION_FAILED
+  JOB_NOT_FOUND
+  JOB_ALREADY_RUNNING
+  PURE_AD_REJECTED
+  NO_QUALIFYING_SEGMENTS
+  BINARY_NOT_FOUND
+  STAGE_FAILED
+  INTERNAL
+}
+
+enum PipelineStage {
+  DISCOVER
+  AD_FILTER
+  ANALYZE
+  CUT
+  EDIT
+  SUBTITLE
+  EXPORT
+  COMPRESS
+}
+
+enum GradingPreset {
+  NATURAL
+  WARM_VIBRANT
+  CINEMATIC_TEAL_ORANGE
+  HIGH_CONTRAST_BW
+  COOL_DESATURATED
+}
+
+model Job {
+  id                 String         @id @default(cuid())
+  status             JobStatus      @default(PENDING)
+  errorCode          JobErrorCode?
+  sourceUrl          String? // YouTube URL atau path lokal
+  sourceFilename     String?
+  sourcePath         String? // relatif terhadap media/sources/
+  sourceDuration     Float? // detik
+  sourceFileSize     Int? // bytes
+  sourceMetadata     Json? // metadata analisis FFprobe
+  progress           Float          @default(0.0) // 0.0–1.0
+  currentStage       PipelineStage?
+  errorMessage       String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  startedAt          DateTime?
+  completedAt        DateTime?
+  cancelledAt        DateTime?
+  stageStartedAt     DateTime?
+  stageEndedAt       DateTime?
+  stageProgress      Float          @default(0.0) // progress dalam stage (0.0–1.0)
+  stageLogs          Json? // stage-specific logs/metadata
+  exportedClipsCount Int            @default(0)
+  exportedDuration   Float          @default(0.0)
+  exportPaths        Json? // array of relative paths untuk setiap clip exported
+
+  logs     JobLog[]
+  clips    Clip[]
+  config   PipelineConfig @relation(fields: [configId], references: [id])
+  configId String
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([configId])
+  @@index([currentStage])
+}
+
+model JobLog {
+  id        String         @id @default(cuid())
+  job       Job            @relation(fields: [jobId], references: [id])
+  jobId     String
+  stage     PipelineStage?
+  level     String // "info", "warning", "error", "debug"
+  message   String
+  metadata  Json? // structured data
+  timestamp DateTime       @default(now())
+
+  @@index([jobId])
+  @@index([timestamp])
+}
+
+model Clip {
+  id              String   @id @default(cuid())
+  job             Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobId           String
+  startTime       Float // start timestamp di source (detik)
+  endTime         Float // end timestamp di source (detik)
+  duration        Float // end - start (detik)
+  viralScore      Float? // 0.0 - 1.0 skor potensial viralitas
+  confidence      String? // "HIGH", "MEDIUM", "LOW"
+  fallbackApplied Boolean  @default(false)
+  exportPath      String? // relatif terhadap media/exports/
+  thumbnailPath   String? // relatif terhadap media/assets/
+  isExported      Boolean  @default(false)
+  metadata        Json? // hasil deteksi subtitle/audio detail
+  createdAt       DateTime @default(now())
+
+  @@index([jobId])
+  @@index([viralScore])
+}
+
+model PipelineConfig {
+  id                 String        @id @default(cuid())
+  isDefault          Boolean       @default(false)
+  name               String        @unique
+  description        String?
+  // AD FILTER
+  adFilterEnabled    Boolean       @default(true)
+  adScoreThreshold   Float         @default(0.75) // score threshold to reject
+  // ANALYZE
+  minSegmentDuration Float         @default(120.0) // 2 min
+  maxSegmentDuration Float         @default(300.0) // 5 min
+  targetDuration     Float         @default(180.0) // 3 min
+  mergeThreshold     Float         @default(120.0) // 2 min
+  // EDIT
+  gradingPreset      GradingPreset @default(NATURAL)
+  bgmSourcePath      String? // custom bgm
+  duckThreshold      Float         @default(-24.0) // db
+  duckRatio          Float         @default(0.5) // transition speed
+  duckLevel          Float         @default(2.0)
+  // SUBTITLE
+  subtitleEnabled    Boolean       @default(true)
+  subtitleLang       String        @default("id")
+  maxLineLength      Int           @default(42)
+  maxLines           Int           @default(2)
+  minDuration        Float         @default(1.0)
+  maxDuration        Float         @default(7.0)
+  // EXPORT
+  videoBitrate       String        @default("crf=21")
+  audioBitrate       String        @default("192k")
+  targetResolution   String        @default("1920x1080")
+  audioCodec         String        @default("aac")
+  videoCodec         String        @default("libx264")
+  h264Preset         String        @default("medium")
+  keyframeInterval   Int           @default(48)
+  fastStart          Boolean       @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  jobs      Job[]
+
+  @@index([isDefault])
+}
