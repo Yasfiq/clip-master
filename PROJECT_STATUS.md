@@ -52,6 +52,51 @@ Clip Master adalah **local-only automation tool** untuk mengubah long-form video
 
 ---
 
+## Implementation Progress
+
+**Milestone M0 — Project Init** ✅ (ENV-001…ENV-008, kecuali ENV-007)
+
+- Git repo initialized, `.gitignore` disusun ulang (node_modules, .next, .env, media, logs, dev.db)
+- Node v24.19.0 + npm 11.17.0 (deviasi dari rencana 22.x LTS — lihat catatan di bawah)
+- Next.js 16.3.4 + React 19 + Tailwind CSS v4 (`@tailwindcss/postcss`) + TypeScript strict
+- Vitest 4 + Prettier + husky 9 + lint-staged (pre-commit menjalankan Prettier)
+- `media/{sources,work,exports,assets}/` dibuat dengan `.keep`
+- `npm run build` dan `npm run dev` terverifikasi (HTTP 200 di `127.0.0.1:3000`)
+
+**Milestone M1 — Database & Server Foundation** ✅ (DB-001…DB-005, ENV-009…ENV-012)
+
+- `prisma/schema.prisma`: model `Job`, `JobLog`, `Clip`, `PipelineConfig` + 4 enum
+- Migrasi `20260831223912_init` applied ke SQLite `dev.db`
+- Prisma 7.10.0 dengan adapter `better-sqlite3`, `prisma.config.ts` di root
+- Seed default `PipelineConfig` berhasil (`tsx prisma/seed.ts`)
+- `src/server/paths.ts`, `logger.ts` (winston), `preflight.ts`, `api-utils.ts`
+- `.env.example` berisi nama key saja, tanpa nilai rahasia
+
+**Milestone M2 — API & Pipeline Skeleton** ✅ (API-001…API-006, PIPE-001…PIPE-002)
+
+- 4 route file / 6 handler REST: `GET|POST /api/jobs`, `GET|POST /api/jobs/[id]`,
+  `GET /api/jobs/[id]/logs`, `GET|POST /api/config`
+- `jobService.ts`: create, start, cancel, get, list, updateProgress, complete, fail
+- `orchestrator.ts`: 8-stage sequencer, resume dari `currentStage`, `AbortController`
+  cancellation, `JobLog` per transisi, mapping error → `JobErrorCode`
+- Logic murni (unit-testable tanpa media): `logic/adFilter.ts`, `logic/analyze.ts`
+- `binaries/spawn.ts`: argument-array only, `shell: false`, SIGTERM→5s→SIGKILL
+- 8 stage stub (`stages/*.ts`) siap diisi pada Phase 4
+
+**Status:** `npx tsc --noEmit` bersih, `npm run build` sukses, 6 commit di `master`.
+
+**Deviasi yang perlu keputusan:**
+
+- Node v24.19.0 terpasang, bukan 22.x LTS. `engines` di-set `>=22.0.0` agar tidak
+  memblokir. Semua tool berjalan normal sejauh ini.
+- Binary eksternal belum ada: `ffmpeg`, `yt-dlp`, `whisper` tidak ditemukan di PATH.
+  Preflight melaporkannya (FFmpeg fatal, dua lainnya warning). Instruksi instalasi
+  ada di `BINARY_SETUP_NOTES.md`. ENV-007 masih terbuka.
+- Next.js 16 / Tailwind v4 / Prisma 7 lebih baru dari asumsi rencana; sudah
+  disesuaikan (async `params`, `@tailwindcss/postcss`, `prisma.config.ts`).
+
+---
+
 ## Key Technical Decisions (All Locked)
 
 ### Pipeline Parameters
