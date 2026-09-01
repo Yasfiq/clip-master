@@ -26,14 +26,17 @@ function probeBinary(
       return;
     }
 
-    let stdout = '';
+    let output = '';
     child.stdout?.on('data', (chunk) => {
-      stdout += chunk.toString();
+      output += chunk.toString();
+    });
+    child.stderr?.on('data', (chunk) => {
+      output += chunk.toString();
     });
     child.on('error', () => resolve({ success: false }));
     child.on('close', (code) => {
-      if (code === 0) {
-        resolve({ success: true, version: (stdout.split('\n')[0] || '').trim() });
+      if (code === 0 && output.trim()) {
+        resolve({ success: true, version: (output.split('\n')[0] || '').trim() });
       } else {
         resolve({ success: false });
       }
@@ -41,10 +44,24 @@ function probeBinary(
   });
 }
 
-async function checkBinary(binary: string): Promise<{ success: boolean; version?: string }> {
-  const dashVersion = await probeBinary(binary, ['-version']);
-  if (dashVersion.success) return dashVersion;
-  return probeBinary(binary, ['--version']);
+async function checkBinary(
+  name: string,
+  binary: string,
+): Promise<{ success: boolean; version?: string }> {
+  if (name === 'ffmpeg') {
+    const res = await probeBinary(binary, ['-version']);
+    if (res.success && res.version?.toLowerCase().includes('ffmpeg')) return res;
+  }
+  if (name === 'ytdlp') {
+    const res = await probeBinary(binary, ['--version']);
+    // Date pattern like 2026.08.19
+    if (res.success && /^\d{4}\.\d{2}\.\d{2}/.test(res.version || '')) return res;
+  }
+  if (name === 'whisper') {
+    const res = await probeBinary(binary, ['--version']);
+    if (res.success && res.version?.toLowerCase().includes('whisper')) return res;
+  }
+  return { success: false };
 }
 
 export async function runPreflight(): Promise<PreflightReport> {
@@ -86,14 +103,12 @@ export async function runPreflight(): Promise<PreflightReport> {
   };
 
   for (const [name, binary] of Object.entries(binChecks)) {
-    const res = await checkBinary(binary);
+    const res = await checkBinary(name, binary);
     report.binaries[name] = { status: res.success, version: res.version };
 
     if (res.success) {
       logger.info(`Binary verified: ${name} (${res.version})`);
     } else {
-      // FFmpeg is mandatory; yt-dlp and Whisper are warned about but non-fatal
-      // so the dashboard can boot and report the gap to the operator.
       logger.warn(`Binary missing or failing: ${name}`);
       if (name === 'ffmpeg') {
         report.success = false;
