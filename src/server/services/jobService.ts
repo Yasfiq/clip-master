@@ -2,6 +2,8 @@ import { db } from '../db';
 import { JobStatus, JobErrorCode, PipelineStage, type Job, type Clip } from '@prisma/client';
 import { PATHS } from '../paths';
 import { logger } from '../logger';
+import { runPreflight } from '../preflight';
+import { runPipeline, cancelPipeline } from '../../pipeline/runner';
 import fs from 'fs/promises';
 import path from 'path';
 import { randomUUID } from 'crypto';
@@ -115,7 +117,7 @@ export class JobService {
 
   /**
    * Start a pending job. Transitions to RUNNING, sets startedAt.
-   * Verifies binaries via preflight.
+   * Verifies binaries via preflight, spawns pipeline runner in background.
    */
   async startJob(jobId: string): Promise<Job> {
     const job = await db.job.findUnique({ where: { id: jobId } });
@@ -126,7 +128,12 @@ export class JobService {
       throw new Error(`Job ${jobId} is not in PENDING state (current: ${job.status})`);
     }
 
-    // TODO: Add actual preflight check before starting
+    // Preflight check
+    const preflight = await runPreflight();
+    if (!preflight.success) {
+      throw new Error(`Preflight failed: ${JSON.stringify(preflight)}`);
+    }
+
     logger.info('Starting job', { jobId });
 
     const updated = await db.job.update({
@@ -138,6 +145,13 @@ export class JobService {
         stageStartedAt: new Date(),
       },
     });
+
+    // Start pipeline in background (non-blocking)
+    setTimeout(() => {
+      runPipeline({ jobId }).catch((err) => {
+        logger.error('Background pipeline runner failed', { jobId, error: err.message });
+      });
+    }, 10);
 
     return updated;
   }
@@ -156,6 +170,12 @@ export class JobService {
 
     logger.info('Cancelling job', { jobId });
 
+    // Signal cancellation to runner process
+    const cancelled = cancelPipeline(jobId);
+    if (!cancelled) {
+      logger.warn(`No active runner found for job ${jobId}, marking as cancelled anyway`);
+    }
+
     const updated = await db.job.update({
       where: { id: jobId },
       data: {
@@ -166,8 +186,6 @@ export class JobService {
         stageEndedAt: new Date(),
       },
     });
-
-    // TODO: Signal cancellation to runner process (SIGTERM)
 
     return updated;
   }
