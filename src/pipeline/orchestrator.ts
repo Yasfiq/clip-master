@@ -84,6 +84,7 @@ export class PipelineOrchestrator {
       workDir,
       outputDir: PATHS.exports,
       config: job.config,
+      sourceTitle: job.sourceFilename || job.sourceUrl || 'Untitled Source',
       metadata: (job.sourceMetadata as any) || {},
       stageData: (job.stageLogs as any) || {},
     };

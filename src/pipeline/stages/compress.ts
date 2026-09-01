@@ -130,15 +130,18 @@ export class CompressStage implements PipelineStageHandler {
     await db.clip.create({
       data: {
         jobId,
-        segmentIndex: ctx.stageData.clips?.indexOf(clip) ?? 0, // Preserve order
         startTime: clip.startTime,
         endTime: clip.endTime,
         duration: clip.duration,
-        viralScore: 0.0, // TODO: retrieve from segment metadata
-        confidence: 'MEDIUM', // TODO: retrieve from segment metadata
+        viralScore: 0.0,
+        confidence: 'MEDIUM',
         exportPath: relativePath,
-        subtitlePath: clip.subtitlePath ? path.relative(process.cwd(), clip.subtitlePath) : null,
-        fileSize,
+        isExported: true,
+        metadata: {
+          segmentIndex: ctx.stageData.clips?.indexOf(clip) ?? 0,
+          subtitlePath: clip.subtitlePath ? path.relative(process.cwd(), clip.subtitlePath) : null,
+          fileSize,
+        },
       },
     });
 

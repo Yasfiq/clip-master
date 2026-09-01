@@ -16,6 +16,7 @@ export const PATHS = {
 
 export const BINARIES = {
   ffmpeg: process.env.FFMPEG_PATH || 'ffmpeg',
+  ffprobe: process.env.FFPROBE_PATH || 'ffprobe',
   ytdlp: process.env.YTDLP_PATH || 'yt-dlp',
   whisper: process.env.WHISPER_PATH || 'whisper',
 };

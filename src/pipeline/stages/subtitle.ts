@@ -27,8 +27,14 @@ export class SubtitleStage implements PipelineStageHandler {
       return;
     }
 
-    // Whisper model path
-    const modelPath = path.join(path.dirname(BINARIES.whisper), '..', 'models', 'ggml-base.bin');
+    // Whisper model path (models in whisper.cpp/models/, binary in whisper.cpp/build/bin/)
+    const modelPath = path.join(
+      path.dirname(BINARIES.whisper),
+      '..',
+      '..',
+      'models',
+      'ggml-base.bin',
+    );
 
     // Verify model exists
     try {

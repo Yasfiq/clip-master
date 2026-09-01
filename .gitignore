@@ -26,3 +26,15 @@ media/*/*
 # Test coverage
 coverage/
 logs/
+
+# Build artifacts
+tsconfig.tsbuildinfo
+
+# Test output
+test-output*.log
+
+# Media outputs
+media/work/*
+media/exports/*
+!media/work/.keep
+!media/exports/.keep
