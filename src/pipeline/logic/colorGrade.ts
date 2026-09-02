@@ -19,37 +19,51 @@ export interface ColorGradeConfig {
 export function buildColorGradeFilter(config: ColorGradeConfig): string {
   const { preset, brightness = 0, contrast = 1.0, saturation = 1.0 } = config;
 
+  const b = brightness.toFixed(2);
+  const c = contrast.toFixed(2);
+  const s = saturation.toFixed(2);
+
   // Base presets: LUT-free color transform via eq + curves
   let filter = '';
 
   switch (preset) {
     case 'vivid':
       // High saturation, boost midtones
-      filter = `eq=brightness=${brightness}:contrast=${contrast * 1.2}:saturation=${saturation * 1.3}`;
+      filter = `eq=brightness=${b}:contrast=${(contrast * 1.2).toFixed(2)}:saturation=${(
+        saturation * 1.3
+      ).toFixed(2)}`;
       break;
 
     case 'warm':
       // Slight yellowing via colortemperature simulation
-      filter = `eq=brightness=${brightness + 0.1}:contrast=${contrast}:saturation=${saturation * 1.1}`;
+      filter = `eq=brightness=${(brightness + 0.1).toFixed(2)}:contrast=${c}:saturation=${(
+        saturation * 1.1
+      ).toFixed(2)}`;
       break;
 
     case 'cool':
       // Slight cooling via saturation shift
-      filter = `eq=brightness=${brightness - 0.05}:contrast=${contrast * 1.1}:saturation=${saturation * 0.9}`;
+      filter = `eq=brightness=${(brightness - 0.05).toFixed(2)}:contrast=${(contrast * 1.1).toFixed(
+        2,
+      )}:saturation=${(saturation * 0.9).toFixed(2)}`;
       break;
 
     case 'cinematic':
       // Reduced saturation, lifted blacks, boosted contrast (log-like)
-      filter = `eq=brightness=${brightness + 0.15}:contrast=${contrast * 1.3}:saturation=${saturation * 0.85}`;
+      filter = `eq=brightness=${(brightness + 0.15).toFixed(2)}:contrast=${(contrast * 1.3).toFixed(
+        2,
+      )}:saturation=${(saturation * 0.85).toFixed(2)}`;
       break;
 
     case 'vintage':
       // Faded look: reduced contrast, reduced saturation, slight sepia warmth
-      filter = `eq=brightness=${brightness - 0.1}:contrast=${contrast * 0.8}:saturation=${saturation * 0.6}`;
+      filter = `eq=brightness=${(brightness - 0.1).toFixed(2)}:contrast=${(contrast * 0.8).toFixed(
+        2,
+      )}:saturation=${(saturation * 0.6).toFixed(2)}`;
       break;
 
     default:
-      filter = `eq=brightness=${brightness}:contrast=${contrast}:saturation=${saturation}`;
+      filter = `eq=brightness=${b}:contrast=${c}:saturation=${s}`;
   }
 
   return filter;
