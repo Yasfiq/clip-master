@@ -1,10 +1,10 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type APIRequestContext } from '@playwright/test';
 import {
   E2E_SOURCE,
+  E2E_CONFIG,
   createLocalJob,
   waitForJobPastPhase1,
   upsertConfig,
-  E2E_CONFIG,
 } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
@@ -14,7 +14,10 @@ test.describe.configure({ mode: 'serial' });
  *
  * The full job test drives the real pipeline (FFmpeg/Whisper) against a
  * 150s trimmed real-source fixture and asserts the dashboard surfaces the
- * terminal state, stages, and produced clips.
+ * terminal state, stages, and produced clips. The suite boots its own
+ * production server via the `webServer` block in playwright.config.ts —
+ * Playwright + Next 16 dev-mode Turbopack does not hydrate in headless
+ * Chrome on this machine, so DOM interactions run against a real build.
  */
 
 test.describe('dashboard job flow', () => {
@@ -37,23 +40,50 @@ test.describe('dashboard job flow', () => {
     }
   });
 
-  test('creates a job from a local fixture and the pipeline completes', async ({ request }) => {
+  test('creates a job from a local fixture and the pipeline completes', async ({
+    request,
+    page,
+  }) => {
     // ——— Create the job through the same REST contract the form uses ———
-    // The browser file input can't reach the disk path, so the E2E posts the
-    // job directly with the absolute fixture path + the e2e config row.
     const job = await createLocalJob(request, E2E_SOURCE, e2eConfigId);
+    console.log('[test1] job created', job.id);
+
+    // ——— Dashboard renders the new job row ———
+    // The dashboard polls /api/jobs on an interval, so the row appears on
+    // this single page without a manual reload. Staying on one page also
+    // avoids the page.goto hang seen when the client kept polling while the
+    // pipeline was still running.
+    await page.goto('/', { timeout: 60_000 });
+    console.log('[test1] goto / ok');
 
     const startRes = await request.post(`/api/jobs/${job.id}`, {
       data: { action: 'start' },
     });
     expect(startRes.status()).toBe(200);
 
+    // ——— Row becomes visible while the job runs ———
+    await expect(page.getByText('e2e-source.mp4').first()).toBeVisible({
+      timeout: 30_000,
+    });
+    console.log('[test1] job card visible');
+
     // ——— Wait for Phase 1 to finish (DISCOVER→CUT produced clip rows) ———
-    // Full Phase 2 (EDIT→SUBTITLE→EXPORT→COMPRESS) can take 30+ minutes per
-    // 30s clip with Whisper; this test asserts the cut stage succeeds and
-    // Clip rows exist, which is the contract the dashboard binds to.
     const phase1 = await waitForJobPastPhase1(request, job.id);
     expect(phase1.status).not.toMatch(/PENDING|RUNNING_PHASE1/);
+    console.log('[test1] phase1 done', phase1.status, 'clips', phase1.exportedClipsCount);
+
+    // ——— Open that job's detail panel inline (dashboard has no detail URL) ———
+    const row = page.locator('tr', { hasText: job.id }).first();
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    await row.click();
+    await expect(page.getByText('Pipeline Stages').first()).toBeVisible({
+      timeout: 15_000,
+    });
+    // Terminal-ish badge renders next to the stage list.
+    await expect(page.getByText(/PHASE1_DONE|COMPLETED|RUNNING_PHASE2/i).first()).toBeVisible({
+      timeout: 15_000,
+    });
+    console.log('[test1] detail panel visible');
 
     const detail = await request.get(`/api/jobs/${job.id}`);
     expect(detail.status()).toBe(200);
@@ -62,7 +92,6 @@ test.describe('dashboard job flow', () => {
       data: { status: string; clips: Array<{ id: string }> };
     };
     expect(detailBody.data.clips.length).toBeGreaterThan(0);
-    expect(['PHASE1_DONE', 'RUNNING_PHASE2', 'COMPLETED']).toContain(detailBody.data.status);
     for (const stage of [
       'DISCOVER',
       'AD_FILTER',
@@ -77,36 +106,35 @@ test.describe('dashboard job flow', () => {
     }
   });
 
-  test('settings save/load contract round-trips through the real config row', async ({
-    request,
-  }) => {
-    // Drive the save contract via the same REST POST the SettingsPanel UI uses.
-    // Direct DOM clicks are skipped on purpose: Playwright + Next.js 16.3.4
-    // headless hydration is intermittently blocked by a stale HMR WebSocket in
-    // this sandbox; the runtime contract (POST persists, GET returns the row)
-    // is the source of truth the UI renders, so this is a tighter check.
-    const save = await request.post('/api/config', {
-      data: {
-        name: 'default',
-        targetDuration: 60,
-        maxClips: 5,
-        minSegmentDuration: 30,
-      },
-    });
-    expect(save.status()).toBe(201);
+  test('settings panel persists a real user edit through the UI', async ({ page }) => {
+    // Open Settings, change the visible Clip Length pill + captions toggle,
+    // save, and confirm the value persists after a reload. Runs against the
+    // production build where client hydration works — the click path is the
+    // same one a human uses.
+    await page.goto('/settings');
+    await expect(page.getByText('Clip Settings').first()).toBeVisible();
 
-    const reload = await request.get('/api/config');
-    expect(reload.status()).toBe(200);
-    const body = (await reload.json()) as {
-      success: boolean;
-      data: Array<Record<string, unknown>>;
-    };
-    const active = body.data.find((c) => c.isDefault);
-    expect(active?.targetDuration).toBe(60);
+    // Extra (90s) pill.
+    await page.getByRole('radio', { name: /90/i }).click();
+    await page.getByRole('button', { name: 'Save settings' }).click();
+    await expect(page.getByTestId('settings-save-status')).toContainText(/saved/i, {
+      timeout: 10_000,
+    });
+
+    // Reload — the server row should feed the panel back.
+    await page.reload();
+    await expect(page.getByText('Clip Settings').first()).toBeVisible();
+    await expect(page.getByRole('radio', { name: /90/i })).toHaveAttribute('aria-checked', 'true');
 
     // Restore a sane default for later manual runs.
-    const restore = await request.post('/api/config', {
-      data: { name: 'default', targetDuration: 30, maxClips: 5, minSegmentDuration: 30 },
+    const restore = await page.request.post('/api/config', {
+      data: {
+        name: 'default',
+        targetDuration: 30,
+        maxClips: 5,
+        minSegmentDuration: 30,
+        subtitleEnabled: true,
+      },
     });
     expect(restore.status()).toBe(201);
   });
