@@ -35,7 +35,20 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
         const res = await fetch(`/api/jobs?limit=${limit}`);
         const data = await res.json();
         if (data.success) {
-          useJobStore.getState().setJobs(data.data.jobs);
+          // Map Prisma DTO -> store Job shape (field names differ).
+          const mapped = (data.data.jobs as any[]).map((j) => ({
+            id: j.id,
+            name: j.sourceFilename || j.sourceUrl || j.id,
+            sourceUrl: j.sourceUrl ?? undefined,
+            status: j.status,
+            // progress is 0..1 in Prisma, store Job expects 0..100.
+            progress: typeof j.progress === 'number' ? Math.round(j.progress * 100) : 0,
+            clipsCount: j.exportedClipsCount ?? 0,
+            duration: j.sourceDuration ?? undefined,
+            createdAt: j.createdAt,
+            updatedAt: j.updatedAt,
+          }));
+          useJobStore.getState().setJobs(mapped);
         }
       } catch (e) {
         console.error('Failed to fetch jobs', e);

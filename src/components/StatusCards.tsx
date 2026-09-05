@@ -1,5 +1,7 @@
 'use client';
 
+import useJobStore from '@/stores/useJobStore';
+
 interface JobCounts {
   pending: number;
   running: number;
@@ -14,17 +16,33 @@ interface StatusCardsProps {
   loading?: boolean;
 }
 
-const StatusCards: React.FC<StatusCardsProps> = ({
-  counts = {
-    pending: 0,
-    running: 0,
-    completed: 1, // Sample data from e2e test
-    failed: 0,
-    cancelled: 0,
-    rejectedAd: 0,
-  },
-  loading = false,
-}) => {
+const EMPTY_COUNTS: JobCounts = {
+  pending: 0,
+  running: 0,
+  completed: 0,
+  failed: 0,
+  cancelled: 0,
+  rejectedAd: 0,
+};
+
+const StatusCards: React.FC<StatusCardsProps> = ({ counts: countsProp, loading = false }) => {
+  // Derive counts from the global job store so the cards stay in sync with
+  // the JobList without an extra round-trip to /api/jobs.
+  const jobs = useJobStore((state) => state.jobs);
+
+  const derived: JobCounts =
+    jobs.length > 0
+      ? {
+          pending: jobs.filter((j) => j.status === 'PENDING').length,
+          running: jobs.filter((j) => j.status === 'RUNNING').length,
+          completed: jobs.filter((j) => j.status === 'COMPLETED').length,
+          failed: jobs.filter((j) => j.status === 'FAILED').length,
+          cancelled: jobs.filter((j) => j.status === 'CANCELLED').length,
+          rejectedAd: jobs.filter((j) => j.status === 'REJECTED_AD').length,
+        }
+      : EMPTY_COUNTS;
+
+  const counts = { ...EMPTY_COUNTS, ...derived, ...countsProp };
   const cards = [
     {
       status: 'pending' as const,

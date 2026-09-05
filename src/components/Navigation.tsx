@@ -1,15 +1,34 @@
 'use client';
 
 import React, { useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { Menu, X, Settings, BarChart, Download, Play } from 'lucide-react';
 
 interface NavigationProps {
   activeTab?: 'dashboard' | 'jobs' | 'clips' | 'settings';
-  onTabChange?: (tab: string) => void;
 }
 
-const Navigation: React.FC<NavigationProps> = ({ activeTab = 'dashboard', onTabChange }) => {
+const TAB_ROUTES: Record<string, string> = {
+  dashboard: '/',
+  jobs: '/',
+  clips: '/clips',
+  settings: '/settings',
+};
+
+const Navigation: React.FC<NavigationProps> = ({ activeTab: activeTabProp }) => {
+  const router = useRouter();
+  const pathname = usePathname();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Derive active tab from pathname so the highlight stays in sync across
+  // direct navigations and reloads. Falls back to the explicit prop when
+  // the route is unmapped (e.g. /jobs/[id]).
+  const derivedActive: string =
+    activeTabProp ??
+    Object.entries(TAB_ROUTES).find(([, p]) =>
+      p === '/' ? pathname === '/' : pathname?.startsWith(p),
+    )?.[0] ??
+    'dashboard';
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart },
@@ -19,7 +38,8 @@ const Navigation: React.FC<NavigationProps> = ({ activeTab = 'dashboard', onTabC
   ];
 
   const handleTabClick = (tabId: string) => {
-    onTabChange?.(tabId);
+    const target = TAB_ROUTES[tabId] ?? '/';
+    router.push(target);
     if (isMobileMenuOpen) {
       setIsMobileMenuOpen(false);
     }
@@ -50,7 +70,7 @@ const Navigation: React.FC<NavigationProps> = ({ activeTab = 'dashboard', onTabC
                   key={item.id}
                   onClick={() => handleTabClick(item.id)}
                   className={`inline-flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-                    activeTab === item.id
+                    derivedActive === item.id
                       ? 'text-blue-700 bg-blue-50'
                       : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                   }`}
@@ -85,7 +105,7 @@ const Navigation: React.FC<NavigationProps> = ({ activeTab = 'dashboard', onTabC
                   key={item.id}
                   onClick={() => handleTabClick(item.id)}
                   className={`w-full text-left flex items-center px-4 py-3 text-base font-medium ${
-                    activeTab === item.id
+                    derivedActive === item.id
                       ? 'text-blue-700 bg-blue-50 border-r-4 border-blue-700'
                       : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                   }`}

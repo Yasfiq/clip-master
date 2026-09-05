@@ -37,6 +37,7 @@ export default function DashboardPage() {
                 <StatusCards />
 
                 {/* Quick create form */}
+                <div id="quick-create-anchor" />
                 <QuickCreate onSuccess={setSelectedJob} />
               </div>
             </div>

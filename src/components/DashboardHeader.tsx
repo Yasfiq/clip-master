@@ -1,3 +1,7 @@
+'use client';
+
+import { useRouter } from 'next/navigation';
+
 interface DashboardHeaderProps {
   // Title displayed in header
   title?: string;
@@ -9,6 +13,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   title = 'Clip Master Dashboard',
   subtitle = 'Local video → viral clips pipeline',
 }) => {
+  const router = useRouter();
   return (
     <header className="flex items-center justify-between">
       <div>
@@ -20,12 +25,21 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
       <div className="flex items-center gap-3">
         <button
           type="button"
+          onClick={() => router.push('/settings')}
           className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
         >
           Settings
         </button>
         <button
           type="button"
+          onClick={() => {
+            // Scroll quick-create into view by navigating to dashboard top
+            router.push('/');
+            setTimeout(() => {
+              const el = document.getElementById('quick-create-anchor');
+              el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 100);
+          }}
           className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
         >
           New Job

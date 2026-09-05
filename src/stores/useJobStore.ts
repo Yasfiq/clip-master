@@ -184,9 +184,12 @@ const useJobStore = create<JobStore>()(
               const data = JSON.parse(event.data);
 
               if (data.type === 'status') {
+                // stageProgress is 0..1 in Prisma; UI displays 0..100.
+                const pct =
+                  typeof data.progress === 'number' ? Math.round(data.progress * 100) : undefined;
                 get().updateJob(jobId, {
                   status: data.status,
-                  progress: data.progress,
+                  progress: pct,
                   clipsCount: data.clipsCount,
                   errorCode: data.errorCode,
                 });

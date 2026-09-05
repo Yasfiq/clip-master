@@ -61,8 +61,10 @@ const QuickCreate: React.FC<QuickCreateProps> = ({ onSuccess, className = '' }) 
         name: job.sourceFilename || job.sourceUrl || 'Unknown source',
         sourceUrl: job.sourceUrl || undefined,
         status: 'RUNNING' as const,
-        progress: 0,
-        clipsCount: 0,
+        // Prisma stores progress as 0..1, UI shows 0..100.
+        progress: typeof job.progress === 'number' ? Math.round(job.progress * 100) : 0,
+        clipsCount: job.exportedClipsCount ?? 0,
+        duration: job.sourceDuration ?? undefined,
         createdAt: job.createdAt,
         updatedAt: job.updatedAt,
       };
