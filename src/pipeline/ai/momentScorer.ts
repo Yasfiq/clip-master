@@ -12,6 +12,7 @@ import { ollamaGenerateJson, ollamaPing } from '../../server/ollama';
 import { logger } from '../../server/logger';
 import { TranscriptSegment } from '../runner-types';
 import { scoreSegment, classifyConfidence } from '../logic/momentDetection';
+import { detectHook, composeHookAudio } from '../logic/hookDetect';
 
 export interface WindowInput {
   startTime: number;
@@ -61,8 +62,16 @@ export async function scoreWindowsWithAI(
   const up = await ollamaPing();
   if (!up) {
     logger.warn('Ollama unreachable — using heuristic window scoring');
+    const videoDuration = Math.max(0, ...windows.map((w) => w.endTime));
     const scored = windows.map((w) => {
-      const transcriptHook = heuristicHook(w.transcriptText);
+      // detectHook combines lexical patterns + position bias.
+      const hookResult = detectHook({
+        text: w.transcriptText,
+        windowStart: w.startTime,
+        windowEnd: w.endTime,
+        videoDuration,
+      });
+      const transcriptHook = hookResult.score;
       const viral = scoreSegment(transcriptHook, w.audioInterest, 0.35);
       return {
         startTime: w.startTime,
@@ -71,9 +80,10 @@ export async function scoreWindowsWithAI(
         audioInterest: w.audioInterest,
         visualInterest: 0.35,
         viralPotential: viral,
-        reasons: ['Ollama offline — heuristic scoring'],
+        reasons: ['Ollama offline — heuristic scoring (detectHook)'],
         confidence: classifyConfidence(viral),
         hasKineticTrigger: transcriptHook > 0.6,
+        hookLine: firstHookLine(w.transcriptText, hookResult.hits),
       };
     });
     return { scored, aiUsed: false };
@@ -82,12 +92,18 @@ export async function scoreWindowsWithAI(
   const scored: AIScoredWindow[] = [];
   const total = windows.length;
   let done = 0;
+  const videoDuration = Math.max(0, ...windows.map((w) => w.endTime));
 
   for (const w of windows) {
     const llmScore = await scoreOneWindow(w);
-    const transcriptHook = llmScore
-      ? clamp01(llmScore.hook_score / 100)
-      : heuristicHook(w.transcriptText);
+    // Use detectHook when LLM parse fails; otherwise trust LLM hook_score.
+    const fallbackHook = detectHook({
+      text: w.transcriptText,
+      windowStart: w.startTime,
+      windowEnd: w.endTime,
+      videoDuration,
+    }).score;
+    const transcriptHook = llmScore ? clamp01(llmScore.hook_score / 100) : fallbackHook;
     const visualInterest = 0.35; // vision analysis lands in a later phase
     const viral = scoreSegment(transcriptHook, w.audioInterest, visualInterest);
 
@@ -98,14 +114,18 @@ export async function scoreWindowsWithAI(
       audioInterest: w.audioInterest,
       visualInterest,
       viralPotential: viral,
-      reasons: llmScore ? [llmScore.interest_reason] : ['Ollama parse failed — heuristic'],
+      reasons: llmScore
+        ? [llmScore.interest_reason]
+        : ['Ollama parse failed — detectHook fallback'],
       confidence: classifyConfidence(viral),
       hasKineticTrigger: llmScore?.has_kinetic_trigger ?? transcriptHook > 0.6,
-      hookLine: llmScore?.hook_line,
+      hookLine: llmScore?.hook_line ?? firstHookLine(w.transcriptText, fallbackHook),
     });
     done++;
   }
 
+  // Keep unused but referenced: composeHookAudio available for future re-blends.
+  void composeHookAudio;
   return { scored, aiUsed: true };
 }
 
@@ -202,4 +222,22 @@ export function windowText(segments: TranscriptSegment[], start: number, end: nu
     .map((s) => s.text)
     .join(' ')
     .trim();
+}
+
+/**
+ * Pick a short hook sentence from transcript text when the LLM didn't return
+ * one. Heuristic: first sentence with a question mark, exclamation, or hook
+ * keyword; trimmed to 4-10 words.
+ */
+function firstHookLine(
+  text: string,
+  _fallbackHookOrSignals: number | unknown[] | undefined,
+): string | undefined {
+  if (!text) return undefined;
+  const sentences = text.split(/(?<=[.!?])\s+/);
+  const hookish = sentences.find((s) => /[!?]/.test(s)) ?? sentences[0];
+  if (!hookish) return undefined;
+  const words = hookish.trim().split(/\s+/);
+  if (words.length <= 10) return hookish.trim();
+  return words.slice(0, 10).join(' ') + '…';
 }
