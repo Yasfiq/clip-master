@@ -41,8 +41,13 @@ const QuickCreate: React.FC<QuickCreateProps> = ({ onSuccess, className = '' }) 
         }),
       });
 
-      const job = await res.json();
-      // API returns raw job object directly (via apiSuccess)
+      if (!res.ok) {
+        const errPayload = await res.json().catch(() => ({}));
+        throw new Error(errPayload.error?.message || 'Failed to create job');
+      }
+      const responseBody = await res.json();
+      // API returns { success: true, data: { ...job } } envelope.
+      const job = responseBody.success ? responseBody.data : responseBody;
 
       // Auto-start job
       const startRes = await fetch(`/api/jobs/${job.id}`, {

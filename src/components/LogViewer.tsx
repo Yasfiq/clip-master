@@ -51,8 +51,10 @@ const LogViewer: React.FC<LogViewerProps> = ({
         if (storeLogs.length > 0) return;
         const res = await fetch(`/api/jobs/${jobId}/logs?limit=${maxLines}`);
         const data = await res.json();
-        if (data.logs) {
-          useJobStore.getState().setLogs(jobId, data.logs);
+        // API returns { success, data: { logs, ... } } envelope.
+        const payload = data.success ? data.data : data;
+        if (payload.logs) {
+          useJobStore.getState().setLogs(jobId, payload.logs);
         }
       } catch (e) {
         // Silently fail

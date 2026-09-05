@@ -45,8 +45,10 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
       // Fetch all jobs first to map jobId -> job name
       const jobsRes = await fetch('/api/jobs');
       const jobsData = await jobsRes.json();
+      // API returns { success, data: { jobs, total, ... } } envelope.
+      const jobsList = jobsData.success ? jobsData.data?.jobs : jobsData.jobs;
       const jobMap: Record<string, Job> = {};
-      (jobsData.jobs || []).forEach((j: Job) => {
+      (jobsList || []).forEach((j: Job) => {
         jobMap[j.id] = j;
       });
       setJobs(jobMap);

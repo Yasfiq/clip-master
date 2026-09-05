@@ -34,13 +34,15 @@ const ProgressMonitor: React.FC<ProgressMonitorProps> = ({
       });
       if (!res.ok) throw new Error('Failed to fetch job');
       const data = await res.json();
+      // API returns { success, data: { ...job } } envelope.
+      const job = data.success ? data.data : data;
       updateJob(jobId, {
-        status: data.status,
-        progress: data.progress,
-        clipsCount: data.clipsCount,
-        duration: data.duration,
-        errorCode: data.errorCode,
-        errorMessage: data.errorMessage,
+        status: job.status,
+        progress: job.progress,
+        clipsCount: job.clipsCount,
+        duration: job.duration,
+        errorCode: job.errorCode,
+        errorMessage: job.errorMessage,
       });
     } catch (err: any) {
       if (err.name !== 'AbortError') {

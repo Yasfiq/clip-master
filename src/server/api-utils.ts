@@ -27,7 +27,9 @@ export function apiError(code: ErrorCode, message: string, details?: any): NextR
 }
 
 export function apiSuccess<T>(data: T, status = 200): NextResponse {
-  return NextResponse.json(data, { status });
+  // Wrap payload in a uniform { success, data } envelope so clients can
+  // branch on the envelope shape rather than per-endpoint contracts.
+  return NextResponse.json({ success: true, data }, { status });
 }
 
 export async function catchApiErrors(
