@@ -21,9 +21,10 @@ export async function recoverStaleJobs(): Promise<void> {
 
   try {
     // Find all jobs stuck in RUNNING state
+    // RUNNING* should not exist without an active process; PHASE1_DONE is safe to leave
     const staleJobs = await db.job.findMany({
       where: {
-        status: JobStatus.RUNNING,
+        OR: [{ status: JobStatus.RUNNING_PHASE1 }, { status: JobStatus.RUNNING_PHASE2 }],
       },
       select: {
         id: true,

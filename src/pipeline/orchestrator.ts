@@ -10,6 +10,7 @@ import path from 'path';
 import { DiscoverStage } from './stages/discover';
 import { AdFilterStage } from './stages/adFilter';
 import { AnalyzeStage } from './stages/analyze';
+import { TranscribeStage } from './stages/transcribe';
 import { CutStage } from './stages/cut';
 import { EditStage } from './stages/edit';
 import { SubtitleStage } from './stages/subtitle';
@@ -20,9 +21,9 @@ export class PipelineOrchestrator {
   private activeJobs = new Map<string, AbortController>();
 
   /**
-   * Run a pipeline job from its current state or start from scratch.
+   * Run Phase 1: DISCOVER → AD_FILTER → TRANSCRIBE → ANALYZE → CUT
    */
-  async runJob(jobId: string): Promise<void> {
+  async runPhase1(jobId: string): Promise<void> {
     if (this.activeJobs.has(jobId)) {
       throw new Error(`Job ${jobId} is already running in this instance`);
     }
@@ -31,9 +32,33 @@ export class PipelineOrchestrator {
     this.activeJobs.set(jobId, abortController);
 
     try {
-      await this.executePipeline(jobId, abortController.signal);
+      await this.executePhase1(jobId, abortController.signal);
     } catch (e: any) {
-      logger.error(`Orchestrator exception on job ${jobId}: ${e.message}`, { stack: e.stack });
+      logger.error(`Phase 1 orchestrator exception on job ${jobId}: ${e.message}`, {
+        stack: e.stack,
+      });
+    } finally {
+      this.activeJobs.delete(jobId);
+    }
+  }
+
+  /**
+   * Run Phase 2: EDIT → SUBTITLE → EXPORT → COMPRESS
+   */
+  async runPhase2(jobId: string, ctx: StageContext): Promise<void> {
+    if (this.activeJobs.has(jobId)) {
+      throw new Error(`Job ${jobId} is already running in this instance`);
+    }
+
+    const abortController = new AbortController();
+    this.activeJobs.set(jobId, abortController);
+
+    try {
+      await this.executePhase2(jobId, abortController.signal, ctx);
+    } catch (e: any) {
+      logger.error(`Phase 2 orchestrator exception on job ${jobId}: ${e.message}`, {
+        stack: e.stack,
+      });
     } finally {
       this.activeJobs.delete(jobId);
     }
@@ -53,7 +78,7 @@ export class PipelineOrchestrator {
     return true;
   }
 
-  private async executePipeline(jobId: string, signal: AbortSignal): Promise<void> {
+  private async executePhase1(jobId: string, signal: AbortSignal): Promise<void> {
     const job = await db.job.findUnique({
       where: { id: jobId },
       include: { config: true },
@@ -64,20 +89,17 @@ export class PipelineOrchestrator {
       return;
     }
 
-    // Set job state to RUNNING if it isn't already
-    await db.job.update({
-      where: { id: jobId },
-      data: {
-        status: JobStatus.RUNNING,
-        startedAt: job.startedAt || new Date(),
-      },
-    });
+    // Ensure RUNNING_PHASE1
+    if (job.status !== 'RUNNING_PHASE1') {
+      await db.job.update({
+        where: { id: jobId },
+        data: { status: JobStatus.RUNNING_PHASE1, startedAt: job.startedAt || new Date() },
+      });
+    }
 
-    // Create job-specific work directory
     const workDir = path.join(PATHS.work, jobId);
     await fs.mkdir(workDir, { recursive: true });
 
-    // Build the execution context
     const ctx: StageContext = {
       jobId,
       sourcePath: job.sourcePath ? path.join(PATHS.root, job.sourcePath) : '',
@@ -89,26 +111,90 @@ export class PipelineOrchestrator {
       stageData: (job.stageLogs as any) || {},
     };
 
-    // Register all stage handlers in order
-    const handlers: PipelineStageHandler[] = [
+    const phase1Handlers: PipelineStageHandler[] = [
       new DiscoverStage(),
       new AdFilterStage(),
+      new TranscribeStage(),
       new AnalyzeStage(),
       new CutStage(),
+    ];
+
+    await this.runHandlers(jobId, phase1Handlers, ctx, signal);
+
+    // Persist stage metadata after Phase 1 completion
+    await db.job.update({
+      where: { id: jobId },
+      data: {
+        stageLogs: ctx.stageData as any,
+        stageEndedAt: new Date(),
+      },
+    });
+
+    const clipsCount = ctx.stageData.clips?.length || 0;
+    const totalDuration = ctx.stageData.clips?.reduce((sum, c) => sum + c.duration, 0) || 0;
+
+    await this.logToDb(
+      jobId,
+      null,
+      'info',
+      `Phase 1 finished. ${clipsCount} clips ready for review (${totalDuration.toFixed(1)}s).`,
+    );
+  }
+
+  private async executePhase2(
+    jobId: string,
+    signal: AbortSignal,
+    ctx: StageContext,
+  ): Promise<void> {
+    const job = await db.job.findUnique({ where: { id: jobId } });
+    if (!job) {
+      logger.error(`Job ${jobId} not found in DB`);
+      return;
+    }
+
+    const phase2Handlers: PipelineStageHandler[] = [
       new EditStage(),
       new SubtitleStage(),
       new ExportStage(),
       new CompressStage(),
     ];
 
-    // Determine starting stage (resume support)
+    await this.runHandlers(jobId, phase2Handlers, ctx, signal);
+
+    const clipsCount = ctx.stageData.clips?.length || 0;
+    const totalDuration = ctx.stageData.clips?.reduce((sum, c) => sum + c.duration, 0) || 0;
+
+    // Persist stage metadata (runner marks job COMPLETED via completeJob)
+    await db.job.update({
+      where: { id: jobId },
+      data: {
+        stageLogs: ctx.stageData as any,
+        stageEndedAt: new Date(),
+      },
+    });
+
+    await this.logToDb(
+      jobId,
+      null,
+      'info',
+      `Phase 2 finished successfully. Exported ${clipsCount} clips (${totalDuration.toFixed(1)}s).`,
+    );
+  }
+
+  private async runHandlers(
+    jobId: string,
+    handlers: PipelineStageHandler[],
+    ctx: StageContext,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const job = await db.job.findUnique({ where: { id: jobId } });
     let startIdx = 0;
-    if (job.currentStage) {
+    if (job?.currentStage) {
       startIdx = handlers.findIndex((h) => h.stage === job.currentStage);
       if (startIdx === -1) startIdx = 0;
     }
 
-    logger.info(`Starting execution of job ${jobId} at stage ${handlers[startIdx]?.stage}`);
+    logger.info(`Starting job ${jobId} at stage ${handlers[startIdx]?.stage}`);
 
     for (let i = startIdx; i < handlers.length; i++) {
       const handler = handlers[i]!;
@@ -120,7 +206,6 @@ export class PipelineOrchestrator {
 
       logger.info(`Job ${jobId}: transitioning to stage ${handler.stage}`);
 
-      // Update job stage
       await db.job.update({
         where: { id: jobId },
         data: {
@@ -146,13 +231,9 @@ export class PipelineOrchestrator {
           }
         });
 
-        // Update stage completion metadata in context
         await db.job.update({
           where: { id: jobId },
-          data: {
-            stageEndedAt: new Date(),
-            stageLogs: ctx.stageData as any,
-          },
+          data: { stageEndedAt: new Date() },
         });
       } catch (err: any) {
         if (err.message === 'ABORTED' || signal.aborted) {
@@ -183,33 +264,6 @@ export class PipelineOrchestrator {
         return;
       }
     }
-
-    // Complete pipeline
-    const clipsCount = ctx.stageData.clips?.length || 0;
-    const totalDuration = ctx.stageData.clips?.reduce((sum, c) => sum + c.duration, 0) || 0;
-    const exportPaths =
-      (ctx.stageData.clips?.map((c) => c.exportPath).filter(Boolean) as string[]) || [];
-
-    await db.job.update({
-      where: { id: jobId },
-      data: {
-        status: JobStatus.COMPLETED,
-        completedAt: new Date(),
-        progress: 1.0,
-        stageProgress: 1.0,
-        currentStage: null,
-        exportedClipsCount: clipsCount,
-        exportedDuration: totalDuration,
-        exportPaths: JSON.stringify(exportPaths),
-      },
-    });
-
-    await this.logToDb(
-      jobId,
-      null,
-      'info',
-      `Pipeline finished successfully. Exported ${clipsCount} clips.`,
-    );
   }
 
   private async handleCancellation(jobId: string): Promise<void> {

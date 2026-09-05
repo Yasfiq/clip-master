@@ -4,6 +4,7 @@ import { runBinaryChecked } from '../binaries/spawn';
 import { buildColorGradeFilter, ColorGradePreset } from '../logic/colorGrade';
 import { buildAudioDuckFilter, DEFAULT_AUDIO_CONFIG } from '../logic/audioDuck';
 import { logger } from '../../server/logger';
+import { db } from '../../server/db';
 import { PATHS } from '../../server/paths';
 import fs from 'fs/promises';
 import path from 'path';
@@ -73,8 +74,17 @@ export class EditStage implements PipelineStageHandler {
         throw new Error(`Edited file too small (${stat.size} bytes) for clip ${clip.id}`);
       }
 
-      // Update clip with edited path
+      // Update clip with edited path in both context and DB
       clip.editedPath = editedPath;
+      const relativeEditedPath = path.relative(PATHS.work, editedPath);
+      await db.clip
+        .update({
+          where: { id: clip.id },
+          data: { editedPath: relativeEditedPath },
+        })
+        .catch((err) => {
+          logger.warn(`Failed to update Clip ${clip.id} editedPath in DB: ${err.message}`);
+        });
       completed++;
     }
 
@@ -107,7 +117,7 @@ export class EditStage implements PipelineStageHandler {
       outputPath,
     ];
 
-    await runBinaryChecked('ffmpeg', args, { timeoutMs: 60000 });
+    await runBinaryChecked('ffmpeg', args, { timeoutMs: 1800000 });
   }
 
   /**
@@ -153,7 +163,7 @@ export class EditStage implements PipelineStageHandler {
       outputPath,
     ];
 
-    await runBinaryChecked('ffmpeg', args, { timeoutMs: 90000 });
+    await runBinaryChecked('ffmpeg', args, { timeoutMs: 1800000 });
   }
 
   /**

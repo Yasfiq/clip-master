@@ -3,7 +3,7 @@ import { JobStatus, JobErrorCode, PipelineStage, type Job, type Clip } from '@pr
 import { PATHS } from '../paths';
 import { logger } from '../logger';
 import { runPreflight } from '../preflight';
-import { runPipeline, cancelPipeline } from '../../pipeline/runner';
+import { runPhase1, runPhase2, cancelPipeline } from '../../pipeline/runner';
 import fs from 'fs/promises';
 import path from 'path';
 import { randomUUID } from 'crypto';
@@ -139,17 +139,17 @@ export class JobService {
     const updated = await db.job.update({
       where: { id: jobId },
       data: {
-        status: JobStatus.RUNNING,
+        status: JobStatus.RUNNING_PHASE1,
         startedAt: new Date(),
         currentStage: PipelineStage.DISCOVER,
         stageStartedAt: new Date(),
       },
     });
 
-    // Start pipeline in background (non-blocking)
+    // Start Phase 1 in background (non-blocking)
     setTimeout(() => {
-      runPipeline({ jobId }).catch((err) => {
-        logger.error('Background pipeline runner failed', { jobId, error: err.message });
+      runPhase1({ jobId }).catch((err) => {
+        logger.error('Background Phase 1 runner failed', { jobId, error: err.message });
       });
     }, 10);
 
@@ -164,7 +164,7 @@ export class JobService {
     if (!job) {
       throw new Error(`Job ${jobId} not found`);
     }
-    if (job.status !== JobStatus.RUNNING) {
+    if (job.status !== JobStatus.RUNNING_PHASE1 && job.status !== JobStatus.RUNNING_PHASE2) {
       throw new Error(`Job ${jobId} is not in RUNNING state (current: ${job.status})`);
     }
 
@@ -307,6 +307,64 @@ export class JobService {
         stageEndedAt: new Date(),
       },
     });
+  }
+
+  /**
+   * Complete Phase 1: mark job as PHASE1_DONE, clips already persisted by CUT stage.
+   */
+  async completePhase1(jobId: string, clipsCount: number): Promise<Job> {
+    logger.info('Completing Phase 1', { jobId, clipsCount });
+    return db.job.update({
+      where: { id: jobId },
+      data: {
+        status: JobStatus.PHASE1_DONE,
+        stageEndedAt: new Date(),
+        currentStage: null,
+        stageProgress: 1.0,
+        exportedClipsCount: clipsCount,
+      },
+    });
+  }
+
+  /**
+   * Start Phase 2: validates PHASE1_DONE state, transitions to RUNNING_PHASE2.
+   */
+  async startPhase2(jobId: string, newConfigId?: string): Promise<Job> {
+    const job = await db.job.findUnique({ where: { id: jobId } });
+    if (!job) {
+      throw new Error(`Job ${jobId} not found`);
+    }
+    if (job.status !== JobStatus.PHASE1_DONE) {
+      throw new Error(`Job ${jobId} is not in PHASE1_DONE state (current: ${job.status})`);
+    }
+
+    logger.info('Starting Phase 2', { jobId, newConfigId });
+
+    const updateData: any = {
+      status: JobStatus.RUNNING_PHASE2,
+      currentStage: PipelineStage.EDIT,
+      stageStartedAt: new Date(),
+      stageProgress: 0.0,
+    };
+
+    // Optionally switch to a new config for Phase 2
+    if (newConfigId) {
+      updateData.configId = newConfigId;
+    }
+
+    const updated = await db.job.update({
+      where: { id: jobId },
+      data: updateData,
+    });
+
+    // Start Phase 2 in background (non-blocking)
+    setTimeout(() => {
+      runPhase2({ jobId }).catch((err) => {
+        logger.error('Background Phase 2 runner failed', { jobId, error: err.message });
+      });
+    }, 10);
+
+    return updated;
   }
 }
 

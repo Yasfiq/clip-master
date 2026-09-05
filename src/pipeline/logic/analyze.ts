@@ -107,7 +107,10 @@ export function selectSegments(
     (a, b) => b.viralScore - a.viralScore || a.startTime - b.startTime,
   );
 
-  const maxSegments = Math.max(1, Math.ceil(sourceDurationSec / 60 / 3));
+  // Calculate max segments based on source duration: max = ceil(sourceDurationMinutes / 3), min = 1
+  const maxSegments = Math.max(1, Math.ceil(sourceDurationSec / 180)); // 180s = 3 minutes
+
+  // Filter segments scoring at or above threshold
   const qualifying = ranked.filter((s) => s.viralScore >= threshold);
 
   if (qualifying.length === 0) {
