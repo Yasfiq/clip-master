@@ -32,8 +32,15 @@ export interface HookDetectResult {
   hits: HookSignalHit[]; // reasons, debug-friendly
 }
 
+interface Pattern {
+  rx: RegExp;
+  weight: number;
+  label: string;
+  exCap?: number;
+}
+
 // English hook patterns (case-insensitive).
-const EN_PATTERNS: Array<{ rx: RegExp; weight: number; label: string }> = [
+const EN_PATTERNS: Pattern[] = [
   {
     rx: /\byou('?ll| will| never| won'?t| can'?t| have to)\b/i,
     weight: 0.18,
@@ -62,7 +69,7 @@ const EN_PATTERNS: Array<{ rx: RegExp; weight: number; label: string }> = [
 ];
 
 // Indonesian hook patterns.
-const ID_PATTERNS: Array<{ rx: RegExp; weight: number; label: string; exCap?: number }> = [
+const ID_PATTERNS: Pattern[] = [
   { rx: /\b(kamu|lo|lu|loe|kalian)\b/gi, weight: 0.1, label: 'id:2nd-person' },
   { rx: /\b(gue|gw|aku|saya)\b/gi, weight: 0.1, label: 'id:1st-person' },
   {
@@ -94,13 +101,6 @@ const ID_PATTERNS: Array<{ rx: RegExp; weight: number; label: string; exCap?: nu
   },
   { rx: /[!?]/g, weight: 0.03, label: 'id:punct', exCap: 3 },
 ];
-
-interface Pattern {
-  rx: RegExp;
-  weight: number;
-  label: string;
-  exCap?: number;
-}
 
 /** Compute text-pattern hook strength (0..1) capped per signal. */
 function textSignal(text: string, patterns: Pattern[]): { score: number; hits: HookSignalHit[] } {

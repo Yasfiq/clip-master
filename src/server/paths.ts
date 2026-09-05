@@ -24,6 +24,7 @@ export const BINARIES = {
   ffprobe: process.env.FFPROBE_PATH || 'ffprobe',
   ytdlp: process.env.YTDLP_PATH || 'yt-dlp',
   whisper: process.env.WHISPER_PATH || 'whisper',
+  faceModel: process.env.FACE_MODEL_PATH || './models/blazeface/blazeface_front_e2e.onnx',
 };
 
 export const RETENTION = {

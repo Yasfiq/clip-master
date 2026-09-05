@@ -6,6 +6,8 @@ import { logger } from '../../server/logger';
 import { PATHS } from '../../server/paths';
 import { pickStyle, buildForceStyle } from '../logic/subtitleStyle';
 import { buildKenBurnsFilter, DEFAULT_KEN_BURNS, validateKenBurnsConfig } from '../logic/kenBurns';
+import { chooseCropX, DEFAULT_FACE_CROP, validateFaceCropConfig } from '../logic/faceCrop';
+import { detectFacesInVideoSync } from '../binaries/faceDetect';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -96,12 +98,56 @@ export class CompressStage implements PipelineStageHandler {
     // Pre-scale: height = targetH, width auto (keeps source aspect, no crop yet).
     let filter = 'scale=-1:' + targetH;
 
+    // Face-aware horizontal crop for portrait Shorts: detect faces on the
+    // raw cut and slide the vertical slice so the speaker stays centered.
+    // Falls back to center when no faces found or detection fails.
+    // TBD — requires user confirmation: default face crop padding 15%.
+    let faceCropApplied = false;
+    if (portrait) {
+      try {
+        const faceConfig = DEFAULT_FACE_CROP;
+        const faceErr = validateFaceCropConfig(faceConfig);
+        if (!faceErr) {
+          const srcW = ctx.metadata?.width ?? 1280;
+          const srcH = ctx.metadata?.height ?? 720;
+          // Sample up to 12 frames for short clips to keep compute cheap.
+          const sampleDur = Math.max(2, Math.min(clip?.duration ?? 10, 12));
+          const det = await detectFacesInVideoSync(inputPath, srcW, srcH, faceConfig, {
+            maxFrames: sampleDur,
+          });
+          if (det.detections.length > 0) {
+            const targetAspect = targetW / targetH;
+            const win = chooseCropX(det.detections, srcW, srcH, targetAspect, faceConfig);
+            // After scale=-1:H the stream width becomes srcW * H / srcH.
+            // win.x / win.cropWidth were computed in *source* pixels, so
+            // rescale to the new stream dimensions before cropping.
+            const scaledH = targetH;
+            const scaledSrcW = Math.round((srcW * scaledH) / srcH);
+            const scaleFactor = scaledSrcW / srcW;
+            const cropW = Math.round(win.cropWidth * scaleFactor);
+            const cropX = Math.max(
+              0,
+              Math.min(scaledSrcW - cropW, Math.round(win.x * scaleFactor)),
+            );
+            filter = `scale=-1:${scaledH},crop=${cropW}:${scaledH}:${cropX}:0`;
+            faceCropApplied = true;
+            logger.info(
+              `Face crop ${clip.id}: x=${cropX} cropW=${cropW} srcW=${scaledSrcW} (${win.source}, ${det.detections.length} dets / ${det.framesAnalyzed} frames)`,
+            );
+          }
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.warn(`Face detection failed for ${clip.id}: ${msg} (fallback to center crop)`);
+      }
+    }
+
     // Ken Burns slow push-in for portrait Shorts exports: zoompan between the
     // pre-scale (wider than target) and the final crop. Gives the static
     // center-column crop gentle motion like reference Shorts.
     // TBD — requires user confirmation: default zoom strength 1.0→1.12.
     let kenBurnsApplied = false;
-    if (portrait) {
+    if (portrait && faceCropApplied) {
       const kbConfig = {
         ...DEFAULT_KEN_BURNS,
         outWidth: targetW,
