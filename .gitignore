@@ -25,7 +25,8 @@ media/*/*
 
 # Test coverage
 coverage/
-logs/
+# Server log output directory (root-level only, not API route dirs)
+/logs/
 
 # Build artifacts
 tsconfig.tsbuildinfo
