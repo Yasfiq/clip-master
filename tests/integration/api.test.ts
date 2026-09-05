@@ -144,7 +144,7 @@ describe('API Integration Tests', () => {
 
       expect(response.status).toBe(200);
       const data = await response.json();
-      expect(data.status).toBe('RUNNING');
+      expect(data.status).toBe('RUNNING_PHASE1');
     });
 
     it('rejects invalid action', async () => {

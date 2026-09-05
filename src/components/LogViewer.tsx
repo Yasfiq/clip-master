@@ -28,64 +28,48 @@ const LogViewer: React.FC<LogViewerProps> = ({
 }) => {
   const logs = useJobStore((s) => s.logs[jobId] || []);
   const addLog = useJobStore((s) => s.addLog);
-  const [localLogs, setLocalLogs] = useState<LogEntry[]>([]);
   const [isPaused, setIsPaused] = useState(false);
   const [selectedLevel, setSelectedLevel] = useState(filterLevel);
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
 
-  // Fetch logs from API
-  const fetchLogs = async () => {
-    if (isPaused || !jobId) return;
-    if (abortRef.current) abortRef.current.abort();
-    abortRef.current = new AbortController();
+  // Read directly from SSE store
+  const storeLogs = useJobStore((state) => state.logs[jobId] || []);
 
-    try {
-      const res = await fetch(`/api/jobs/${jobId}/logs?limit=${maxLines}`, {
-        signal: abortRef.current.signal,
-      });
-      if (!res.ok) return;
-      const data = await res.json();
+  const uiLogs = storeLogs.map((log) => ({
+    id: log.id || Math.random().toString(36),
+    level: log.level as any,
+    message: log.message,
+    timestamp: log.timestamp || new Date().toISOString(),
+    stage: log.stage,
+  }));
 
-      // Convert API logs to LogEntry format
-      const newLogs: LogEntry[] = (data.logs || []).map((log: any) => ({
-        id: log.id,
-        level: log.level,
-        message: log.message,
-        timestamp: log.timestamp,
-        stage: log.stage,
-      }));
-
-      setLocalLogs(newLogs);
-    } catch (err: any) {
-      if (err.name !== 'AbortError') {
-        // Silently fail - logs are not critical
-      }
-    }
-  };
-
-  // Initial fetch + polling
+  // Initial fetch missing logs if we just mounted
   useEffect(() => {
-    fetchLogs();
-    if (!autoRefresh) return;
-
-    const interval = setInterval(fetchLogs, 3000);
-    return () => {
-      clearInterval(interval);
-      if (abortRef.current) abortRef.current.abort();
+    const fetchInitial = async () => {
+      try {
+        if (storeLogs.length > 0) return;
+        const res = await fetch(`/api/jobs/${jobId}/logs?limit=${maxLines}`);
+        const data = await res.json();
+        if (data.logs) {
+          useJobStore.getState().setLogs(jobId, data.logs);
+        }
+      } catch (e) {
+        // Silently fail
+      }
     };
-  }, [jobId, isPaused, autoRefresh]);
+    fetchInitial();
+  }, [jobId]);
 
   // Auto-scroll to bottom
   useEffect(() => {
     if (!isPaused && bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [localLogs, isPaused]);
+  }, [uiLogs, isPaused]);
 
   const filteredLogs =
-    selectedLevel === 'ALL' ? localLogs : localLogs.filter((log) => log.level === selectedLevel);
+    selectedLevel === 'ALL' ? uiLogs : uiLogs.filter((log) => log.level === selectedLevel);
 
   const getLevelColor = (level: string) => {
     switch (level) {
@@ -166,7 +150,7 @@ const LogViewer: React.FC<LogViewerProps> = ({
 
           {/* Clear */}
           <button
-            onClick={() => setLocalLogs([])}
+            onClick={() => useJobStore.getState().setLogs(jobId, [])}
             className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-600 border border-gray-300 hover:bg-gray-200"
           >
             Clear

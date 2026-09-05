@@ -27,16 +27,42 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
     setFilteredJobs(limit ? sorted.slice(0, limit) : sorted);
   }, [jobs, limit]);
 
-  // Real-time polling simulation
+  // Real-time polling & data fetching
   useEffect(() => {
+    // Initial fetch
+    const fetchJobs = async () => {
+      try {
+        const res = await fetch(`/api/jobs?limit=${limit}`);
+        const data = await res.json();
+        if (data.success) {
+          useJobStore.getState().setJobs(data.data.jobs);
+        }
+      } catch (e) {
+        console.error('Failed to fetch jobs', e);
+      }
+    };
+
+    fetchJobs();
+
+    // Check for running jobs and connect SSE
+    const checkSSE = () => {
+      const state = useJobStore.getState();
+      state.jobs.forEach((job) => {
+        if (job.status === 'RUNNING' || job.status === 'PENDING') {
+          state.connectSSE(job.id);
+        }
+      });
+    };
+
+    checkSSE();
+
     const interval = setInterval(() => {
-      // Poll API for job updates every 3 seconds
-      // In real implementation: fetch('/api/jobs').then(...)
-      // For now just update timestamp
-    }, 3000);
+      fetchJobs();
+      checkSSE();
+    }, 5000);
 
     return () => clearInterval(interval);
-  }, [lastUpdated]);
+  }, [limit]);
 
   const getStatusColor = (status: string) => {
     switch (status) {

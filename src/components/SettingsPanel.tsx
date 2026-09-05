@@ -421,19 +421,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
           </>
         )}
 
-        {/* Message */}
-        {message && (
-          <div
-            className={`p-3 rounded-lg text-sm ${
-              message.type === 'success'
-                ? 'bg-green-50 text-green-800 border border-green-200'
-                : 'bg-red-50 text-red-800 border border-red-200'
-            }`}
-          >
-            {message.text}
-          </div>
-        )}
-
         {/* Save Button */}
         <div className="pt-4 border-t border-gray-200 flex justify-end">
           <button

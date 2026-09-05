@@ -59,10 +59,16 @@ interface JobStore {
   setSelectedJob: (id: string | null) => void;
   setClips: (jobId: string, clips: Clip[]) => void;
   addLog: (jobId: string, log: JobLog) => void;
+  setLogs: (jobId: string, logs: JobLog[]) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   refresh: () => void;
   clearError: () => void;
+
+  // SSE Connection
+  activeEventSources: Record<string, EventSource>;
+  connectSSE: (jobId: string) => void;
+  disconnectSSE: (jobId: string) => void;
 
   // Computed values
   getJobCounts: () => {
@@ -88,6 +94,7 @@ const useJobStore = create<JobStore>()(
         selectedJobId: null,
         clips: {},
         logs: {},
+        activeEventSources: {},
         lastUpdated: new Date().toISOString(),
         isLoading: false,
         error: null,
@@ -139,6 +146,12 @@ const useJobStore = create<JobStore>()(
             lastUpdated: new Date().toISOString(),
           })),
 
+        setLogs: (jobId, logs) =>
+          set((state) => ({
+            logs: { ...state.logs, [jobId]: logs },
+            lastUpdated: new Date().toISOString(),
+          })),
+
         setLoading: (loading) =>
           set(() => ({
             isLoading: loading,
@@ -159,6 +172,54 @@ const useJobStore = create<JobStore>()(
           set(() => ({
             error: null,
           })),
+
+        connectSSE: (jobId) => {
+          const state = get();
+          if (state.activeEventSources[jobId]) return; // Already connected
+
+          const eventSource = new EventSource(`/api/jobs/${jobId}/logs/stream`);
+
+          eventSource.onmessage = (event) => {
+            try {
+              const data = JSON.parse(event.data);
+
+              if (data.type === 'status') {
+                get().updateJob(jobId, {
+                  status: data.status,
+                  progress: data.progress,
+                  clipsCount: data.clipsCount,
+                  errorCode: data.errorCode,
+                });
+              } else if (data.type === 'logs') {
+                // Bulk add logs
+                const currentLogs = get().logs[jobId] || [];
+                get().setLogs(jobId, [...currentLogs, ...data.logs]);
+              } else if (data.type === 'complete' || data.type === 'error') {
+                get().disconnectSSE(jobId);
+              }
+            } catch (e) {
+              console.error('Failed to parse SSE message:', e);
+            }
+          };
+
+          eventSource.onerror = () => {
+            get().disconnectSSE(jobId);
+          };
+
+          set((state) => ({
+            activeEventSources: { ...state.activeEventSources, [jobId]: eventSource },
+          }));
+        },
+
+        disconnectSSE: (jobId) => {
+          const state = get();
+          const es = state.activeEventSources[jobId];
+          if (es) {
+            es.close();
+            const { [jobId]: _, ...rest } = state.activeEventSources;
+            set(() => ({ activeEventSources: rest }));
+          }
+        },
 
         // Computed getters
         getJobCounts: () => {

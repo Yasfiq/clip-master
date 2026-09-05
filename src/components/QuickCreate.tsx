@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import useJobStore from '@/stores/useJobStore';
+import { useToastStore } from '@/stores/useToastStore';
 
 interface QuickCreateProps {
   onSuccess?: (jobId: string) => void;
@@ -11,8 +12,7 @@ interface QuickCreateProps {
 const QuickCreate: React.FC<QuickCreateProps> = ({ onSuccess, className = '' }) => {
   const addJob = useJobStore((state) => state.addJob);
   const setLoading = useJobStore((state) => state.setLoading);
-  const setError = useJobStore((state) => state.setError);
-  const clearError = useJobStore((state) => state.clearError);
+  const addToast = useToastStore((state) => state.addToast);
 
   const [url, setUrl] = useState('');
   const [sourceType, setSourceType] = useState<'youtube' | 'local' | 'url'>('youtube');
@@ -21,10 +21,9 @@ const QuickCreate: React.FC<QuickCreateProps> = ({ onSuccess, className = '' }) 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    clearError();
 
     if (!url.trim() && !selectedFile && sourceType !== 'local') {
-      setError('Please provide a URL or select a file');
+      addToast('Please provide a URL or select a file', 'warning');
       return;
     }
 
@@ -32,32 +31,53 @@ const QuickCreate: React.FC<QuickCreateProps> = ({ onSuccess, className = '' }) 
     setLoading(true);
 
     try {
+      // Create job via API
+      const res = await fetch('/api/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sourceUrl: sourceType !== 'local' ? url : undefined,
+          sourcePath: sourceType === 'local' && selectedFile ? selectedFile.name : undefined,
+        }),
+      });
+
+      const job = await res.json();
+      // API returns raw job object directly (via apiSuccess)
+
+      // Auto-start job
+      const startRes = await fetch(`/api/jobs/${job.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'start' }),
+      });
+      if (!startRes.ok) {
+        const startErr = await startRes.json().catch(() => ({}));
+        throw new Error(startErr.error?.message || 'Failed to start job');
+      }
+
+      // Map to UI job type
       const jobData = {
-        id: `cm${Date.now()}${Math.random().toString(36).substr(2, 6)}`,
-        name: sourceType === 'youtube' ? url : selectedFile?.name || 'Local file',
-        sourceUrl: sourceType !== 'local' ? url : undefined,
-        sourcePath:
-          sourceType === 'local' && selectedFile ? `/tmp/${selectedFile.name}` : undefined,
-        status: 'PENDING' as const,
+        id: job.id,
+        name: job.sourceFilename || job.sourceUrl || 'Unknown source',
+        sourceUrl: job.sourceUrl || undefined,
+        status: 'RUNNING' as const,
         progress: 0,
         clipsCount: 0,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        createdAt: job.createdAt,
+        updatedAt: job.updatedAt,
       };
 
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // In real app: await fetch('/api/jobs', { method: 'POST', body: JSON.stringify(...) })
-      // For now simulate success
       addJob(jobData);
+      useJobStore.getState().connectSSE(job.id);
+
+      addToast('Job started successfully', 'success');
 
       // Reset form
       setUrl('');
       setSelectedFile(null);
       onSuccess?.(jobData.id);
     } catch (err: any) {
-      setError(err.message || 'Failed to create job');
+      addToast(err.message || 'Failed to create job', 'error');
     } finally {
       setIsSubmitting(false);
       setLoading(false);
