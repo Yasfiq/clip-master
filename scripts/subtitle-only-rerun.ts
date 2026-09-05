@@ -27,7 +27,7 @@ async function main() {
     sourcePath: job.sourcePath ? path.join(PATHS.root, job.sourcePath) : '',
     workDir,
     outputDir: PATHS.exports,
-    config: job.config,
+    configId: job.configId,
     sourceTitle: job.sourceFilename || job.sourceUrl || 'Untitled',
     metadata: (job.sourceMetadata as any) || {},
     stageData: {

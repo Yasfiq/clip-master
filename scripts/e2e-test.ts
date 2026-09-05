@@ -94,14 +94,19 @@ async function main() {
   const exportsDir = 'media/exports';
   let filesOk = true;
   for (const c of clipsFinal) {
+    if (!c.exportPath) {
+      console.error(`   ❌ Clip ${c.id} has no exportPath`);
+      filesOk = false;
+      continue;
+    }
     const filePath = path.join(exportsDir, c.exportPath);
     if (!fs.existsSync(filePath)) {
       console.error(`   ❌ Missing: ${filePath}`);
       filesOk = false;
-    } else {
-      const stat = fs.statSync(filePath);
-      console.log(`   ✅ ${c.exportPath} (${(stat.size / 1024 / 1024).toFixed(1)}MB)`);
+      continue;
     }
+    const stat = fs.statSync(filePath);
+    console.log(`   ✅ ${c.exportPath} (${(stat.size / 1024 / 1024).toFixed(1)}MB)`);
   }
 
   if (!filesOk) {
