@@ -37,17 +37,20 @@ describe('srtLineWrap', () => {
       expect(lines[0]).toBe('Halo semua guys');
     });
 
-    it('returns max 2 lines', () => {
+    it('returns max 3 lines', () => {
       const long = 'satu dua tiga empat lima enam tujuh delapan sembilan sepuluh sebelas';
       const lines = wrapCueText(long);
-      expect(lines.length).toBeLessThanOrEqual(2);
+      expect(lines.length).toBeLessThanOrEqual(3);
     });
 
-    it('marks last line with ellipsis when text truncated to 2 lines', () => {
-      const text = 'satu dua tiga empat lima enam tujuh delapan sembilan sepuluh sebelas';
+    it('marks last line with ellipsis when text still too long for 3 lines', () => {
+      // 68 chars over 3 lines: full text must be kept — no ellipsis needed.
+      // For a real ellipsis case we need > 96 chars (3×32).
+      const text =
+        'satu dua tiga empat lima enam tujuh delapan sembilan sepuluh sebelas dua belas tiga belas empat belas lima belas enam belas tujuh belas delapan belas sembilan belas dua puluh dua puluh satu dua puluh dua';
       const lines = wrapCueText(text);
-      expect(lines.length).toBe(2);
-      expect(lines[1]!.endsWith('…')).toBe(true);
+      expect(lines.length).toBe(3);
+      expect(lines[2]!.endsWith('…')).toBe(true);
     });
 
     it('handles empty string', () => {
@@ -59,6 +62,69 @@ describe('srtLineWrap', () => {
       const lines = wrapCueText('Halo semua guys apa kabar', 10);
       for (const l of lines) {
         expect(l.length).toBeLessThanOrEqual(10);
+      }
+    });
+  });
+
+  describe('wrapCueText - clause-aware segmentation', () => {
+    it('breaks on comma when both halves fit', () => {
+      // "Jadi kan pertama, waktu kecina gue" (39 chars)
+      // comma at pos 16 → "Jadi kan pertama," (17) + "waktu kecina gue" (16) — both <= 32
+      const lines = wrapCueText('Jadi kan pertama, waktu kecina gue');
+      expect(lines).toEqual(['Jadi kan pertama,', 'waktu kecina gue']);
+    });
+
+    it('breaks on period for sentence boundary', () => {
+      const lines = wrapCueText('Ini kalimat pertama. Ini kalimat kedua juga');
+      expect(lines[0]).toBe('Ini kalimat pertama.');
+      expect(lines[1]).toBe('Ini kalimat kedua juga');
+    });
+
+    it('breaks before Indonesian conjunction "yang"', () => {
+      const lines = wrapCueText('Jadi kayak masuk ke sekolah yang kayak TK');
+      expect(lines[0]).toBe('Jadi kayak masuk ke sekolah');
+      expect(lines[1]).toBe('yang kayak TK');
+    });
+
+    it('breaks on "karena" / "ketika" / "sehingga"', () => {
+      const lines = wrapCueText('Saya marah karena dia tidak datang padahal sudah janji');
+      expect(lines.some((l) => l.toLowerCase().includes('karena'))).toBe(true);
+    });
+
+    it('uses 3 lines when text requires and clauses allow', () => {
+      // ~86 chars total, two natural commas → 3 balanced lines
+      const text =
+        'Jadi kan pertama, waktu kecina gue sama sekali gak bisa, ngomong mandarin sama orang tua gue';
+      const lines = wrapCueText(text);
+      expect(lines.length).toBe(3);
+      for (const l of lines) {
+        expect(l.length).toBeLessThanOrEqual(MAX_CHARS);
+      }
+    });
+
+    it('avoids orphan word (1-word last line)', () => {
+      // last word "ya" — should pull up to line 2
+      const text = 'Jadi kan pertama waktu kecina, gue';
+      const lines = wrapCueText(text);
+      expect(lines[lines.length - 1]!.split(' ').length).toBeGreaterThan(1);
+    });
+
+    it('real bug fix: long cue with "gue sama sekali gak bisa ngomong"', () => {
+      // Previously truncated to "...ngomon…". Now should produce readable 3 lines.
+      const text = 'gue sama sekali gak bisa ngomong mandarin gitu ya';
+      const lines = wrapCueText(text);
+      // expect NO ellipsis on last line — full text visible
+      const joined = lines.join(' ');
+      expect(joined).not.toContain('…');
+      expect(joined).toContain('ngomong mandarin gitu ya');
+    });
+
+    it('real bug fix: clause "karena kepepet kan" not split from "karena"', () => {
+      const text = 'Karena kepepet kan, gue belajar sendiri dari internet';
+      const lines = wrapCueText(text);
+      // "karena" should not be orphaned as single-word line
+      for (const l of lines) {
+        expect(l.split(' ').length).toBeGreaterThan(1);
       }
     });
   });

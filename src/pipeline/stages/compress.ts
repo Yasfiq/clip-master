@@ -5,6 +5,7 @@ import { db } from '../../server/db';
 import { logger } from '../../server/logger';
 import { PATHS } from '../../server/paths';
 import { pickStyle, buildForceStyle } from '../logic/subtitleStyle';
+import { buildKenBurnsFilter, DEFAULT_KEN_BURNS, validateKenBurnsConfig } from '../logic/kenBurns';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -90,10 +91,39 @@ export class CompressStage implements PipelineStageHandler {
     const targetW = parseInt(targetRes.split('x')[0], 10) || 1920;
     const targetH = parseInt(targetRes.split('x')[1], 10) || 1080;
 
-    // Scale to target height then center-crop to target width.
-    // Fills the frame (no black bars) like the reference Shorts.
-    let filter =
-      'scale=-1:' + targetH + ',crop=' + targetW + ':' + targetH + ':(iw-' + targetW + ')/2:0';
+    const portrait = targetH > targetW;
+
+    // Pre-scale: height = targetH, width auto (keeps source aspect, no crop yet).
+    let filter = 'scale=-1:' + targetH;
+
+    // Ken Burns slow push-in for portrait Shorts exports: zoompan between the
+    // pre-scale (wider than target) and the final crop. Gives the static
+    // center-column crop gentle motion like reference Shorts.
+    // TBD — requires user confirmation: default zoom strength 1.0→1.12.
+    let kenBurnsApplied = false;
+    if (portrait) {
+      const kbConfig = {
+        ...DEFAULT_KEN_BURNS,
+        outWidth: targetW,
+        outHeight: targetH,
+        duration: clip?.duration ?? 10,
+        zoomStart: 1.0,
+        zoomEnd: 1.12,
+        fps: 30,
+      };
+      const kbErr = validateKenBurnsConfig(kbConfig);
+      if (!kbErr) {
+        const kb = buildKenBurnsFilter(kbConfig);
+        // kb = zoompan (s=WxH) + guard crop; run before subtitle burn so text
+        // burns crisply at final resolution.
+        filter += ',' + kb;
+        kenBurnsApplied = true;
+      }
+    }
+    if (!kenBurnsApplied) {
+      // Fallback / landscape: center-crop to target dimensions.
+      filter += ',crop=' + targetW + ':' + targetH + ':(iw-' + targetW + ')/2:0';
+    }
 
     // Burn subtitles into the video if a sidecar SRT exists for this clip.
     // Must run AFTER scale so text stays legible at target resolution.

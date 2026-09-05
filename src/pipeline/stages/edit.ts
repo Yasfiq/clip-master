@@ -129,11 +129,9 @@ export class EditStage implements PipelineStageHandler {
     colorFilter: string,
     backsoundPath: string,
   ): Promise<void> {
-    // Build audio ducking filter
-    const audioConfig = {
-      ...DEFAULT_AUDIO_CONFIG,
-      backsoundPath,
-    };
+    // Build audio ducking filter. buildAudioDuckFilter returns the complete
+    // audio sub-graph terminating in [limited]. Compose video + audio graphs:
+    //   [0:v] ... [graded]; <audio graph>
     const audioFilter = buildAudioDuckFilter(audioConfig);
 
     const args = [
@@ -142,11 +140,11 @@ export class EditStage implements PipelineStageHandler {
       '-i',
       backsoundPath,
       '-filter_complex',
-      `[0:v] ${colorFilter} [graded]; ${audioFilter} [audio_out]`,
+      `[0:v] ${colorFilter} [graded]; ${audioFilter}`,
       '-map',
       '[graded]',
       '-map',
-      '[audio_out]',
+      '[limited]',
       '-c:v',
       'libx264',
       '-preset',

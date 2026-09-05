@@ -101,14 +101,16 @@ describe('Smoke tests', () => {
         backsoundPath: '/media/assets/backsound.mp3',
       });
       expect(filter).toContain('amix');
-      expect(filter).toContain('alimiter=limit=-1');
+      // alimiter takes LINEAR amplitude (0.0625..1), NOT dB. -1 dBFS ≈ 0.891.
+      expect(filter).toContain('alimiter=limit=0.891');
+      expect(filter).toContain('sidechaincompress');
     });
 
     it('validates config', () => {
       const valid = validateAudioDuckConfig({ ...DEFAULT_AUDIO_CONFIG });
       expect(valid).toBeNull();
 
-      const invalid = validateAudioDuckConfig({ ...DEFAULT_AUDIO_CONFIG, peakLimitDb: 0 });
+      const invalid = validateAudioDuckConfig({ ...DEFAULT_AUDIO_CONFIG, peakLimit: 5 });
       expect(invalid).toBeTruthy();
     });
   });

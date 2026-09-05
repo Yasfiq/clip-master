@@ -14,26 +14,60 @@ describe('audioDuck', () => {
       });
       expect(filter).toContain('asplit');
       expect(filter).toContain('amix');
+      expect(filter).toContain('sidechaincompress');
       expect(filter).toContain('afade');
       expect(filter).toContain('alimiter');
     });
 
-    it('includes speech target volume adjustment', () => {
+    it('places music as sidechaincompress MAIN input and voice as sidechain', () => {
       const filter = buildAudioDuckFilter({
         ...DEFAULT_AUDIO_CONFIG,
-        speechTargetDb: -3,
         backsoundPath: '/tmp/music.mp3',
       });
-      // -3dB = 10^(-3/20) ≈ 0.7079
-      expect(filter).toContain('volume=volume=');
+      // Correct order: [music][vd] — music ducks under voice detection.
+      expect(filter).toContain('[music][vd]sidechaincompress');
+      // Wrong order would duck the voice instead.
+      expect(filter).not.toContain('[vd][music]sidechaincompress');
     });
 
-    it('includes music ducking logic', () => {
+    it('every asplit output is consumed (no dangling labels)', () => {
       const filter = buildAudioDuckFilter({
         ...DEFAULT_AUDIO_CONFIG,
         backsoundPath: '/tmp/music.mp3',
       });
-      expect(filter).toContain('adynamicequalizer');
+      // asplit produces [vd] + [vm]; vd goes to sidechain, vm goes to amix.
+      expect(filter).toContain('[voice]asplit[vd][vm]');
+      expect(filter).toContain('[vm][duck]amix');
+      expect(filter).toContain('[music][vd]sidechaincompress');
+    });
+
+    it('applies music baseline gain', () => {
+      const filter = buildAudioDuckFilter({
+        ...DEFAULT_AUDIO_CONFIG,
+        musicBaselineGain: 0.125,
+        backsoundPath: '/tmp/music.mp3',
+      });
+      expect(filter).toContain('[1:a]volume=0.125[music]');
+    });
+
+    it('applies speech gain', () => {
+      const filter = buildAudioDuckFilter({
+        ...DEFAULT_AUDIO_CONFIG,
+        speechGain: 2,
+        backsoundPath: '/tmp/music.mp3',
+      });
+      expect(filter).toContain('[0:a]volume=2[voice]');
+    });
+
+    it('includes duck depth ratio and thresholds', () => {
+      const filter = buildAudioDuckFilter({
+        ...DEFAULT_AUDIO_CONFIG,
+        sidechainRatio: 8,
+        sidechainThreshold: 0.01,
+        backsoundPath: '/tmp/music.mp3',
+      });
+      expect(filter).toContain('ratio=8');
+      expect(filter).toContain('threshold=0.01');
     });
 
     it('includes fade in/out transitions', () => {
@@ -42,160 +76,123 @@ describe('audioDuck', () => {
         fadeSeconds: 2,
         backsoundPath: '/tmp/music.mp3',
       });
-      expect(filter).toContain('afade=t=in');
-      expect(filter).toContain('afade=t=out');
-      expect(filter).toContain('d=2');
+      expect(filter).toContain('afade=t=in:st=0:d=2');
+      expect(filter).toContain('afade=t=out:st=0:d=2');
     });
 
-    it('includes peak limiter', () => {
+    it('includes peak limiter with LINEAR ceiling (not dB)', () => {
       const filter = buildAudioDuckFilter({
         ...DEFAULT_AUDIO_CONFIG,
-        peakLimitDb: -1,
+        peakLimit: 0.891,
         backsoundPath: '/tmp/music.mp3',
       });
-      expect(filter).toContain('alimiter=limit=-1');
+      // -1 dBFS ≈ 0.891 linear. alimiter limit range is 0.0625..1.
+      expect(filter).toContain('alimiter=limit=0.891');
+      // Must never pass a negative dB value to alimiter.
+      expect(filter).not.toContain('alimiter=limit=-1');
     });
 
-    it('adjusts duck transition time', () => {
-      const filter = buildAudioDuckFilter({
-        ...DEFAULT_AUDIO_CONFIG,
-        duckTransitionSeconds: 0.5,
-        backsoundPath: '/tmp/music.mp3',
-      });
-      expect(filter).toContain('attack=0.25');
-      expect(filter).toContain('release=1.5');
-    });
-
-    it('returns valid FFmpeg filter_complex syntax', () => {
+    it('uses only supported filter names (FFmpeg 8 validated)', () => {
       const filter = buildAudioDuckFilter({
         ...DEFAULT_AUDIO_CONFIG,
         backsoundPath: '/tmp/music.mp3',
       });
-      // Should have proper structure
-      expect(filter).toMatch(/\[.*\]/); // Contains stream labels
-      expect(filter.split(',').length).toBeGreaterThan(5); // Multiple filter stages
+      // Old implementation used adynamicequalizer with negative range which
+      // FFmpeg rejects ("Numerical result out of range"). Must be gone.
+      expect(filter).not.toContain('adynamicequalizer');
     });
   });
 
   describe('validateAudioDuckConfig', () => {
     it('accepts valid default config', () => {
-      const error = validateAudioDuckConfig(DEFAULT_AUDIO_CONFIG);
-      expect(error).toBeNull();
+      expect(validateAudioDuckConfig(DEFAULT_AUDIO_CONFIG)).toBeNull();
     });
 
-    it('rejects speechTargetDb out of range (too high)', () => {
-      const error = validateAudioDuckConfig({
-        ...DEFAULT_AUDIO_CONFIG,
-        speechTargetDb: 5,
-      });
-      expect(error).toContain('speechTargetDb must be between -50 and 0');
+    it('rejects non-positive speechGain', () => {
+      expect(validateAudioDuckConfig({ ...DEFAULT_AUDIO_CONFIG, speechGain: 0 })).toContain(
+        'speechGain',
+      );
     });
 
-    it('rejects speechTargetDb out of range (too low)', () => {
-      const error = validateAudioDuckConfig({
-        ...DEFAULT_AUDIO_CONFIG,
-        speechTargetDb: -60,
-      });
-      expect(error).toContain('speechTargetDb must be between -50 and 0');
+    it('rejects speechGain above 8', () => {
+      expect(validateAudioDuckConfig({ ...DEFAULT_AUDIO_CONFIG, speechGain: 10 })).toContain(
+        'speechGain',
+      );
     });
 
-    it('rejects musicBaselineDb out of range', () => {
-      const error = validateAudioDuckConfig({
-        ...DEFAULT_AUDIO_CONFIG,
-        musicBaselineDb: 10,
-      });
-      expect(error).toContain('musicBaselineDb must be between -50 and 0');
+    it('rejects musicBaselineGain above 1', () => {
+      expect(
+        validateAudioDuckConfig({ ...DEFAULT_AUDIO_CONFIG, musicBaselineGain: 1.5 }),
+      ).toContain('musicBaselineGain');
     });
 
-    it('rejects musicDuckedDb out of range', () => {
-      const error = validateAudioDuckConfig({
-        ...DEFAULT_AUDIO_CONFIG,
-        musicDuckedDb: -60,
-      });
-      expect(error).toContain('musicDuckedDb must be between -50 and 0');
+    it('rejects sidechainRatio below 1', () => {
+      expect(validateAudioDuckConfig({ ...DEFAULT_AUDIO_CONFIG, sidechainRatio: 0.5 })).toContain(
+        'sidechainRatio',
+      );
     });
 
-    it('rejects when musicBaselineDb <= musicDuckedDb', () => {
-      const error = validateAudioDuckConfig({
-        ...DEFAULT_AUDIO_CONFIG,
-        musicBaselineDb: -24,
-        musicDuckedDb: -18,
-      });
-      expect(error).toContain('musicBaselineDb must be greater than musicDuckedDb');
+    it('rejects sidechainRatio above 30', () => {
+      expect(validateAudioDuckConfig({ ...DEFAULT_AUDIO_CONFIG, sidechainRatio: 50 })).toContain(
+        'sidechainRatio',
+      );
     });
 
-    it('rejects peakLimitDb out of range (too high)', () => {
-      const error = validateAudioDuckConfig({
-        ...DEFAULT_AUDIO_CONFIG,
-        peakLimitDb: 5,
-      });
-      expect(error).toContain('peakLimitDb must be between -12 and -1');
+    it('rejects peakLimit below alimiter linear minimum', () => {
+      expect(validateAudioDuckConfig({ ...DEFAULT_AUDIO_CONFIG, peakLimit: 0.01 })).toContain(
+        'peakLimit',
+      );
     });
 
-    it('rejects peakLimitDb out of range (too low)', () => {
-      const error = validateAudioDuckConfig({
-        ...DEFAULT_AUDIO_CONFIG,
-        peakLimitDb: -15,
-      });
-      expect(error).toContain('peakLimitDb must be between -12 and -1');
+    it('rejects peakLimit above 1', () => {
+      expect(validateAudioDuckConfig({ ...DEFAULT_AUDIO_CONFIG, peakLimit: 1.5 })).toContain(
+        'peakLimit',
+      );
     });
 
-    it('rejects fadeSeconds out of range (negative)', () => {
-      const error = validateAudioDuckConfig({
-        ...DEFAULT_AUDIO_CONFIG,
-        fadeSeconds: -1,
-      });
-      expect(error).toContain('fadeSeconds must be between 0 and 10');
+    it('rejects negative fadeSeconds', () => {
+      expect(validateAudioDuckConfig({ ...DEFAULT_AUDIO_CONFIG, fadeSeconds: -1 })).toContain(
+        'fadeSeconds',
+      );
     });
 
-    it('rejects fadeSeconds out of range (too high)', () => {
-      const error = validateAudioDuckConfig({
-        ...DEFAULT_AUDIO_CONFIG,
-        fadeSeconds: 15,
-      });
-      expect(error).toContain('fadeSeconds must be between 0 and 10');
+    it('rejects fadeSeconds too high', () => {
+      expect(validateAudioDuckConfig({ ...DEFAULT_AUDIO_CONFIG, fadeSeconds: 15 })).toContain(
+        'fadeSeconds',
+      );
     });
 
-    it('rejects duckTransitionSeconds out of range (too low)', () => {
-      const error = validateAudioDuckConfig({
-        ...DEFAULT_AUDIO_CONFIG,
-        duckTransitionSeconds: 0.05,
-      });
-      expect(error).toContain('duckTransitionSeconds must be between 0.1 and 2');
+    it('rejects attackMs out of range', () => {
+      expect(validateAudioDuckConfig({ ...DEFAULT_AUDIO_CONFIG, attackMs: 0 })).toContain(
+        'attackMs',
+      );
+      expect(validateAudioDuckConfig({ ...DEFAULT_AUDIO_CONFIG, attackMs: 5000 })).toContain(
+        'attackMs',
+      );
     });
 
-    it('rejects duckTransitionSeconds out of range (too high)', () => {
-      const error = validateAudioDuckConfig({
-        ...DEFAULT_AUDIO_CONFIG,
-        duckTransitionSeconds: 3,
-      });
-      expect(error).toContain('duckTransitionSeconds must be between 0.1 and 2');
+    it('rejects releaseMs out of range', () => {
+      expect(validateAudioDuckConfig({ ...DEFAULT_AUDIO_CONFIG, releaseMs: 5 })).toContain(
+        'releaseMs',
+      );
+      expect(validateAudioDuckConfig({ ...DEFAULT_AUDIO_CONFIG, releaseMs: 10000 })).toContain(
+        'releaseMs',
+      );
     });
 
-    it('accepts edge values', () => {
-      expect(validateAudioDuckConfig({ ...DEFAULT_AUDIO_CONFIG, speechTargetDb: -50 })).toBeNull();
-      expect(validateAudioDuckConfig({ ...DEFAULT_AUDIO_CONFIG, speechTargetDb: 0 })).toBeNull();
-      expect(validateAudioDuckConfig({ ...DEFAULT_AUDIO_CONFIG, peakLimitDb: -12 })).toBeNull();
-      expect(validateAudioDuckConfig({ ...DEFAULT_AUDIO_CONFIG, peakLimitDb: -1 })).toBeNull();
+    it('accepts boundary values', () => {
       expect(validateAudioDuckConfig({ ...DEFAULT_AUDIO_CONFIG, fadeSeconds: 0 })).toBeNull();
       expect(validateAudioDuckConfig({ ...DEFAULT_AUDIO_CONFIG, fadeSeconds: 10 })).toBeNull();
-      expect(
-        validateAudioDuckConfig({ ...DEFAULT_AUDIO_CONFIG, duckTransitionSeconds: 0.1 }),
-      ).toBeNull();
-      expect(
-        validateAudioDuckConfig({ ...DEFAULT_AUDIO_CONFIG, duckTransitionSeconds: 2 }),
-      ).toBeNull();
+      expect(validateAudioDuckConfig({ ...DEFAULT_AUDIO_CONFIG, sidechainRatio: 1 })).toBeNull();
+      expect(validateAudioDuckConfig({ ...DEFAULT_AUDIO_CONFIG, sidechainRatio: 30 })).toBeNull();
     });
   });
 
   describe('DEFAULT_AUDIO_CONFIG', () => {
-    it('has correct architecture-specified values', () => {
-      expect(DEFAULT_AUDIO_CONFIG.speechTargetDb).toBe(-3);
-      expect(DEFAULT_AUDIO_CONFIG.musicBaselineDb).toBe(-18);
-      expect(DEFAULT_AUDIO_CONFIG.musicDuckedDb).toBe(-24);
-      expect(DEFAULT_AUDIO_CONFIG.peakLimitDb).toBe(-1);
+    it('has architecture-specified values', () => {
+      expect(DEFAULT_AUDIO_CONFIG.musicBaselineGain).toBeCloseTo(0.125); // -18 dB
+      expect(DEFAULT_AUDIO_CONFIG.peakLimit).toBeCloseTo(0.891); // -1 dBFS
       expect(DEFAULT_AUDIO_CONFIG.fadeSeconds).toBe(2);
-      expect(DEFAULT_AUDIO_CONFIG.duckTransitionSeconds).toBe(0.5);
     });
 
     it('passes validation', () => {
