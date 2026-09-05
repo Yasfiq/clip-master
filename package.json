@@ -9,6 +9,9 @@
     "lint": "next lint",
     "test": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:smoke": "vitest run tests/unit/smoke.test.ts",
+    "test:e2e": "npx tsx scripts/cleanup.ts && npx tsx scripts/e2e-test.ts",
+    "cleanup": "npx tsx scripts/cleanup.ts",
     "prepare": "husky"
   },
   "license": "UNLICENSED",
