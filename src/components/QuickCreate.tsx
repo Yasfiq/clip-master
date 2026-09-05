@@ -84,6 +84,7 @@ const QuickCreate: React.FC<QuickCreateProps> = ({ onSuccess, className = '' }) 
       setSelectedFile(null);
       onSuccess?.(jobData.id);
     } catch (err: any) {
+      console.error('QuickCreate submit failed:', err);
       addToast(err.message || 'Failed to create job', 'error');
     } finally {
       setIsSubmitting(false);
