@@ -14,6 +14,11 @@ export const PATHS = {
   db: path.join(__dirname, process.env.DATABASE_URL?.replace('file:', '') || './dev.db'),
 };
 
+export const OLLAMA = {
+  host: process.env.OLLAMA_HOST || 'http://127.0.0.1:11434',
+  model: process.env.OLLAMA_MODEL || 'qwen2.5:7b-instruct-q4_K_M',
+};
+
 export const BINARIES = {
   ffmpeg: process.env.FFMPEG_PATH || 'ffmpeg',
   ffprobe: process.env.FFPROBE_PATH || 'ffprobe',
