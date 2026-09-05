@@ -38,3 +38,6 @@ media/work/*
 media/exports/*
 !media/work/.keep
 !media/exports/.keep
+
+# ONNX model files (downloaded at runtime, not tracked)
+/models/
