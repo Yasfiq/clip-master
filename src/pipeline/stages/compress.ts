@@ -3,6 +3,8 @@ import { PipelineStageHandler, StageContext } from '../runner-types';
 import { runBinaryChecked } from '../binaries/spawn';
 import { db } from '../../server/db';
 import { logger } from '../../server/logger';
+import { PATHS } from '../../server/paths';
+import { pickStyle, buildForceStyle } from '../logic/subtitleStyle';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -29,6 +31,12 @@ export class CompressStage implements PipelineStageHandler {
         `Compressing clip ${idx + 1}/${totalClips}: ${clip.id}`,
       );
 
+      // Pick a different subtitle style per clip (SULE → TikTok → KAMAL cycle)
+      const subtitleStyle = pickStyle(idx);
+      logger.info(
+        `Clip ${idx + 1}/${totalClips} style: ${subtitleStyle.label} (${subtitleStyle.id})`,
+      );
+
       const exportPath = clip.exportPath;
       if (!exportPath || !(await this.fileExists(exportPath))) {
         logger.warn(`Clip ${clip.id} has no export path, skipping compress`);
@@ -36,9 +44,9 @@ export class CompressStage implements PipelineStageHandler {
         continue;
       }
 
-      // Apply final CRF 21 encoding (architecture spec)
+      // Apply final encoding: scale to target ratio + burn subtitles
       const compressedPath = exportPath.replace('.mp4', '_final.mp4');
-      await this.applyFinalCompress(exportPath, compressedPath, ctx);
+      await this.applyFinalCompress(exportPath, compressedPath, ctx, clip, subtitleStyle);
 
       // Replace export path with compressed final
       try {
@@ -72,23 +80,44 @@ export class CompressStage implements PipelineStageHandler {
     inputPath: string,
     outputPath: string,
     ctx: StageContext,
+    clip: any,
+    subtitleStyle: ReturnType<typeof pickStyle>,
   ): Promise<void> {
-    // Architecture spec from summary:
-    // H.264/libx264, CRF 21, -preset medium, max 1920x1080 lanczos, never upscale,
-    // AAC 192k 48kHz stereo, faststart, keyframeInterval 48
+    // H.264/libx264, CRF 21, target resolution from config (e.g., "1080x1920" for 9:16)
 
-    const width = ctx.metadata?.width || 1920;
-    const height = ctx.metadata?.height || 1080;
+    // Parse targetResolution from config (format: "widthxheight")
+    const targetRes = ctx.config?.targetResolution || '1920x1080';
+    const targetW = parseInt(targetRes.split('x')[0], 10) || 1920;
+    const targetH = parseInt(targetRes.split('x')[1], 10) || 1080;
 
-    // Scale filter: never upscale, max 1920x1080, pad with black bars if needed
-    const scaleFilter =
-      "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2";
+    // Scale to target height then center-crop to target width.
+    // Fills the frame (no black bars) like the reference Shorts.
+    let filter =
+      'scale=-1:' + targetH + ',crop=' + targetW + ':' + targetH + ':(iw-' + targetW + ')/2:0';
 
-    const args = [
+    // Burn subtitles into the video if a sidecar SRT exists for this clip.
+    // Must run AFTER scale so text stays legible at target resolution.
+    if (clip?.subtitlePath && ctx.config?.subtitleEnabled !== false) {
+      try {
+        await fs.access(clip.subtitlePath);
+        // Escape colons in path for ffmpeg filter syntax
+        const esc = clip.subtitlePath.replace(/:/g, '\\:');
+        // Per-clip style picked by compress caller: SULE / TikTok / KAMAL.
+        const styleParams = buildForceStyle(subtitleStyle);
+        filter += `,subtitles='${esc}':force_style='${styleParams}'`;
+        logger.info(
+          `Burning subtitles into ${clip.id} (style=${subtitleStyle.id}): ${clip.subtitlePath}`,
+        );
+      } catch {
+        logger.warn(`Subtitle sidecar missing for ${clip.id}: ${clip.subtitlePath}`);
+      }
+    }
+
+    const args: string[] = [
       '-i',
       inputPath,
       '-vf',
-      scaleFilter,
+      filter,
       '-c:v',
       'libx264',
       '-preset',
@@ -111,7 +140,7 @@ export class CompressStage implements PipelineStageHandler {
       outputPath,
     ];
 
-    await runBinaryChecked('ffmpeg', args, { timeoutMs: 120000 });
+    await runBinaryChecked('ffmpeg', args, { timeoutMs: 1800000 });
   }
 
   /**
@@ -124,28 +153,28 @@ export class CompressStage implements PipelineStageHandler {
     fileSize: number,
     ctx: StageContext,
   ): Promise<void> {
-    // Store relative path from project root
-    const relativePath = path.relative(process.cwd(), finalPath);
+    // Store relative path from media/exports
+    const relativePath = path.relative(PATHS.exports, finalPath);
 
-    await db.clip.create({
-      data: {
-        jobId,
-        startTime: clip.startTime,
-        endTime: clip.endTime,
-        duration: clip.duration,
-        viralScore: 0.0,
-        confidence: 'MEDIUM',
-        exportPath: relativePath,
-        isExported: true,
-        metadata: {
-          segmentIndex: ctx.stageData.clips?.indexOf(clip) ?? 0,
-          subtitlePath: clip.subtitlePath ? path.relative(process.cwd(), clip.subtitlePath) : null,
-          fileSize,
+    // Update existing Clip row (created by CUT stage in Phase 1)
+    await db.clip
+      .update({
+        where: { id: clip.id },
+        data: {
+          exportPath: relativePath,
+          isExported: true,
+          metadata: {
+            segmentIndex: ctx.stageData.clips?.indexOf(clip) ?? 0,
+            subtitlePath: clip.subtitlePath ? path.relative(PATHS.work, clip.subtitlePath) : null,
+            fileSize,
+          },
         },
-      },
-    });
+      })
+      .catch((err) => {
+        logger.warn(`Failed to update Clip ${clip.id} in DB: ${err.message}`);
+      });
 
-    logger.info(`Registered clip ${clip.id} in database: ${relativePath}`);
+    logger.info(`Updated clip ${clip.id} in database: ${relativePath}`);
   }
 
   private async fileExists(filePath: string): Promise<boolean> {
