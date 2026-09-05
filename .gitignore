@@ -28,6 +28,11 @@ coverage/
 # Server log output directory (root-level only, not API route dirs)
 /logs/
 
+# Playwright
+/test-results/
+/playwright-report/
+/playwright/.cache/
+
 # Build artifacts
 tsconfig.tsbuildinfo
 

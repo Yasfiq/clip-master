@@ -10,7 +10,11 @@
     "test": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:smoke": "vitest run tests/unit/smoke.test.ts",
-    "test:e2e": "npx tsx scripts/cleanup.ts && npx tsx scripts/e2e-test.ts",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "e2e": "playwright test",
+    "e2e:headed": "playwright test --headed",
+    "smoke:full": "npx tsx scripts/cleanup.ts && npx tsx scripts/e2e-test.ts",
     "cleanup": "npx tsx scripts/cleanup.ts",
     "prepare": "husky"
   },
@@ -35,6 +39,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.6",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.4.0",
     "@types/react": "^19.2.18",

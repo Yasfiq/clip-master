@@ -122,22 +122,23 @@ TBD blockers: <unconfirmed decisions, or "none">
 ## @qa-agent
 
 ### Role
-Owns the test gate: Vitest unit coverage of core pipeline logic, the single end-to-end smoke test, and pre-commit enforcement.
+Owns the test gate: Vitest unit coverage of core pipeline logic, the end-to-end smoke test, the Playwright UI suite, and pre-commit enforcement.
 
 ### Technology Focus
-Vitest, fixture design for accept/reject and cutting cases, `tests/fixtures/sample.mp4` smoke execution, husky + lint-staged.
+Vitest, Playwright (@playwright/test) for dashboard E2E, fixture design for accept/reject and cutting cases, `tests/fixtures/sample.mp4` smoke execution, husky + lint-staged.
 
 ### Responsibilities
 - Maintain unit suites over the four confirmed logic targets: pure-ad filter, viral segment selection, part-cutting rules, output file naming. Assert determinism — identical job inputs produce identical filenames.
 - Maintain the ad-filter fixture set with explicit *iklan sisipan* cases proving embedded-ad videos are accepted, and assert that ambiguous signals fail toward acceptance rather than rejection.
 - Maintain one end-to-end smoke test running the full pipeline on the short sample video through export; treat it as the release gate before real jobs.
+- Maintain the Playwright dashboard suite (`npm run e2e`) exercising the real UI against the real API — job creation from a local fixture, status/log/clip surfaces, and the settings save/load contract.
 - Assert failure semantics: every terminal state is reachable and recorded, no job can remain `RUNNING` without an in-process handle, zero qualifying segments yields an explicit status rather than an empty success, and a failing stage is identifiable from `JobLog` alone.
-- Configure husky + lint-staged to run lint and affected unit tests pre-commit, and maintain the written manual checklist for the dashboard's status, log, and clip views.
+- Configure husky + lint-staged to run lint and affected unit tests pre-commit (Playwright E2E stays a separate release-gate command, never pre-commit), and maintain the written manual checklist for the dashboard's status, log, and clip views.
 
 ### Strict Rules
-1. No automated UI test suite. UI verification stays manual per confirmed QA scope; do not introduce a browser test runner.
-2. Unit tests must not invoke yt-dlp, FFmpeg, or Whisper. Only the smoke test may execute binaries. If logic is untestable without a process, request a seam from the owning agent instead of mocking a shell.
-3. Never assert an unconfirmed numeric threshold as correct behavior. Where part duration bounds, CRF, or scoring cutoffs are **TBD — requires user confirmation**, test the rule's shape and invariants, not a fabricated value.
+1. Unit tests must not invoke yt-dlp, FFmpeg, or Whisper. Only the smoke test and the Playwright E2E job run may execute binaries. If logic is untestable without a process, request a seam from the owning agent instead of mocking a shell.
+2. Never assert an unconfirmed numeric threshold as correct behavior. Where part duration bounds, CRF, or scoring cutoffs are **TBD — requires user confirmation**, test the rule's shape and invariants, not a fabricated value.
+3. The Playwright suite is release-gate only: it never runs pre-commit and must stay behind `npm run e2e`. E2E fixture video lives in `tests/fixtures/`, trimmed from a real source so full-pipeline runs stay offline and deterministic.
 
 ### Response Format
 ```
@@ -188,7 +189,7 @@ sequenceDiagram
 - **No secrets in the repo or logs.** Sensitive config lives in a gitignored `.env`; `.env.example` carries key names only.
 - **Single principal.** One role, Owner/Operator, full access. Do not build permission tiers, sessions, or a second actor.
 - **One active job.** Concurrency is fixed at one; queued jobs wait in `PENDING`. Parallel execution is TBD, not a default.
-- **Approved stack only.** Next.js, Tailwind CSS, Zustand, Prisma + SQLite, yt-dlp, FFmpeg, local Whisper, Vitest, husky + lint-staged. Nothing else may be added without confirmation.
+- **Approved stack only.** Next.js, Tailwind CSS, Zustand, Prisma + SQLite, yt-dlp, FFmpeg, local Whisper, Vitest, husky + lint-staged, Playwright (`@playwright/test`, release-gate E2E only). Nothing else may be added without confirmation.
 - **MVP scope only.** Manual-link ingestion with pure-ad rejection, segment analysis and part cutting, basic editing (grading preset, backsound, simple transitions) plus auto subtitles, export and high-quality compression, local job dashboard. Auto-discovery via *follow channel*, trending feeds, sound effects, visual elements, and advanced video effects are deferred phases — no agent may implement them as MVP work.
 
 ## Escalation Register

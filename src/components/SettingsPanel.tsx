@@ -223,10 +223,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
             className={`text-sm px-3 py-2 rounded-md border ${saveTone} ${saveMessage ? '' : 'invisible'}`}
             role="status"
             aria-live="polite"
+            data-testid="settings-save-status"
           >
             {saveMessage || '\u00a0'}
           </p>
           <button
+            type="button"
             onClick={handleSave}
             disabled={saveState === 'saving'}
             className="inline-flex items-center px-5 py-2.5 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-60 transition-colors"
