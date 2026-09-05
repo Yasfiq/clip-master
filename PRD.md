@@ -282,6 +282,10 @@ graph LR
 - Manual override or editing of auto-selected segments before cutting.
 - Subtitle translation or multi-language transcription.
 
+### Resolved (Resolved as of MVP tuning)
+- **Subtitle styling**: `FontName=DejaVu Sans, FontSize=70, PrimaryColour=&H0000FFFF (Yellow), OutlineColour=&H00000000 (Black), BackColour=&H000000FF (Red shadow), Outline=3, Shadow=4, Bold=-1, MarginV=450, Alignment=2, PlayResX=720, PlayResY=1280`. Text forced to UPPERCASE in `subtitle.ts` to match viral style. Wired into `compress.ts` as `force_style` on the `subtitles` filter.
+- **Transcription model**: `ggml-small.bin` (multilingual). Switched from `ggml-base.bin` (English-only) because it produced nonsense on Indonesian content. Configured in `transcribe.ts` + `subtitle.ts`.
+
 Items in the TBD list are candidates, not commitments. None may be built as MVP scope without confirmation.
 
 ---
