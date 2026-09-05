@@ -1,10 +1,11 @@
 import { NextRequest } from 'next/server';
 import { db } from '@/server/db';
 import { apiError, apiSuccess, catchApiErrors, ErrorCode } from '@/server/api-utils';
+import { validateConfigValues, CONFIG_KEYS, type ConfigValue } from './validate';
 
 /**
  * GET /api/config
- * List all pipeline configurations
+ * List all pipeline configurations (the default row is the active one).
  */
 export async function GET(req: NextRequest) {
   return catchApiErrors(async () => {
@@ -17,30 +18,31 @@ export async function GET(req: NextRequest) {
 
 /**
  * POST /api/config
- * Create a new configuration or update default config
+ * Upsert a pipeline configuration by name. Body: { name, description?, ...values }
+ * where ...values are the writable keys validated in ./validate. Unknown keys
+ * are dropped, never forwarded into the pipeline config.
  */
 export async function POST(req: NextRequest) {
   return catchApiErrors(async () => {
     const body = await req.json();
-    const { name, description, isDefault, ...configValues } = body;
+    const { name, description, isDefault, ...rest } = body;
 
     if (!name) {
       return apiError(ErrorCode.VALIDATION_FAILED, 'Config name is required');
     }
 
-    // Hand-written validation for config constraints
-    if (configValues.adScoreThreshold !== undefined) {
-      const val = parseFloat(configValues.adScoreThreshold);
-      if (isNaN(val) || val < 0.0 || val > 1.0) {
-        return apiError(
-          ErrorCode.VALIDATION_FAILED,
-          'adScoreThreshold must be between 0.0 and 1.0',
-        );
-      }
+    // Keep only the writable keys, validate them, drop the rest.
+    const configValues: Record<string, unknown> = {};
+    for (const key of CONFIG_KEYS) {
+      if (key in rest) configValues[key] = rest[key];
+    }
+
+    const problems = validateConfigValues(configValues as Record<string, ConfigValue>);
+    if (problems.length > 0) {
+      return apiError(ErrorCode.VALIDATION_FAILED, problems.join('; '));
     }
 
     try {
-      // If setting this config as default, clear other default flag
       if (isDefault) {
         await db.pipelineConfig.updateMany({
           where: { isDefault: true },
@@ -51,13 +53,13 @@ export async function POST(req: NextRequest) {
       const config = await db.pipelineConfig.upsert({
         where: { name },
         update: {
-          description,
-          isDefault: !!isDefault,
+          ...(description !== undefined ? { description } : {}),
+          ...(isDefault !== undefined ? { isDefault: !!isDefault } : {}),
           ...configValues,
         },
         create: {
           name,
-          description,
+          ...(description !== undefined ? { description } : {}),
           isDefault: !!isDefault,
           ...configValues,
         },

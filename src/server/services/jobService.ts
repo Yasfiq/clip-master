@@ -16,20 +16,12 @@ export interface CreateJobInput {
     adFilterEnabled: boolean;
     adScoreThreshold: number;
     minSegmentDuration: number;
-    maxSegmentDuration: number;
     targetDuration: number;
-    mergeThreshold: number;
-    gradingPreset: string;
+    maxClips: number;
+    colorGrading: string;
+    backsoundEnabled: boolean;
     subtitleEnabled: boolean;
-    subtitleLang: string;
-    videoBitrate: string;
-    audioBitrate: string;
     targetResolution: string;
-    audioCodec: string;
-    videoCodec: string;
-    h264Preset: string;
-    keyframeInterval: number;
-    fastStart: boolean;
   }>;
 }
 

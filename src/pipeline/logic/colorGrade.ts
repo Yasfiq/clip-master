@@ -3,7 +3,7 @@
  * No filesystem or process spawning — unit-testable.
  */
 
-export type ColorGradePreset = 'vivid' | 'warm' | 'cool' | 'cinematic' | 'vintage';
+export type ColorGradePreset = 'natural' | 'vivid' | 'warm' | 'cool' | 'cinematic' | 'vintage';
 
 export interface ColorGradeConfig {
   preset: ColorGradePreset;
@@ -27,6 +27,11 @@ export function buildColorGradeFilter(config: ColorGradeConfig): string {
   let filter = '';
 
   switch (preset) {
+    case 'natural':
+      // No grading — pass the source video through untouched.
+      filter = '';
+      break;
+
     case 'vivid':
       // High saturation, boost midtones
       filter = `eq=brightness=${b}:contrast=${(contrast * 1.2).toFixed(2)}:saturation=${(
@@ -75,9 +80,9 @@ export function buildColorGradeFilter(config: ColorGradeConfig): string {
 export function validateColorGradeConfig(config: any): string | null {
   if (
     !config.preset ||
-    !['vivid', 'warm', 'cool', 'cinematic', 'vintage'].includes(config.preset)
+    !['natural', 'vivid', 'warm', 'cool', 'cinematic', 'vintage'].includes(config.preset)
   ) {
-    return 'Invalid preset. Must be one of: vivid, warm, cool, cinematic, vintage';
+    return 'Invalid preset. Must be one of: natural, vivid, warm, cool, cinematic, vintage';
   }
   if (config.brightness !== undefined && (config.brightness < -1 || config.brightness > 1)) {
     return 'Brightness must be between -1.0 and 1.0';

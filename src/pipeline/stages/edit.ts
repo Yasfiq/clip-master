@@ -2,6 +2,7 @@ import { PipelineStage } from '@prisma/client';
 import { PipelineStageHandler, StageContext } from '../runner-types';
 import { runBinaryChecked } from '../binaries/spawn';
 import { buildColorGradeFilter, ColorGradePreset } from '../logic/colorGrade';
+import { shouldPassThroughVideo } from '../logic/editWiring';
 import { buildAudioDuckFilter, DEFAULT_AUDIO_CONFIG } from '../logic/audioDuck';
 import {
   detectSilenceRegions,
@@ -45,8 +46,11 @@ export class EditStage implements PipelineStageHandler {
     const editedDir = path.join(ctx.workDir, 'edited');
     await fs.mkdir(editedDir, { recursive: true });
 
-    // Get color grading preset from config
-    const colorPreset: ColorGradePreset = (ctx.config?.colorGrading as ColorGradePreset) || 'vivid';
+    // Color grading preset from config. Defaults to natural (no grading) —
+    // the source footage passes through untouched unless the user opts into
+    // a filter preset. TODO: presets beyond natural are not yet exposed in UI.
+    const colorPreset: ColorGradePreset =
+      (ctx.config?.colorGrading as ColorGradePreset) || 'natural';
 
     // Get backsound settings
     const backsoundEnabled = ctx.config?.backsoundEnabled !== false;
@@ -75,16 +79,28 @@ export class EditStage implements PipelineStageHandler {
         saturation: 1.0,
       });
 
+      // Natural grading produces an empty filter. The video stream must then
+      // pass through untouched: copying avoids feeding '' to ffmpeg, which
+      // would corrupt the graph or produce a broken encode.
+      const videoPassThrough = shouldPassThroughVideo(colorFilter);
+
       if (backsoundPath && ctx.metadata?.hasAudio) {
         // Apply color grading + audio mixing
         const dur = clip.duration ?? ctx.metadata?.duration ?? 0;
-        await this.applyColorAndAudio(clip.cutPath, editedPath, colorFilter, backsoundPath, dur);
+        await this.applyColorAndAudio(
+          clip.cutPath,
+          editedPath,
+          colorFilter,
+          backsoundPath,
+          dur,
+          videoPassThrough,
+        );
       } else if (ctx.metadata?.hasAudio && !backsoundPath) {
         // Apply color grading only, keep original audio
-        await this.applyColorOnly(clip.cutPath, editedPath, colorFilter);
+        await this.applyColorOnly(clip.cutPath, editedPath, colorFilter, videoPassThrough);
       } else {
         // No audio track, just apply color grading
-        await this.applyColorOnly(clip.cutPath, editedPath, colorFilter);
+        await this.applyColorOnly(clip.cutPath, editedPath, colorFilter, videoPassThrough);
       }
 
       // Verify edited file
@@ -114,22 +130,24 @@ export class EditStage implements PipelineStageHandler {
   /**
    * Apply color grading filter only (no audio mixing).
    */
+
+  /**
+   * Apply color grading only (no audio mixing). When the grading filter is
+   * empty (natural), pass the video through as a stream copy — no re-encode
+   * of an untouched image.
+   */
   private async applyColorOnly(
     inputPath: string,
     outputPath: string,
     colorFilter: string,
+    videoPassThrough: boolean,
   ): Promise<void> {
     const args = [
       '-i',
       inputPath,
-      '-vf',
-      colorFilter,
-      '-c:v',
-      'libx264',
-      '-preset',
-      'medium',
-      '-crf',
-      '23',
+      ...(videoPassThrough
+        ? ['-c:v', 'copy']
+        : ['-vf', colorFilter, '-c:v', 'libx264', '-preset', 'medium', '-crf', '23']),
       '-c:a',
       'copy',
       '-y',
@@ -149,6 +167,7 @@ export class EditStage implements PipelineStageHandler {
     colorFilter: string,
     backsoundPath: string,
     clipDuration: number,
+    videoPassThrough: boolean,
   ): Promise<void> {
     // Detect silences on the voice track (input [0:a]) before mixing.
     // Skipped when the voice track is shorter than the configured minimum
@@ -188,23 +207,38 @@ export class EditStage implements PipelineStageHandler {
       filterComplex = `[0:v] ${colorFilter} [graded]; ${audioFilter}`;
     }
 
+    // Natural grading: video passes through untouched (map + copy), and the
+    // filter_complex graph must contain only audio filters — an empty video
+    // filter chain would corrupt the graph. The audio branch references
+    // [0:a]/[1:a] only, so drop the video edge entirely.
+    if (videoPassThrough) {
+      const audioOnlyGraph = filterComplex
+        .replace(`[0:v] ${colorFilter} [graded]; `, '')
+        .replace(`[0:v] ${colorFilter} [graded];`, '');
+      filterComplex = audioOnlyGraph;
+    }
+
     const args = [
       '-i',
       inputPath,
       '-i',
       backsoundPath,
-      '-filter_complex',
-      filterComplex,
-      '-map',
-      '[graded]',
+      ...(videoPassThrough
+        ? ['-map', '0:v', '-c:v', 'copy']
+        : [
+            '-filter_complex',
+            filterComplex,
+            '-map',
+            '[graded]',
+            '-c:v',
+            'libx264',
+            '-preset',
+            'medium',
+            '-crf',
+            '23',
+          ]),
       '-map',
       '[limited]',
-      '-c:v',
-      'libx264',
-      '-preset',
-      'medium',
-      '-crf',
-      '23',
       '-c:a',
       'aac',
       '-b:a',

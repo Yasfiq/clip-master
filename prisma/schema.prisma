@@ -41,14 +41,6 @@ enum PipelineStage {
   COMPRESS
 }
 
-enum GradingPreset {
-  NATURAL
-  WARM_VIBRANT
-  CINEMATIC_TEAL_ORANGE
-  HIGH_CONTRAST_BW
-  COOL_DESATURATED
-}
-
 model Job {
   id                 String         @id @default(cuid())
   status             JobStatus      @default(PENDING)
@@ -124,41 +116,24 @@ model Clip {
 }
 
 model PipelineConfig {
-  id                 String        @id @default(cuid())
-  isDefault          Boolean       @default(false)
-  name               String        @unique
-  description        String?
+  id           String  @id @default(cuid())
+  isDefault    Boolean @default(false)
+  name         String  @unique
+  description  String?
   // AD FILTER
-  adFilterEnabled    Boolean       @default(true)
-  adScoreThreshold   Float         @default(0.75) // score threshold to reject
+  adFilterEnabled  Boolean @default(true)
+  adScoreThreshold Float   @default(0.75) // score threshold to reject
   // ANALYZE
-  minSegmentDuration Float         @default(120.0) // 2 min
-  maxSegmentDuration Float         @default(300.0) // 5 min
-  targetDuration     Float         @default(180.0) // 3 min
-  mergeThreshold     Float         @default(120.0) // 2 min
-  maxClips           Int           @default(5) // Maximum clips per video (Phase 1: 3-5 min format)
+  minSegmentDuration Float @default(120.0) // min window length (s)
+  targetDuration     Float @default(60.0) // target clip length (s)
+  maxClips           Int   @default(5) // max clips per job
   // EDIT
-  gradingPreset      GradingPreset @default(NATURAL)
-  bgmSourcePath      String? // custom bgm
-  duckThreshold      Float         @default(-24.0) // db
-  duckRatio          Float         @default(0.5) // transition speed
-  duckLevel          Float         @default(2.0)
+  colorGrading     String  @default("natural") // 'natural' today — original color, no filter
+  backsoundEnabled Boolean @default(true) // duck backsound under voice when an asset exists
   // SUBTITLE
-  subtitleEnabled    Boolean       @default(true)
-  subtitleLang       String        @default("id")
-  maxLineLength      Int           @default(42)
-  maxLines           Int           @default(2)
-  minDuration        Float         @default(1.0)
-  maxDuration        Float         @default(7.0)
+  subtitleEnabled Boolean @default(true) // burn-in subtitles via Whisper
   // EXPORT
-  videoBitrate       String        @default("crf=21")
-  audioBitrate       String        @default("192k")
-  targetResolution   String        @default("1080x1920") // 9:16 portrait for TikTok/Reels
-  audioCodec         String        @default("aac")
-  videoCodec         String        @default("libx264")
-  h264Preset         String        @default("medium")
-  keyframeInterval   Int           @default(48)
-  fastStart          Boolean       @default(true)
+  targetResolution String @default("1080x1920") // 9:16 portrait WxH
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

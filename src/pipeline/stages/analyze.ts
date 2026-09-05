@@ -22,9 +22,8 @@ export class AnalyzeStage implements PipelineStageHandler {
     await onProgress(0.15, 'Building sliding analysis windows');
 
     // 1. Sliding windows across the full video (3-5 min target clips)
-    const targetDur = ctx.config?.targetDuration || 180;
-    const minDur = ctx.config?.minSegmentDuration || 120;
-    const maxDur = ctx.config?.maxSegmentDuration || 300;
+    const targetDur = ctx.config?.targetDuration || 60;
+    const minDur = Math.min(ctx.config?.minSegmentDuration || 120, targetDur);
     const stepSize = Math.max(30, Math.floor(targetDur / 3));
     const maxClips = Math.min(ctx.config?.maxClips || 10, 10);
 

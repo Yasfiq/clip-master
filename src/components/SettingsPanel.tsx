@@ -1,439 +1,454 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  CLIP_LENGTH_OPTIONS,
+  RESOLUTION_OPTIONS,
+  clipLengthToTargetSeconds,
+  targetSecondsToClipLength,
+  resolutionToTarget,
+} from '@/pipeline/logic/configPresets';
 
-interface PipelineConfig {
+/**
+ * The writable config surface this panel edits — exactly the columns the
+ * pipeline reads (see prisma/schema.prisma PipelineConfig). Anything not
+ * listed here would be UI-only illusion, so it is deliberately absent.
+ */
+interface PipelineConfigValues {
   adFilterEnabled: boolean;
   adScoreThreshold: number;
   minSegmentDuration: number;
-  maxSegmentDuration: number;
   targetDuration: number;
-  mergeThreshold: number;
-  gradingPreset: string;
+  maxClips: number;
+  colorGrading: string;
+  backsoundEnabled: boolean;
   subtitleEnabled: boolean;
-  subtitleLang: string;
-  videoBitrate: string;
-  audioBitrate: string;
   targetResolution: string;
-  audioCodec: string;
-  videoCodec: string;
-  h264Preset: string;
-  keyframeInterval: number;
-  fastStart: boolean;
 }
+
+const DEFAULT_VALUES: PipelineConfigValues = {
+  adFilterEnabled: true,
+  adScoreThreshold: 0.75,
+  minSegmentDuration: 120,
+  targetDuration: 60,
+  maxClips: 5,
+  colorGrading: 'natural',
+  backsoundEnabled: true,
+  subtitleEnabled: true,
+  targetResolution: '1080x1920',
+};
 
 interface SettingsPanelProps {
   className?: string;
 }
 
-const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
-  const [config, setConfig] = useState<Partial<PipelineConfig>>({});
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [activeTab, setActiveTab] = useState<'pipeline' | 'video' | 'export'>('pipeline');
+type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
+const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
+  const [config, setConfig] = useState<PipelineConfigValues>(DEFAULT_VALUES);
+  const [loaded, setLoaded] = useState(false);
+  const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [saveMessage, setSaveMessage] = useState('');
+
+  // Load the active (default) config from the server. GET /api/config returns
+  // an array under { data }; the default row is the active one.
   useEffect(() => {
+    let cancelled = false;
     fetch('/api/config')
-      .then((r) => r.json())
-      .then((data) => {
-        setConfig(data.config || {});
-        setLoading(false);
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((payload) => {
+        if (cancelled) return;
+        const configs = payload?.success ? payload.data : payload;
+        const active = Array.isArray(configs)
+          ? configs.find((c: any) => c.isDefault) || configs[0]
+          : configs;
+        if (active) {
+          setConfig((prev) => ({ ...prev, ...pickWritable(active) }));
+        }
+        setLoaded(true);
       })
       .catch(() => {
-        // Use defaults on error
-        setLoading(false);
+        if (!cancelled) setLoaded(true); // keep defaults, surface save errors later
       });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleSave = async () => {
-    setSaving(true);
-    setMessage(null);
+    setSaveState('saving');
+    setSaveMessage('');
     try {
       const res = await fetch('/api/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
+        body: JSON.stringify({
+          name: 'default',
+          isDefault: true,
+          ...config,
+        }),
       });
-      if (!res.ok) throw new Error('Failed to save');
-      setMessage({ type: 'success', text: 'Settings saved successfully' });
-    } catch {
-      setMessage({ type: 'error', text: 'Failed to save settings' });
-    } finally {
-      setSaving(false);
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.error?.message || `HTTP ${res.status}`);
+      }
+      setSaveState('saved');
+      setSaveMessage('Settings saved — they apply to the next job you create.');
+      window.setTimeout(() => setSaveState('idle'), 4000);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setSaveState('error');
+      setSaveMessage(msg);
     }
   };
 
-  const updateConfig = (key: keyof PipelineConfig, value: any) => {
+  const update = <K extends keyof PipelineConfigValues>(key: K, value: PipelineConfigValues[K]) => {
     setConfig((prev) => ({ ...prev, [key]: value }));
   };
 
-  if (loading) {
-    return (
-      <div className={`bg-white rounded-xl shadow-sm p-6 ${className}`}>
-        <div className="animate-pulse space-y-4">
-          <div className="h-6 bg-gray-200 rounded w-1/3" />
-          <div className="h-10 bg-gray-200 rounded" />
-          <div className="h-10 bg-gray-200 rounded" />
-          <div className="h-10 bg-gray-200 rounded" />
-        </div>
-      </div>
-    );
-  }
+  // —— Clip Length ——
+  const clipLengthId = targetSecondsToClipLength(config.targetDuration);
+  const onClipLength = (id: string) => {
+    const seconds = clipLengthToTargetSeconds(id);
+    if (seconds === undefined) {
+      // Auto: pipeline picks from the source. Persist the default target so a
+      // job always has a concrete row value.
+      update('targetDuration', DEFAULT_VALUES.targetDuration);
+    } else {
+      update('targetDuration', seconds);
+    }
+  };
 
-  const tabs = [
-    { id: 'pipeline', label: 'Pipeline' },
-    { id: 'video', label: 'Video' },
-    { id: 'export', label: 'Export' },
-  ] as const;
+  const saveTone =
+    saveState === 'saved'
+      ? 'text-green-700 bg-green-50 border-green-200'
+      : saveState === 'error'
+        ? 'text-red-700 bg-red-50 border-red-200'
+        : 'border-transparent';
 
   return (
     <div className={`bg-white rounded-xl shadow-sm overflow-hidden ${className}`}>
       {/* Header */}
-      <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-        <h2 className="text-xl font-semibold text-gray-900">Settings</h2>
-        <p className="text-sm text-gray-500 mt-1">Configure pipeline behavior</p>
+      <div className="px-6 py-5 border-b border-gray-200">
+        <h2 className="text-lg font-semibold text-gray-900">Clip Settings</h2>
+        <p className="text-sm text-gray-500 mt-0.5">
+          How your clips are made. The defaults are tuned for Shorts — most people never need to
+          touch the Advanced section.
+        </p>
       </div>
 
-      {/* Tabs */}
-      <div className="border-b border-gray-200">
-        <nav className="flex px-6">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === tab.id
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
+      <div className="p-6 space-y-8">
+        {/* ——— Create section (laypeople) ——— */}
+        <section aria-labelledby="create-heading">
+          <h3
+            id="create-heading"
+            className="text-xs font-semibold text-gray-400 uppercase tracking-wider"
+          >
+            New clips
+          </h3>
+
+          {/* Clip Length */}
+          <div className="mt-4">
+            <div className="flex items-baseline justify-between">
+              <label className="text-sm font-medium text-gray-900">Clip length</label>
+              <span className="text-xs text-gray-400 tabular-nums">
+                {clipLengthId === 'auto'
+                  ? 'Automatic — pick the best length per video'
+                  : `${config.targetDuration}s clips`}
+              </span>
+            </div>
+            <div
+              className="mt-2 grid grid-cols-3 sm:grid-cols-5 gap-2"
+              role="radiogroup"
+              aria-label="Clip length"
             >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-      </div>
-
-      {/* Content */}
-      <div className="p-6 space-y-6">
-        {/* Pipeline Tab */}
-        {activeTab === 'pipeline' && (
-          <>
-            {/* Ad Filter */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-gray-900 border-b border-gray-200 pb-2">
-                Advertisement Filter
-              </h3>
-              <label className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  checked={config.adFilterEnabled ?? true}
-                  onChange={(e) => updateConfig('adFilterEnabled', e.target.checked)}
-                  className="w-4 h-4 text-blue-600 rounded"
-                />
-                <span className="text-sm text-gray-700">Enable ad detection</span>
-              </label>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Ad Score Threshold ({config.adScoreThreshold ?? 0.75})
-                </label>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={config.adScoreThreshold ?? 0.75}
-                  onChange={(e) => updateConfig('adScoreThreshold', parseFloat(e.target.value))}
-                  className="w-full"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Higher = stricter filtering. Videos above this threshold rejected as pure ads.
-                </p>
-              </div>
-            </div>
-
-            {/* Segment Settings */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-gray-900 border-b border-gray-200 pb-2">
-                Segment Settings
-              </h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Min Duration (s)
-                  </label>
-                  <input
-                    type="number"
-                    value={config.minSegmentDuration ?? 10}
-                    onChange={(e) => updateConfig('minSegmentDuration', parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                    min="1"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Max Duration (s)
-                  </label>
-                  <input
-                    type="number"
-                    value={config.maxSegmentDuration ?? 60}
-                    onChange={(e) => updateConfig('maxSegmentDuration', parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                    min="1"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Target Duration (s)
-                  </label>
-                  <input
-                    type="number"
-                    value={config.targetDuration ?? 30}
-                    onChange={(e) => updateConfig('targetDuration', parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                    min="1"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Merge Threshold (s)
-                  </label>
-                  <input
-                    type="number"
-                    value={config.mergeThreshold ?? 5}
-                    onChange={(e) => updateConfig('mergeThreshold', parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                    min="0"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Color Grading */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-gray-900 border-b border-gray-200 pb-2">
-                Color Grading
-              </h3>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Preset</label>
-                <select
-                  value={config.gradingPreset ?? 'natural'}
-                  onChange={(e) => updateConfig('gradingPreset', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                >
-                  <option value="natural">Natural (no grading)</option>
-                  <option value="vivid">Vivid (saturated colors)</option>
-                  <option value="cinematic">Cinematic (teal/orange)</option>
-                  <option value="warm">Warm (golden tones)</option>
-                  <option value="cool">Cool (blue tones)</option>
-                </select>
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* Video Tab */}
-        {activeTab === 'video' && (
-          <>
-            {/* Subtitles */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-gray-900 border-b border-gray-200 pb-2">
-                Subtitles
-              </h3>
-              <label className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  checked={config.subtitleEnabled ?? true}
-                  onChange={(e) => updateConfig('subtitleEnabled', e.target.checked)}
-                  className="w-4 h-4 text-blue-600 rounded"
-                />
-                <span className="text-sm text-gray-700">Enable auto-subtitles (Whisper)</span>
-              </label>
-              {config.subtitleEnabled && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Language Code
-                  </label>
-                  <select
-                    value={config.subtitleLang ?? 'id'}
-                    onChange={(e) => updateConfig('subtitleLang', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              {CLIP_LENGTH_OPTIONS.map((opt) => {
+                const selected = clipLengthId === opt.id;
+                // Mobile shows a short name; desktop includes the duration.
+                const [name, dur] = opt.label.split(' ');
+                const mobileLabel = name;
+                const desktopLabel = opt.label;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => onClipLength(opt.id)}
+                    className={`px-2 py-2.5 text-sm font-medium rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500 ${
+                      selected
+                        ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
+                        : 'bg-white border-gray-200 text-gray-700 hover:border-blue-300 hover:text-blue-700'
+                    }`}
                   >
-                    <option value="id">Indonesian</option>
-                    <option value="en">English</option>
-                    <option value="auto">Auto-detect</option>
-                  </select>
-                </div>
-              )}
+                    <span className="sm:hidden">{mobileLabel}</span>
+                    <span className="hidden sm:inline">{desktopLabel}</span>
+                    <span className="sr-only">{dur ? ` ${dur}` : ''}</span>
+                  </button>
+                );
+              })}
             </div>
+            <p className="mt-1.5 text-[11px] text-gray-400 px-0.5">
+              {clipLengthId === 'auto'
+                ? 'Pipeline picks the best length per video.'
+                : `Each clip targets ${config.targetDuration} seconds.`}
+            </p>
+          </div>
 
-            {/* Resolution */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-gray-900 border-b border-gray-200 pb-2">
-                Resolution
-              </h3>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Target Resolution
-                </label>
-                <select
-                  value={config.targetResolution ?? '1080p'}
-                  onChange={(e) => updateConfig('targetResolution', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                >
-                  <option value="1080p">1080p (1920x1080)</option>
-                  <option value="720p">720p (1280x720)</option>
-                  <option value="480p">480p (854x480)</option>
-                  <option value="original">Original resolution</option>
-                </select>
-              </div>
+          {/* Captions */}
+          <div className="mt-7 flex items-center justify-between gap-6 rounded-lg border border-gray-200 px-4 py-3.5">
+            <div>
+              <p className="text-sm font-medium text-gray-900">Auto captions</p>
+              <p className="text-sm text-gray-500 mt-0.5">
+                Transcribe speech and burn subtitles into each clip
+              </p>
             </div>
-          </>
-        )}
+            <Toggle
+              checked={config.subtitleEnabled}
+              onChange={(v) => update('subtitleEnabled', v)}
+              label="Auto captions"
+            />
+          </div>
+        </section>
 
-        {/* Export Tab */}
-        {activeTab === 'export' && (
-          <>
-            {/* Codec */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-gray-900 border-b border-gray-200 pb-2">
-                Codec Settings
-              </h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Video Codec
-                  </label>
-                  <select
-                    value={config.videoCodec ?? 'h264'}
-                    onChange={(e) => updateConfig('videoCodec', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                  >
-                    <option value="h264">H.264 (best compatibility)</option>
-                    <option value="h265">H.265/HEVC (smaller size)</option>
-                    <option value="vp9">VP9 (WebM support)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Audio Codec
-                  </label>
-                  <select
-                    value={config.audioCodec ?? 'aac'}
-                    onChange={(e) => updateConfig('audioCodec', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                  >
-                    <option value="aac">AAC (best compatibility)</option>
-                    <option value="mp3">MP3</option>
-                    <option value="opus">Opus (smaller size)</option>
-                  </select>
-                </div>
-              </div>
-            </div>
+        {/* ——— Advanced (collapsed by default) ——— */}
+        <AdvancedSection config={config} update={update} />
 
-            {/* Quality */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-gray-900 border-b border-gray-200 pb-2">
-                Quality
-              </h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Video Bitrate
-                  </label>
-                  <select
-                    value={config.videoBitrate ?? 'auto'}
-                    onChange={(e) => updateConfig('videoBitrate', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                  >
-                    <option value="high">High (8 Mbps)</option>
-                    <option value="medium">Medium (4 Mbps)</option>
-                    <option value="low">Low (2 Mbps)</option>
-                    <option value="auto">Auto (CRF-based)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Audio Bitrate
-                  </label>
-                  <select
-                    value={config.audioBitrate ?? '128k'}
-                    onChange={(e) => updateConfig('audioBitrate', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                  >
-                    <option value="192k">192 kbps</option>
-                    <option value="128k">128 kbps</option>
-                    <option value="96k">96 kbps</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            {/* Advanced */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-gray-900 border-b border-gray-200 pb-2">
-                Advanced
-              </h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    H.264 Preset
-                  </label>
-                  <select
-                    value={config.h264Preset ?? 'medium'}
-                    onChange={(e) => updateConfig('h264Preset', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                  >
-                    <option value="slow">Slow (smaller file, slower encode)</option>
-                    <option value="medium">Medium (balanced)</option>
-                    <option value="fast">Fast (larger file, faster encode)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Keyframe Interval (s)
-                  </label>
-                  <input
-                    type="number"
-                    value={config.keyframeInterval ?? 2}
-                    onChange={(e) => updateConfig('keyframeInterval', parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                    min="1"
-                    max="10"
-                  />
-                </div>
-              </div>
-              <label className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  checked={config.fastStart ?? true}
-                  onChange={(e) => updateConfig('fastStart', e.target.checked)}
-                  className="w-4 h-4 text-blue-600 rounded"
-                />
-                <div>
-                  <span className="text-sm text-gray-700">Fast Start</span>
-                  <p className="text-xs text-gray-500">
-                    Enable streaming-friendly MP4 (slightly larger file)
-                  </p>
-                </div>
-              </label>
-            </div>
-          </>
-        )}
-
-        {/* Save Button */}
-        <div className="pt-4 border-t border-gray-200 flex justify-end">
+        {/* Save bar */}
+        <div className="pt-2 border-t border-gray-100 flex items-center justify-between gap-4">
+          <p
+            className={`text-sm px-3 py-2 rounded-md border ${saveTone} ${saveMessage ? '' : 'invisible'}`}
+            role="status"
+            aria-live="polite"
+          >
+            {saveMessage || '\u00a0'}
+          </p>
           <button
             onClick={handleSave}
-            disabled={saving}
-            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            disabled={saveState === 'saving'}
+            className="inline-flex items-center px-5 py-2.5 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-60 transition-colors"
           >
-            {saving ? 'Saving...' : 'Save Settings'}
+            {saveState === 'saving' ? 'Saving…' : 'Save settings'}
           </button>
         </div>
       </div>
     </div>
   );
 };
+
+/** Copy only writable config keys from a server row (tolerates extra columns). */
+function pickWritable(row: Record<string, unknown>): Partial<PipelineConfigValues> {
+  const out: Partial<PipelineConfigValues> = {};
+  for (const key of Object.keys(DEFAULT_VALUES) as (keyof PipelineConfigValues)[]) {
+    if (row[key] !== undefined && row[key] !== null) {
+      (out as Record<string, unknown>)[key] = row[key];
+    }
+  }
+  return out;
+}
+
+/* ————— Toggle switch ————— */
+const Toggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void; label: string }> = ({
+  checked,
+  onChange,
+  label,
+}) => (
+  <button
+    type="button"
+    role="switch"
+    aria-checked={checked}
+    aria-label={label}
+    onClick={() => onChange(!checked)}
+    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
+      checked ? 'bg-blue-600' : 'bg-gray-300'
+    }`}
+  >
+    <span
+      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+        checked ? 'translate-x-6' : 'translate-x-1'
+      }`}
+    />
+  </button>
+);
+
+/* ————— Advanced collapsible ————— */
+const AdvancedSection: React.FC<{
+  config: PipelineConfigValues;
+  update: <K extends keyof PipelineConfigValues>(k: K, v: PipelineConfigValues[K]) => void;
+}> = ({ config, update }) => {
+  const [open, setOpen] = useState(false);
+  const panelId = 'advanced-panel';
+
+  return (
+    <section aria-labelledby="advanced-heading">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-controls={panelId}
+        className="flex w-full items-center justify-between text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-md px-1 py-1"
+      >
+        <span className="flex items-center gap-2">
+          <span id="advanced-heading">Advanced</span>
+          <span className="text-xs font-normal text-gray-400">
+            Ad filter · number of clips · output quality
+          </span>
+        </span>
+        <Chevron open={open} />
+      </button>
+
+      {open && (
+        <div id={panelId} className="mt-4 space-y-6 border-t border-gray-100 pt-5">
+          {/* Ad filter */}
+          <div className="flex items-start justify-between gap-6">
+            <div>
+              <p className="text-sm font-medium text-gray-900">Reject pure ad videos</p>
+              <p className="text-sm text-gray-500 mt-0.5">
+                Videos that are nothing but an advertisement are stopped before processing. Videos
+                with ads inside real content still go through.
+              </p>
+            </div>
+            <Toggle
+              checked={config.adFilterEnabled}
+              onChange={(v) => update('adFilterEnabled', v)}
+              label="Reject pure ad videos"
+            />
+          </div>
+
+          {config.adFilterEnabled && (
+            <div className="pl-1">
+              <div className="flex items-baseline justify-between">
+                <label htmlFor="ad-threshold" className="text-sm font-medium text-gray-700">
+                  Filter strictness
+                </label>
+                <span className="text-xs text-gray-400 tabular-nums">
+                  {Math.round(config.adScoreThreshold * 100)}%
+                </span>
+              </div>
+              <input
+                id="ad-threshold"
+                type="range"
+                min="50"
+                max="95"
+                step="5"
+                value={Math.round(config.adScoreThreshold * 100)}
+                onChange={(e) => update('adScoreThreshold', Number(e.target.value) / 100)}
+                className="mt-2 w-full accent-blue-600"
+              />
+              <div className="flex justify-between text-[11px] text-gray-400">
+                <span>Fewer videos rejected</span>
+                <span>More strict</span>
+              </div>
+            </div>
+          )}
+
+          {/* Max clips */}
+          <div>
+            <div className="flex items-baseline justify-between">
+              <label htmlFor="max-clips" className="text-sm font-medium text-gray-900">
+                Maximum clips per video
+              </label>
+              <span className="text-sm tabular-nums text-gray-700 font-medium">
+                {config.maxClips}
+              </span>
+            </div>
+            <input
+              id="max-clips"
+              type="range"
+              min="1"
+              max="10"
+              step="1"
+              value={config.maxClips}
+              onChange={(e) => update('maxClips', Number(e.target.value))}
+              className="mt-2 w-full accent-blue-600"
+            />
+            <div className="flex justify-between text-[11px] text-gray-400">
+              <span>Just the best</span>
+              <span>More clips</span>
+            </div>
+          </div>
+
+          {/* Backsound */}
+          <div className="flex items-start justify-between gap-6">
+            <div>
+              <p className="text-sm font-medium text-gray-900">Background music</p>
+              <p className="text-sm text-gray-500 mt-0.5">
+                Duck a music track under the voice when one is present in
+                <span className="font-mono text-xs"> media/assets/ </span>
+              </p>
+            </div>
+            <Toggle
+              checked={config.backsoundEnabled}
+              onChange={(v) => update('backsoundEnabled', v)}
+              label="Background music"
+            />
+          </div>
+
+          {/* Resolution */}
+          <div>
+            <label htmlFor="resolution" className="text-sm font-medium text-gray-900">
+              Output quality
+            </label>
+            <select
+              id="resolution"
+              value={config.targetResolution}
+              onChange={(e) => update('targetResolution', e.target.value)}
+              className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              {RESOLUTION_OPTIONS.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Segment minimum — matches analyze window lower bound */}
+          <div>
+            <label htmlFor="min-segment" className="text-sm font-medium text-gray-900">
+              Shortest meaningful segment
+            </label>
+            <div className="mt-1.5 flex items-center gap-3">
+              <input
+                id="min-segment"
+                type="range"
+                min="30"
+                max="180"
+                step="15"
+                value={Math.min(config.minSegmentDuration, 180)}
+                onChange={(e) => update('minSegmentDuration', Number(e.target.value))}
+                className="w-full accent-blue-600"
+              />
+              <span className="w-14 text-right text-sm tabular-nums text-gray-700">
+                {config.minSegmentDuration}s
+              </span>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">
+              Candidate windows shorter than this are never considered.
+            </p>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+};
+
+const Chevron: React.FC<{ open: boolean }> = ({ open }) => (
+  <svg
+    viewBox="0 0 20 20"
+    fill="currentColor"
+    className={`h-4 w-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}
+    aria-hidden="true"
+  >
+    <path
+      fillRule="evenodd"
+      d="M5.23 7.21a.75.75 0 011.06.02L10 11.06l3.71-3.83a.75.75 0 111.08 1.04l-4.25 4.39a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z"
+      clipRule="evenodd"
+    />
+  </svg>
+);
 
 export default SettingsPanel;
