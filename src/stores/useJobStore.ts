@@ -7,7 +7,16 @@ interface Job {
   name: string;
   sourceUrl?: string;
   sourcePath?: string;
-  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'REJECTED_AD';
+  status:
+    | 'PENDING'
+    | 'RUNNING'
+    | 'RUNNING_PHASE1'
+    | 'PHASE1_DONE'
+    | 'RUNNING_PHASE2'
+    | 'COMPLETED'
+    | 'FAILED'
+    | 'CANCELLED'
+    | 'REJECTED_AD';
   progress: number; // 0-100
   clipsCount: number;
   duration?: number;

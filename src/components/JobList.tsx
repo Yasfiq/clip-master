@@ -77,12 +77,19 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
     return () => clearInterval(interval);
   }, [limit]);
 
+  const isRunning = (s: string) => s === 'RUNNING_PHASE1' || s === 'RUNNING_PHASE2';
+  const isCancellable = (s: string) => isRunning(s);
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'PENDING':
         return 'bg-yellow-100 text-yellow-800 border-yellow-200';
       case 'RUNNING':
+      case 'RUNNING_PHASE1':
+      case 'RUNNING_PHASE2':
         return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'PHASE1_DONE':
+        return 'bg-indigo-100 text-indigo-800 border-indigo-200';
       case 'COMPLETED':
         return 'bg-green-100 text-green-800 border-green-200';
       case 'FAILED':
@@ -93,6 +100,21 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
         return 'bg-orange-100 text-orange-800 border-orange-200';
       default:
         return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  const formatStatus = (status: string) => {
+    switch (status) {
+      case 'RUNNING_PHASE1':
+        return 'RUNNING P1';
+      case 'RUNNING_PHASE2':
+        return 'RUNNING P2';
+      case 'PHASE1_DONE':
+        return 'PHASE 1 DONE';
+      case 'REJECTED_AD':
+        return 'REJECTED (AD)';
+      default:
+        return status;
     }
   };
 
@@ -141,7 +163,7 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
   const handleCancel = async (job: (typeof jobs)[number]) => {
     // Call API to cancel job
     try {
-      const res = await fetch(`/api/jobs/${job.id}/cancel`, { method: 'POST' });
+      const res = await fetch(`/api/jobs/${job.id}?action=cancel`, { method: 'POST' });
       if (res.ok) {
         updateJob(job.id, { status: 'CANCELLED' });
       }
@@ -194,15 +216,21 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
       </h2>
 
       <div className="overflow-x-auto">
-        <table className="w-full">
+        <table className="w-full table-fixed">
+          <colgroup>
+            <col className="w-[112px]" /> {/* Status */}
+            <col /> {/* Source */}
+            <col className="w-[140px]" /> {/* Progress */}
+            <col className="w-[60px]" /> {/* Clips */}
+            <col className="w-[88px]" /> {/* Created */}
+            <col className="w-[96px]" /> {/* Actions */}
+          </colgroup>
           <thead>
             <tr className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               <th className="pb-3">Status</th>
-              <th className="pb-3">Job ID</th>
               <th className="pb-3">Source</th>
               <th className="pb-3">Progress</th>
               <th className="pb-3">Clips</th>
-              <th className="pb-3">Duration</th>
               <th className="pb-3">Created</th>
               <th className="pb-3 text-right">Actions</th>
             </tr>
@@ -214,51 +242,60 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
                 className="hover:bg-gray-50 cursor-pointer transition-colors"
                 onClick={() => handleJobClick(job)}
               >
-                <td className="py-3 pr-4">
+                <td className="py-3 pr-3 align-top">
                   <span
-                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(job.status)}`}
+                    className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border ${getStatusColor(job.status)}`}
                   >
-                    {job.status}
+                    {formatStatus(job.status)}
                   </span>
                 </td>
-                <td className="py-3 pr-4 font-mono text-sm text-gray-600">{job.id}</td>
-                <td className="py-3 pr-4">
-                  <div className="text-sm text-gray-900 truncate max-w-xs">
+                <td className="py-3 pr-3 align-top">
+                  <div className="text-sm text-gray-900 truncate" title={job.sourceUrl || job.name}>
                     {job.sourceUrl || job.name || '—'}
                   </div>
+                  <div className="font-mono text-[11px] text-gray-400 truncate" title={job.id}>
+                    {job.id}
+                  </div>
                 </td>
-                <td className="py-3 pr-4">
+                <td className="py-3 pr-3 align-top">
                   <div className="flex items-center gap-2">
-                    <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
                       <div
                         className={`h-full rounded-full ${getProgressColor(job.status)}`}
                         style={{ width: `${job.progress}%` }}
                       />
                     </div>
-                    <span className="text-xs text-gray-600 w-8">{job.progress}%</span>
+                    <span className="text-[11px] text-gray-600 w-7 text-right">
+                      {job.progress}%
+                    </span>
                   </div>
                 </td>
-                <td className="py-3 pr-4">
-                  <span className="text-sm text-gray-900">{job.clipsCount || 0}</span>
+                <td className="py-3 pr-3 align-top text-sm text-gray-900">{job.clipsCount || 0}</td>
+                <td className="py-3 pr-3 align-top text-sm text-gray-500">
+                  {formatDate(job.createdAt)}
                 </td>
-                <td className="py-3 pr-4">
-                  <span className="text-sm text-gray-500">{formatDuration(job.duration)}</span>
-                </td>
-                <td className="py-3 pr-4">
-                  <span className="text-sm text-gray-500">{formatDate(job.createdAt)}</span>
-                </td>
-                <td className="py-3 pr-4 text-right">
-                  <div
-                    className="inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:text-red-800"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (job.status === 'RUNNING' || job.status === 'PENDING') {
+                <td className="py-3 pl-2 align-top text-right">
+                  {isCancellable(job.status) ? (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
                         handleCancel(job);
-                      }
-                    }}
-                  >
-                    {job.status === 'RUNNING' || job.status === 'PENDING' ? '✕ Cancel' : '—'}
-                  </div>
+                      }}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-red-600 border border-red-200 rounded hover:bg-red-50 hover:border-red-300"
+                    >
+                      ✕ Cancel
+                    </button>
+                  ) : job.status === 'PHASE1_DONE' ? (
+                    <span
+                      className="inline-flex items-center px-2 py-1 text-xs font-medium text-indigo-600 border border-indigo-200 rounded bg-indigo-50"
+                      title="Phase 1 complete. Run Phase 2 to cut clips."
+                    >
+                      ⏵ Run P2
+                    </span>
+                  ) : (
+                    <span className="text-xs text-gray-400">—</span>
+                  )}
                 </td>
               </tr>
             ))}

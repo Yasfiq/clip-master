@@ -5,6 +5,7 @@ import useJobStore from '@/stores/useJobStore';
 interface JobCounts {
   pending: number;
   running: number;
+  phase1Done: number;
   completed: number;
   failed: number;
   cancelled: number;
@@ -19,6 +20,7 @@ interface StatusCardsProps {
 const EMPTY_COUNTS: JobCounts = {
   pending: 0,
   running: 0,
+  phase1Done: 0,
   completed: 0,
   failed: 0,
   cancelled: 0,
@@ -30,11 +32,15 @@ const StatusCards: React.FC<StatusCardsProps> = ({ counts: countsProp, loading =
   // the JobList without an extra round-trip to /api/jobs.
   const jobs = useJobStore((state) => state.jobs);
 
+  const isRunning = (s: string) =>
+    s === 'RUNNING' || s === 'RUNNING_PHASE1' || s === 'RUNNING_PHASE2';
+
   const derived: JobCounts =
     jobs.length > 0
       ? {
           pending: jobs.filter((j) => j.status === 'PENDING').length,
-          running: jobs.filter((j) => j.status === 'RUNNING').length,
+          running: jobs.filter((j) => isRunning(j.status)).length,
+          phase1Done: jobs.filter((j) => j.status === 'PHASE1_DONE').length,
           completed: jobs.filter((j) => j.status === 'COMPLETED').length,
           failed: jobs.filter((j) => j.status === 'FAILED').length,
           cancelled: jobs.filter((j) => j.status === 'CANCELLED').length,
@@ -59,6 +65,14 @@ const StatusCards: React.FC<StatusCardsProps> = ({ counts: countsProp, loading =
       color: 'bg-blue-50 border-blue-200 text-blue-800',
       icon: '🔄',
       description: 'Currently processing',
+    },
+    {
+      status: 'phase1Done' as const,
+      title: 'Phase 1 Done',
+      count: counts.phase1Done || 0,
+      color: 'bg-indigo-50 border-indigo-200 text-indigo-800',
+      icon: '🟣',
+      description: 'Awaiting phase 2',
     },
     {
       status: 'completed' as const,
@@ -95,7 +109,7 @@ const StatusCards: React.FC<StatusCardsProps> = ({ counts: countsProp, loading =
     <div className="bg-white rounded-xl shadow-sm p-6">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">Job Status Summary</h3>
       <div className="grid grid-cols-2 gap-4">
-        {cards.map((card) => (
+        {cards.slice(0, 4).map((card) => (
           <div
             key={card.status}
             className={`${card.color} border rounded-lg p-4 transition-all hover:scale-[1.02] hover:shadow-sm`}
@@ -119,7 +133,9 @@ const StatusCards: React.FC<StatusCardsProps> = ({ counts: countsProp, loading =
                           ? 'bg-blue-600'
                           : card.status === 'pending'
                             ? 'bg-yellow-600'
-                            : 'bg-red-600'
+                            : card.status === 'phase1Done'
+                              ? 'bg-indigo-600'
+                              : 'bg-red-600'
                     }`}
                     style={{ width: '100%' }}
                   />
@@ -129,6 +145,22 @@ const StatusCards: React.FC<StatusCardsProps> = ({ counts: countsProp, loading =
           </div>
         ))}
       </div>
+      {/* Failed spans full width so the 2x2 stays balanced. */}
+      {(() => {
+        const failed = cards[4];
+        return (
+          <div className={`mt-4 ${failed.color} border rounded-lg p-4`}>
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="text-sm font-medium">{failed.title}</div>
+                <div className="mt-1 text-2xl font-bold">{failed.count}</div>
+                <div className="text-xs opacity-80 mt-1">{failed.description}</div>
+              </div>
+              <div className="text-2xl">{failed.icon}</div>
+            </div>
+          </div>
+        );
+      })()}
       {(counts.cancelled ?? 0) > 0 ||
         ((counts.rejectedAd ?? 0) > 0 && (
           <div className="mt-4 pt-4 border-t border-gray-200">
