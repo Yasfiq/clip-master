@@ -266,6 +266,16 @@ Check path di `.env`: `WHISPER_MODEL=/path/to/ggml-base.bin`
 
 Restart: `npm run dev` (crash recovery auto-detects)
 
+### "UI beku total — klik tidak bereaksi apa pun"
+
+Buka dashboard via **`http://localhost:3000`**, jangan pernah `127.0.0.1`.
+
+Next.js dev mode (Turbopack) memblokir koneksi HMR WebSocket dari origin `127.0.0.1` (log server: `Blocked cross-origin request to Next.js dev resource /_next/hmr`). Tanpa koneksi HMR, React **tidak pernah hydrate** — halaman tampak normal tapi semua `onClick` mati dan state tidak pernah berubah. Tidak ada error di console browser.
+
+Verifikasi cepat: buka halaman Settings lalu klik salah satu pill durasi. Kalau pilihan tidak berpindah — Anda membuka lewat `127.0.0.1`. Pindah ke `localhost` dan refresh.
+
+Catatan tambahan: jangan `rm -rf .next` atau rebuild produksi sementara server produksi lama masih jalan — chunk JS lama akan 500 dan UI tampak kosong. Restart server setelah build baru.
+
 ### "Out of memory during subtitle"
 
 Whisper base model butuh ~2GB RAM per clip
