@@ -61,9 +61,6 @@ export function splitTextIntoWordTimings(
   }));
 }
 
-/**
- * Clean and format chunk text with proper spacing and sentence casing.
- */
 function formatChunkText(words: WordTiming[], isSentenceStart: boolean): string {
   let cleaned = words
     .map((w) => w.text.trim())

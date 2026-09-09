@@ -21,6 +21,7 @@ import {
 } from '../logic/audioBoost';
 import fs from 'fs/promises';
 import path from 'path';
+import { reassembleWhisperTokens } from '../logic/tokenReassembler';
 
 interface WhisperToken {
   text: string;
@@ -217,13 +218,7 @@ export class TranscribeStage implements PipelineStageHandler {
         start: fromMs / 1000,
         end: toMs / 1000,
         text,
-        words: (seg.tokens ?? [])
-          .filter((t) => t.offsets && t.text && t.text.trim() && !t.text.startsWith('['))
-          .map((t) => ({
-            text: t.text!.trim(),
-            start: (t.offsets!.from ?? 0) / 1000,
-            end: (t.offsets!.to ?? 0) / 1000,
-          })),
+        words: reassembleWhisperTokens(seg.tokens ?? []),
       });
     }
     return out;

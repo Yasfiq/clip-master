@@ -11,6 +11,8 @@ import {
   clusterFaceDetections,
   selectDominantCluster,
   scoreFaceCluster,
+  computeDynamicCropSegments,
+  buildFfmpegCropFilter,
 } from '@/pipeline/logic/faceCrop';
 
 /** Convenience builder so tests stay readable. */
@@ -268,6 +270,78 @@ describe('faceCrop', () => {
       expect(dominant).not.toBeNull();
       // The left cluster with 2 detections should be selected over the right with 1
       expect(dominant!.centroid.cx).toBeCloseTo(0.255, 2);
+    });
+  });
+
+  describe('computeDynamicCropSegments & buildFfmpegCropFilter', () => {
+    it('returns center fallback for empty detections', () => {
+      const segments = computeDynamicCropSegments([], 60, 1280, 720, 9 / 16, DEFAULT_FACE_CROP);
+      expect(segments).toHaveLength(1);
+      expect(segments[0].source).toBe('center-fallback');
+      expect(segments[0].start).toBe(0);
+      expect(segments[0].end).toBe(60);
+
+      const filter = buildFfmpegCropFilter(segments, 1280, 3413, 1080, 1920);
+      expect(filter.isDynamic).toBe(false);
+      expect(filter.filter).toMatch(/crop=1080:1920:116[78]:0/);
+    });
+
+    it('returns single static segment for consistent single speaker', () => {
+      const detections = [
+        { ...fb(0.44, 0.3, 0.5, 0.5, 0.85), timestamp: 1.0 },
+        { ...fb(0.45, 0.3, 0.51, 0.5, 0.85), timestamp: 2.0 },
+        { ...fb(0.46, 0.3, 0.52, 0.5, 0.85), timestamp: 3.0 },
+      ];
+      const segments = computeDynamicCropSegments(
+        detections,
+        10,
+        1280,
+        720,
+        9 / 16,
+        DEFAULT_FACE_CROP,
+      );
+      expect(segments).toHaveLength(1);
+      expect(segments[0].source).toBe('face');
+
+      const filter = buildFfmpegCropFilter(segments, 1280, 3413, 1080, 1920);
+      expect(filter.isDynamic).toBe(false);
+      expect(filter.filter).toMatch(/^crop=1080:1920:\d+:0$/);
+    });
+
+    it('creates dynamic shot segments when camera cuts between wide shot and close-up', () => {
+      // 0s-8s: Wide shot with speaker on right (cx = 0.70)
+      // 9s-20s: Close up with speaker centered (cx = 0.46)
+      const detections: FaceBox[] = [
+        { ...fb(0.68, 0.3, 0.74, 0.5, 0.85), timestamp: 0.0 },
+        { ...fb(0.69, 0.3, 0.75, 0.5, 0.85), timestamp: 2.0 },
+        { ...fb(0.68, 0.3, 0.74, 0.5, 0.85), timestamp: 4.0 },
+        { ...fb(0.69, 0.3, 0.75, 0.5, 0.85), timestamp: 6.0 },
+        { ...fb(0.44, 0.2, 0.52, 0.6, 0.95), timestamp: 9.0 },
+        { ...fb(0.45, 0.2, 0.53, 0.6, 0.95), timestamp: 11.0 },
+        { ...fb(0.44, 0.2, 0.52, 0.6, 0.95), timestamp: 13.0 },
+        { ...fb(0.45, 0.2, 0.53, 0.6, 0.95), timestamp: 15.0 },
+      ];
+
+      const segments = computeDynamicCropSegments(
+        detections,
+        20,
+        1280,
+        720,
+        9 / 16,
+        DEFAULT_FACE_CROP,
+      );
+      expect(segments.length).toBeGreaterThanOrEqual(2);
+
+      // Wide shot segment frames the right speaker (cx > 0.6)
+      expect(segments[0].cx).toBeGreaterThan(0.6);
+
+      // Close-up segment frames the center speaker (cx ~ 0.48)
+      const lastSeg = segments[segments.length - 1];
+      expect(lastSeg.cx).toBeLessThan(0.55);
+
+      const filter = buildFfmpegCropFilter(segments, 1280, 3413, 1080, 1920);
+      expect(filter.isDynamic).toBe(true);
+      expect(filter.filter).toContain('if(lt(t,');
     });
   });
 });
