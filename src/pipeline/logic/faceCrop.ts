@@ -88,6 +88,120 @@ export interface CropWindow {
  * @param targetAspect Width / height of the portrait output (e.g. 9/16).
  * @param config     Face crop config.
  */
+export interface FaceCluster {
+  /** Face detections assigned to this cluster. */
+  faces: FaceBox[];
+  /** Weighted centroid of the cluster in normalized coordinates [0, 1]. */
+  centroid: { cx: number; cy: number };
+  /** Dominance ranking score based on detection count, total confidence, and face area. */
+  score: number;
+}
+
+export const DEFAULT_CLUSTER_DISTANCE_THRESHOLD = 0.18;
+
+/**
+ * Score a face cluster based on detection count, total confidence score, and
+ * bounding box area (face size). Primary / foreground speakers with more screen
+ * time and larger faces rank higher than background persons.
+ */
+export function scoreFaceCluster(faces: FaceBox[]): number {
+  if (faces.length === 0) return 0;
+  const count = faces.length;
+  let totalScore = 0;
+  let totalArea = 0;
+  for (const f of faces) {
+    totalScore += Math.max(0, f.score);
+    const w = Math.max(0, f.xmax - f.xmin);
+    const h = Math.max(0, f.ymax - f.ymin);
+    totalArea += w * h;
+  }
+  const avgArea = Math.min(1, totalArea / count);
+  return (totalScore + count * 0.1) * (1 + avgArea * 10);
+}
+
+/**
+ * 1D spatial clustering for face detections along the horizontal x axis.
+ * Detections within distanceThreshold normalized width are grouped into a cluster.
+ */
+export function clusterFaceDetections(
+  detections: FaceBox[],
+  distanceThreshold = DEFAULT_CLUSTER_DISTANCE_THRESHOLD,
+): FaceCluster[] {
+  if (detections.length === 0) return [];
+
+  // Sort detections by horizontal x center for stable sequential clustering
+  const sorted = [...detections].sort((a, b) => {
+    const cxA = (a.xmin + a.xmax) / 2;
+    const cxB = (b.xmin + b.xmax) / 2;
+    return cxA - cxB;
+  });
+
+  const rawClusters: FaceBox[][] = [];
+
+  for (const box of sorted) {
+    const boxCx = (box.xmin + box.xmax) / 2;
+
+    // Find the closest existing cluster within distanceThreshold
+    let bestClusterIdx = -1;
+    let minDistance = Infinity;
+
+    for (let i = 0; i < rawClusters.length; i++) {
+      const clusterFaces = rawClusters[i];
+      const clusterCx =
+        clusterFaces.reduce((sum, f) => sum + (f.xmin + f.xmax) / 2, 0) / clusterFaces.length;
+      const dist = Math.abs(boxCx - clusterCx);
+      if (dist <= distanceThreshold && dist < minDistance) {
+        minDistance = dist;
+        bestClusterIdx = i;
+      }
+    }
+
+    if (bestClusterIdx >= 0) {
+      rawClusters[bestClusterIdx].push(box);
+    } else {
+      rawClusters.push([box]);
+    }
+  }
+
+  return rawClusters.map((faces) => {
+    const centroid = aggregateCentroid(faces, 1, 1) || {
+      cx: faces.reduce((s, f) => s + (f.xmin + f.xmax) / 2, 0) / faces.length,
+      cy: faces.reduce((s, f) => s + (f.ymin + f.ymax) / 2, 0) / faces.length,
+    };
+    return {
+      faces,
+      centroid,
+      score: scoreFaceCluster(faces),
+    };
+  });
+}
+
+/** Alias for clusterFaceDetections. */
+export const clusterFaces = clusterFaceDetections;
+
+/**
+ * Select the dominant/primary speaker cluster based on cluster score.
+ */
+export function selectDominantCluster(clusters: FaceCluster[]): FaceCluster | null {
+  if (clusters.length === 0) return null;
+  let best = clusters[0];
+  for (let i = 1; i < clusters.length; i++) {
+    const c = clusters[i];
+    if (c.score > best.score) {
+      best = c;
+    } else if (c.score === best.score) {
+      if (c.faces.length > best.faces.length) {
+        best = c;
+      } else if (c.faces.length === best.faces.length) {
+        if (Math.abs(c.centroid.cx - 0.5) < Math.abs(best.centroid.cx - 0.5)) {
+          best = c;
+        }
+      }
+    }
+  }
+  return best;
+}
+
 export function chooseCropX(
   detections: FaceBox[],
   srcW: number,
@@ -110,12 +224,15 @@ export function chooseCropX(
     };
   }
 
-  const centroid = aggregateCentroid(accepted, srcW, srcH);
-  if (!centroid) {
+  // Cluster accepted detections and select the dominant speaker
+  const clusters = clusterFaceDetections(accepted);
+  const dominant = selectDominantCluster(clusters);
+  if (!dominant) {
     return { x: centerX, cropWidth, cropHeight, source: 'center-fallback' };
   }
 
-  const padPx = Math.round(cropWidth * config.padFraction);
+  const centroid = dominant.centroid;
+  const padPx = Math.round(cropWidth * (config.padFraction || 0));
   const srcCx = centroid.cx * srcW;
   const idealX = srcCx - (cropWidth + padPx) / 2;
   const x = Math.min(maxX, Math.max(0, Math.round(idealX)));

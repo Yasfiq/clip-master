@@ -25,7 +25,7 @@ export class AnalyzeStage implements PipelineStageHandler {
     const targetDur = ctx.config?.targetDuration || 60;
     const minDur = Math.min(ctx.config?.minSegmentDuration || 120, targetDur);
     const stepSize = Math.max(30, Math.floor(targetDur / 3));
-    const maxClips = Math.min(ctx.config?.maxClips || 10, 10);
+    const maxClips = Math.min(ctx.config?.maxClips || 10, 50);
 
     const windows: Array<{ start: number; end: number }> = [];
     for (let start = 0; start < duration - minDur; start += stepSize) {

@@ -8,6 +8,9 @@ import {
   aggregateCentroid,
   buildLetterboxTransform,
   validateFaceCropConfig,
+  clusterFaceDetections,
+  selectDominantCluster,
+  scoreFaceCluster,
 } from '@/pipeline/logic/faceCrop';
 
 /** Convenience builder so tests stay readable. */
@@ -155,6 +158,116 @@ describe('faceCrop', () => {
       // weighted centroid x = 0.77 → src cx ≈ 985 → ideal x ≈ 782.5
       expect(r.x).toBeGreaterThan(437);
       expect(r.x).toBeLessThan(875);
+    });
+
+    it('centers crop on a single centered face', () => {
+      // face center at 0.50
+      const r = chooseCropX([fb(0.45, 0.3, 0.55, 0.5, 0.9)], 1280, 720, 9 / 16, {
+        ...DEFAULT_FACE_CROP,
+        padFraction: 0,
+      });
+      expect(r.source).toBe('face');
+      // srcCx = 640, cropWidth = 405, ideal x = 640 - 202.5 = 437.5 → 438
+      expect(r.x).toBe(438);
+    });
+
+    it('multi-person podcast scene: focuses on dominant speaker, NOT the empty center', () => {
+      // Host at x=0.25 (5 detections) vs Guest at x=0.75 (2 detections)
+      // Empty center between them is x=0.50 (crop offset 438)
+      const hostDetections = [
+        fb(0.2, 0.3, 0.3, 0.5, 0.9),
+        fb(0.21, 0.31, 0.31, 0.51, 0.9),
+        fb(0.19, 0.29, 0.29, 0.49, 0.9),
+        fb(0.2, 0.3, 0.3, 0.5, 0.85),
+        fb(0.22, 0.3, 0.32, 0.5, 0.92),
+      ];
+      const guestDetections = [fb(0.7, 0.3, 0.8, 0.5, 0.85), fb(0.71, 0.31, 0.81, 0.51, 0.88)];
+      const allDetections = [...hostDetections, ...guestDetections];
+
+      const r = chooseCropX(allDetections, 1280, 720, 9 / 16, DEFAULT_FACE_CROP);
+
+      expect(r.source).toBe('face');
+      // Center fallback / naive average would crop around 438 (empty center)
+      const emptyCenter = 438;
+      expect(Math.abs(r.x - emptyCenter)).toBeGreaterThan(100);
+      // Since Host had 5 detections vs 2, the crop must frame the Host on the left (x < 300)
+      expect(r.x).toBeLessThan(300);
+    });
+
+    it('multi-person podcast scene: switches to guest when guest is dominant', () => {
+      // Host at x=0.25 (2 detections, small face) vs Guest at x=0.75 (6 detections, large face)
+      const hostDetections = [
+        fb(0.22, 0.3, 0.28, 0.4, 0.8), // area 0.006
+        fb(0.23, 0.31, 0.27, 0.41, 0.8),
+      ];
+      const guestDetections = [
+        fb(0.68, 0.2, 0.82, 0.55, 0.95), // area 0.049
+        fb(0.69, 0.21, 0.81, 0.54, 0.95),
+        fb(0.7, 0.2, 0.8, 0.55, 0.95),
+        fb(0.68, 0.22, 0.82, 0.56, 0.92),
+        fb(0.69, 0.2, 0.81, 0.55, 0.94),
+        fb(0.7, 0.21, 0.8, 0.54, 0.93),
+      ];
+      const allDetections = [...hostDetections, ...guestDetections];
+
+      const r = chooseCropX(allDetections, 1280, 720, 9 / 16, DEFAULT_FACE_CROP);
+
+      expect(r.source).toBe('face');
+      // Must frame Guest on the right (x > 500) rather than empty center (438)
+      expect(r.x).toBeGreaterThan(500);
+    });
+  });
+
+  describe('spatial clustering & dominant speaker selection', () => {
+    it('returns empty clusters for empty detections', () => {
+      expect(clusterFaceDetections([])).toEqual([]);
+      expect(selectDominantCluster([])).toBeNull();
+    });
+
+    it('clusters detections that are horizontally close into the same cluster', () => {
+      const faces = [
+        fb(0.24, 0.3, 0.26, 0.5, 0.9),
+        fb(0.25, 0.3, 0.27, 0.5, 0.9),
+        fb(0.23, 0.3, 0.25, 0.5, 0.85),
+      ];
+      const clusters = clusterFaceDetections(faces, 0.18);
+      expect(clusters).toHaveLength(1);
+      expect(clusters[0].faces).toHaveLength(3);
+      expect(clusters[0].centroid.cx).toBeCloseTo(0.25, 2);
+    });
+
+    it('separates two distant speakers into distinct clusters', () => {
+      const faces = [
+        fb(0.2, 0.3, 0.3, 0.5, 0.9), // cx = 0.25
+        fb(0.7, 0.3, 0.8, 0.5, 0.9), // cx = 0.75
+      ];
+      const clusters = clusterFaceDetections(faces, 0.18);
+      expect(clusters).toHaveLength(2);
+      expect(clusters[0].centroid.cx).toBeCloseTo(0.25, 2);
+      expect(clusters[1].centroid.cx).toBeCloseTo(0.75, 2);
+    });
+
+    it('ranks cluster with larger face higher when detection count is equal', () => {
+      const smallFaceCluster = [fb(0.2, 0.3, 0.24, 0.36, 0.9)]; // area = 0.04 * 0.06 = 0.0024
+      const largeFaceCluster = [fb(0.7, 0.2, 0.85, 0.6, 0.9)]; // area = 0.15 * 0.40 = 0.06
+
+      const scoreSmall = scoreFaceCluster(smallFaceCluster);
+      const scoreLarge = scoreFaceCluster(largeFaceCluster);
+
+      expect(scoreLarge).toBeGreaterThan(scoreSmall);
+    });
+
+    it('selects dominant cluster with highest score', () => {
+      const faces = [
+        fb(0.2, 0.3, 0.3, 0.5, 0.9),
+        fb(0.21, 0.3, 0.31, 0.5, 0.9),
+        fb(0.7, 0.3, 0.8, 0.5, 0.9),
+      ];
+      const clusters = clusterFaceDetections(faces, 0.18);
+      const dominant = selectDominantCluster(clusters);
+      expect(dominant).not.toBeNull();
+      // The left cluster with 2 detections should be selected over the right with 1
+      expect(dominant!.centroid.cx).toBeCloseTo(0.255, 2);
     });
   });
 });
