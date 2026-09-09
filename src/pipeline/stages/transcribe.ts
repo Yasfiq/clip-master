@@ -76,22 +76,37 @@ export class TranscribeStage implements PipelineStageHandler {
     const transcribeDir = path.join(ctx.workDir, 'transcript');
     await fs.mkdir(transcribeDir, { recursive: true });
 
-    // 1. Extract full audio with loudnorm + volume boost (3.0x) for clearer whisper input.
-    //    Final export audio is unaffected — only the transcription input is amplified.
-    await onProgress(
-      0.15,
-      `Extracting full audio track (loudnorm + ${DEFAULT_AUDIO_BOOST.boostFactor}x boost, 16kHz mono WAV)`,
-    );
-    const audioPath = path.join(transcribeDir, 'full_audio.wav');
-    await this.extractFullAudio(ctx.sourcePath, audioPath, DEFAULT_AUDIO_BOOST);
-
-    // 2. Run whisper → JSON (word-level timing)
-    await onProgress(0.2, 'Transcribing full video with whisper (this can take a while)');
     const jsonBase = path.join(transcribeDir, 'full');
-    await this.runWhisperJson(audioPath, jsonBase, modelPath, onProgress);
+    const jsonPath = `${jsonBase}.json`;
+
+    let cached = false;
+    try {
+      await fs.access(jsonPath);
+      cached = true;
+    } catch {}
+
+    if (cached) {
+      logger.info(`Using cached transcript JSON: ${jsonPath}`);
+      await onProgress(0.85, 'Loaded existing transcript JSON from cache');
+    } else {
+      // 1. Extract full audio with loudnorm + volume boost (3.0x) for clearer whisper input.
+      await onProgress(
+        0.15,
+        `Extracting full audio track (loudnorm + ${DEFAULT_AUDIO_BOOST.boostFactor}x boost, 16kHz mono WAV)`,
+      );
+      const audioPath = path.join(transcribeDir, 'full_audio.wav');
+      await this.extractFullAudio(ctx.sourcePath, audioPath, DEFAULT_AUDIO_BOOST);
+
+      // 2. Run whisper → JSON (word-level timing)
+      await onProgress(0.2, 'Transcribing full video with whisper (this can take a while)');
+      await this.runWhisperJson(audioPath, jsonBase, modelPath, onProgress);
+
+      try {
+        await fs.unlink(audioPath);
+      } catch {}
+    }
 
     // 3. Parse JSON into normalized TranscriptSegment[]
-    const jsonPath = `${jsonBase}.json`;
     const raw = await fs.readFile(jsonPath, 'utf8');
     const parsed = JSON.parse(raw) as WhisperJson;
 
