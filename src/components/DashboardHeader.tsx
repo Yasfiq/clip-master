@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import useJobStore from '@/stores/useJobStore';
 
 interface DashboardHeaderProps {
   // Title displayed in header
@@ -14,6 +15,29 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   subtitle = 'Local video → viral clips pipeline',
 }) => {
   const router = useRouter();
+  const setSelectedJob = useJobStore((s) => s.setSelectedJob);
+
+  const handleNewJob = () => {
+    setSelectedJob(null);
+    const el = document.getElementById('quick-create-anchor');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    router.push('/');
+    let attempts = 0;
+    const poll = setInterval(() => {
+      attempts += 1;
+      const anchor = document.getElementById('quick-create-anchor');
+      if (anchor) {
+        clearInterval(poll);
+        anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else if (attempts > 20) {
+        clearInterval(poll);
+      }
+    }, 100);
+  };
+
   return (
     <header className="flex items-center justify-between">
       <div>
@@ -32,14 +56,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
         </button>
         <button
           type="button"
-          onClick={() => {
-            // Scroll quick-create into view by navigating to dashboard top
-            router.push('/');
-            setTimeout(() => {
-              const el = document.getElementById('quick-create-anchor');
-              el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }, 100);
-          }}
+          onClick={handleNewJob}
           className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
         >
           New Job

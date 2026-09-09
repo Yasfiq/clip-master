@@ -19,7 +19,9 @@ export const useToastStore = create<ToastStore>((set) => ({
   addToast: (message, type = 'info') => {
     const id = Math.random().toString(36).substring(2, 9);
     set((state) => ({
-      toasts: [...state.toasts, { id, message, type }],
+      // Cap concurrent toasts: bursts (repeat clicks, poll errors) must not
+      // stack without bound.
+      toasts: [...state.toasts, { id, message, type }].slice(-5),
     }));
 
     // Auto remove after 5 seconds

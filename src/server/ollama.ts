@@ -39,7 +39,28 @@ const DEFAULT_MODEL = 'qwen2.5:7b-instruct-q4_K_M';
 const REQUEST_TIMEOUT_MS = 30 * 60 * 1000; // 30 min for CPU inference
 
 export function ollamaHost(): string {
-  return process.env.OLLAMA_HOST || DEFAULT_HOST;
+  const configured = process.env.OLLAMA_HOST || DEFAULT_HOST;
+  // Hard loopback-only guard: transcript text must never leave the machine.
+  // If the operator points OLLAMA_HOST at a remote host, refuse and fall
+  // back to the loopback default rather than exfiltrating content.
+  let host: string;
+  try {
+    const u = new URL(configured);
+    const isLoopback =
+      u.hostname === '127.0.0.1' ||
+      u.hostname === 'localhost' ||
+      u.hostname === '::1' ||
+      u.hostname === '[::1]';
+    if (!isLoopback) throw new Error('non-loopback');
+    host = configured;
+  } catch {
+    logger.warn(
+      `OLLAMA_HOST must point at loopback (127.0.0.1) — data never leaves the machine. ` +
+        `Ignoring non-loopback value "${configured}" and using ${DEFAULT_HOST}`,
+    );
+    host = DEFAULT_HOST;
+  }
+  return host;
 }
 
 export function ollamaModel(): string {

@@ -53,6 +53,18 @@ export class JobService {
     if (!input.sourceUrl && !input.sourcePath) {
       throw new Error('Either sourceUrl or sourcePath must be provided');
     }
+    if (input.sourceUrl !== undefined && typeof input.sourceUrl !== 'string') {
+      throw new Error('sourceUrl must be a string');
+    }
+    if (input.sourcePath !== undefined && typeof input.sourcePath !== 'string') {
+      throw new Error('sourcePath must be a string');
+    }
+    if (input.sourceUrl && !/^https?:\/\/\S+/.test(input.sourceUrl)) {
+      throw new Error('sourceUrl must be an http(s) URL');
+    }
+    if (input.sourcePath && !input.sourcePath.startsWith('/')) {
+      throw new Error('sourcePath must be an absolute filesystem path');
+    }
 
     // 2. Get or use default config
     let configId = input.configId;
@@ -63,6 +75,13 @@ export class JobService {
       }
       configId = defaultConfig.id;
       logger.debug('Using default config', { configId });
+    } else {
+      // Validate an explicit config id BEFORE mutating job state: an unknown
+      // id would surface as a raw Prisma FK violation instead of a clear error.
+      const cfg = await db.pipelineConfig.findUnique({ where: { id: configId } });
+      if (!cfg) {
+        throw new Error(`Unknown configId ${configId}`);
+      }
     }
 
     // 3. Generate unique source ID and filename
@@ -118,6 +137,21 @@ export class JobService {
     }
     if (job.status !== JobStatus.PENDING) {
       throw new Error(`Job ${jobId} is not in PENDING state (current: ${job.status})`);
+    }
+
+    // One-active-job invariant: refuse to start a second job while another
+    // job is executing a phase. PENDING rows queue behind the active one.
+    const active = await db.job.findFirst({
+      where: {
+        id: { not: jobId },
+        status: { in: [JobStatus.RUNNING_PHASE1, JobStatus.RUNNING_PHASE2] },
+      },
+      select: { id: true },
+    });
+    if (active) {
+      throw new Error(
+        `Job ${active.id} is already running — one active job at a time (queue stays PENDING)`,
+      );
     }
 
     // Preflight check
@@ -183,6 +217,32 @@ export class JobService {
   }
 
   /**
+   * Delete a job and all its child records (logs, clips).
+   * Cannot delete a job that is actively running a phase — cancel it first.
+   *
+   * Media files on disk are NOT removed here; file retention is a pipeline-agent
+   * escalation (TBD — requires user confirmation). Orphaned media files accumulate
+   * until a cleanup policy is implemented.
+   */
+  async deleteJob(jobId: string): Promise<void> {
+    const job = await db.job.findUnique({ where: { id: jobId } });
+    if (!job) {
+      throw new Error(`Job ${jobId} not found`);
+    }
+    if (job.status === JobStatus.RUNNING_PHASE1 || job.status === JobStatus.RUNNING_PHASE2) {
+      throw new Error(`Job ${jobId} is running — cancel it before deleting`);
+    }
+
+    await db.$transaction([
+      db.jobLog.deleteMany({ where: { jobId } }),
+      db.clip.deleteMany({ where: { jobId } }),
+      db.job.delete({ where: { id: jobId } }),
+    ]);
+
+    logger.info('Job deleted', { jobId, hadStatus: job.status });
+  }
+
+  /**
    * Fetch a single job by ID with its config and clips.
    */
   async getJob(jobId: string): Promise<Job & { config: any; clips: Clip[]; logs: any[] }> {
@@ -224,6 +284,25 @@ export class JobService {
     ]);
 
     return { jobs, total };
+  }
+
+  async countByStatus(): Promise<Record<string, number>> {
+    const rows = await db.job.groupBy({
+      by: ['status'],
+      _count: true,
+    });
+    const counts: Record<string, number> = {
+      PENDING: 0,
+      RUNNING_PHASE1: 0,
+      RUNNING_PHASE2: 0,
+      PHASE1_DONE: 0,
+      COMPLETED: 0,
+      FAILED: 0,
+      CANCELLED: 0,
+      REJECTED_AD: 0,
+    };
+    for (const r of rows) counts[r.status] = r._count;
+    return counts;
   }
 
   /**
@@ -313,6 +392,7 @@ export class JobService {
         stageEndedAt: new Date(),
         currentStage: null,
         stageProgress: 1.0,
+        progress: 0.6,
         exportedClipsCount: clipsCount,
       },
     });
@@ -330,7 +410,28 @@ export class JobService {
       throw new Error(`Job ${jobId} is not in PHASE1_DONE state (current: ${job.status})`);
     }
 
+    // One-active-job invariant (phase 2 is also an active run).
+    const active = await db.job.findFirst({
+      where: {
+        id: { not: jobId },
+        status: { in: [JobStatus.RUNNING_PHASE1, JobStatus.RUNNING_PHASE2] },
+      },
+      select: { id: true },
+    });
+    if (active) {
+      throw new Error(`Job ${active.id} is already running — one active job at a time`);
+    }
+
     logger.info('Starting Phase 2', { jobId, newConfigId });
+
+    // Validate optional config switch before mutating job state: an unknown
+    // id would surface as a raw Prisma FK violation instead of a clear error.
+    if (newConfigId) {
+      const cfg = await db.pipelineConfig.findUnique({ where: { id: newConfigId } });
+      if (!cfg) {
+        throw new Error(`Unknown configId ${newConfigId} for Phase 2`);
+      }
+    }
 
     const updateData: any = {
       status: JobStatus.RUNNING_PHASE2,

@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Menu, X, Settings, BarChart, Download, Play } from 'lucide-react';
+import { Menu, X, Settings, BarChart, Download } from 'lucide-react';
 
 interface NavigationProps {
   activeTab?: 'dashboard' | 'jobs' | 'clips' | 'settings';
@@ -32,7 +32,6 @@ const Navigation: React.FC<NavigationProps> = ({ activeTab: activeTabProp }) => 
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart },
-    { id: 'jobs', label: 'Jobs', icon: Play },
     { id: 'clips', label: 'Clips', icon: Download },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];

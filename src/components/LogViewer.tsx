@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import useJobStore from '@/stores/useJobStore';
 
 interface LogViewerProps {
@@ -19,6 +19,8 @@ interface LogEntry {
   stage?: string;
 }
 
+const EMPTY_LOGS: any[] = [];
+
 const LogViewer: React.FC<LogViewerProps> = ({
   jobId,
   autoRefresh = true,
@@ -26,26 +28,37 @@ const LogViewer: React.FC<LogViewerProps> = ({
   showTimestamps = true,
   filterLevel = 'ALL',
 }) => {
-  const logs = useJobStore((s) => s.logs[jobId] || []);
-  const addLog = useJobStore((s) => s.addLog);
+  // Read directly from SSE store
+  const storeLogs = useJobStore((state) => state.logs[jobId] ?? EMPTY_LOGS);
   const [isPaused, setIsPaused] = useState(false);
   const [selectedLevel, setSelectedLevel] = useState(filterLevel);
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Set when the operator clears the buffer; suppresses the auto-refresh poll
+  // so a terminal job's log pane stays dismissed instead of being repopulated
+  // by the next tick. Reset when switching to another job.
+  const clearedAtRef = useRef<number | null>(null);
 
-  // Read directly from SSE store
-  const storeLogs = useJobStore((state) => state.logs[jobId] || []);
+  const uiLogs = useMemo(
+    () =>
+      storeLogs.map((log) => ({
+        id: log.id || Math.random().toString(36),
+        level: log.level as any,
+        message: log.message,
+        timestamp: log.timestamp || new Date().toISOString(),
+        stage: log.stage,
+      })),
+    [storeLogs],
+  );
 
-  const uiLogs = storeLogs.map((log) => ({
-    id: log.id || Math.random().toString(36),
-    level: log.level as any,
-    message: log.message,
-    timestamp: log.timestamp || new Date().toISOString(),
-    stage: log.stage,
-  }));
+  // Sync selectedLevel when filterLevel prop changes
+  useEffect(() => {
+    setSelectedLevel(filterLevel);
+  }, [filterLevel]);
 
   // Initial fetch missing logs if we just mounted
   useEffect(() => {
+    clearedAtRef.current = null;
     const fetchInitial = async () => {
       try {
         if (storeLogs.length > 0) return;
@@ -61,7 +74,43 @@ const LogViewer: React.FC<LogViewerProps> = ({
       }
     };
     fetchInitial();
-  }, [jobId]);
+  }, [jobId, maxLines]);
+
+  // Auto-refresh poll for jobs whose SSE stream is closed (terminal or
+  // PHASE1_DONE pause). While a phase RUNS the SSE stream owns the buffer and
+  // pushes incremental rows, so the poll skips RUNNING jobs entirely (the API
+  // reports job.status). The poll appends via a since-cursor — it never
+  // replaces the buffer, which would silently drop older rows mid-read.
+  // Suppressed after the operator hits Clear.
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const tick = async () => {
+      if (clearedAtRef.current !== null) return;
+      try {
+        const storeLogs = useJobStore.getState().logs[jobId] || [];
+        if (storeLogs.length === 0) return;
+        const tail = storeLogs[storeLogs.length - 1];
+        if (!tail?.timestamp) return;
+        const res = await fetch(
+          `/api/jobs/${jobId}/logs?limit=${maxLines}&since=${encodeURIComponent(tail.timestamp)}`,
+        );
+        const data = await res.json();
+        const payload = data.success ? data.data : data;
+        if (
+          payload.logs &&
+          payload.status &&
+          payload.status !== 'RUNNING_PHASE1' &&
+          payload.status !== 'RUNNING_PHASE2'
+        ) {
+          useJobStore.getState().mergeLogs(jobId, payload.logs);
+        }
+      } catch (e) {
+        // Network blip — next tick retries
+      }
+    };
+    const id = setInterval(tick, 5000);
+    return () => clearInterval(id);
+  }, [autoRefresh, jobId, maxLines]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -152,7 +201,10 @@ const LogViewer: React.FC<LogViewerProps> = ({
 
           {/* Clear */}
           <button
-            onClick={() => useJobStore.getState().setLogs(jobId, [])}
+            onClick={() => {
+              clearedAtRef.current = Date.now();
+              useJobStore.getState().setLogs(jobId, []);
+            }}
             className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-600 border border-gray-300 hover:bg-gray-200"
           >
             Clear

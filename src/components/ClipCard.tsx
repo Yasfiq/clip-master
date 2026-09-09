@@ -64,6 +64,8 @@ const ClipCard: React.FC<ClipCardProps> = ({ clip, index, onPlay, onDownload }) 
 
         {/* Play button overlay */}
         <button
+          type="button"
+          aria-label="Play clip"
           onClick={() => onPlay?.(clip.id)}
           className="absolute inset-0 flex items-center justify-center bg-black/0 hover:bg-black/30 transition-colors group"
         >

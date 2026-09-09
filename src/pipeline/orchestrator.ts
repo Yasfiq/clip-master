@@ -119,7 +119,7 @@ export class PipelineOrchestrator {
       new CutStage(),
     ];
 
-    await this.runHandlers(jobId, phase1Handlers, ctx, signal);
+    await this.runHandlers(jobId, phase1Handlers, ctx, signal, { base: 0, span: 0.6 });
 
     // Persist stage metadata after Phase 1 completion
     await db.job.update({
@@ -159,7 +159,7 @@ export class PipelineOrchestrator {
       new CompressStage(),
     ];
 
-    await this.runHandlers(jobId, phase2Handlers, ctx, signal);
+    await this.runHandlers(jobId, phase2Handlers, ctx, signal, { base: 0.6, span: 0.4 });
 
     const clipsCount = ctx.stageData.clips?.length || 0;
     const totalDuration = ctx.stageData.clips?.reduce((sum, c) => sum + c.duration, 0) || 0;
@@ -186,6 +186,7 @@ export class PipelineOrchestrator {
     handlers: PipelineStageHandler[],
     ctx: StageContext,
     signal: AbortSignal,
+    progressSpan?: { base: number; span: number },
   ): Promise<void> {
     const job = await db.job.findUnique({ where: { id: jobId } });
     let startIdx = 0;
@@ -226,6 +227,18 @@ export class PipelineOrchestrator {
             data: { stageProgress: progress },
           });
 
+          // Map intra-stage progress onto the global 0..1 scale so the
+          // dashboard shows real headway instead of 0% until a phase ends.
+          if (progressSpan) {
+            const { base, span } = progressSpan;
+            const step = span / handlers.length;
+            const globalProgress = Math.min(1, base + (i + progress) * step);
+            await db.job.update({
+              where: { id: jobId },
+              data: { progress: globalProgress },
+            });
+          }
+
           if (logMsg) {
             await this.logToDb(jobId, handler.stage, 'info', logMsg);
           }
@@ -233,7 +246,11 @@ export class PipelineOrchestrator {
 
         await db.job.update({
           where: { id: jobId },
-          data: { stageEndedAt: new Date() },
+          data: {
+            stageEndedAt: new Date(),
+            // Persist probed source duration once DISCOVER fills metadata.
+            ...(ctx.metadata.duration ? { sourceDuration: Math.round(ctx.metadata.duration) } : {}),
+          },
         });
       } catch (err: any) {
         if (err.message === 'ABORTED' || signal.aborted) {
@@ -259,9 +276,12 @@ export class PipelineOrchestrator {
             errorCode,
             errorMessage: msg,
             currentStage: null,
+            stageEndedAt: new Date(),
           },
         });
-        return;
+        // Re-throw so executePhase1/2 skip their post-run success logging and
+        // the runner's fail path decides the final terminal state.
+        throw err;
       }
     }
   }

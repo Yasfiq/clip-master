@@ -14,10 +14,12 @@ export interface PresetOption {
   label: string;
 }
 
-/** Clip Length presets, market-standard Shorts durations. Auto lets the
- *  pipeline decide from source length. */
+/** Clip Length presets, market-standard Shorts durations. A source-adaptive
+ *  "auto" length does not exist in the pipeline yet — every row stores a real
+ *  number, and analyze.ts falls back to 60s when none is set — so offering an
+ *  "Auto" option would be a UI lie (two presets mapping to the same value,
+ *  with the radio never staying selected). */
 export const CLIP_LENGTH_OPTIONS: PresetOption[] = [
-  { id: 'auto', label: 'Auto (recommended)' },
   { id: 's15', label: 'Short (15s)' },
   { id: 's30', label: 'Medium (30s)' },
   { id: 's60', label: 'Long (60s)' },
@@ -25,7 +27,7 @@ export const CLIP_LENGTH_OPTIONS: PresetOption[] = [
 ];
 
 /** Convert a Clip Length option id to a targetDuration in seconds.
- *  Auto returns undefined so the pipeline keeps its source-driven default. */
+ *  Unknown ids (legacy callers) return undefined — the caller keeps its value. */
 export function clipLengthToTargetSeconds(id: string): number | undefined {
   switch (id) {
     case 's15':
@@ -37,17 +39,19 @@ export function clipLengthToTargetSeconds(id: string): number | undefined {
     case 's90':
       return 90;
     default:
-      return undefined; // auto
+      return undefined;
   }
 }
 
-/** Inverse of clipLengthToTargetSeconds: which option owns this duration? */
-export function targetSecondsToClipLength(seconds: number | undefined | null): string {
+/** Inverse of clipLengthToTargetSeconds: which option owns this duration?
+ *  Returns null when the stored value is not one of the presets, so the UI
+ *  highlights nothing and shows the raw duration instead of lying. */
+export function targetSecondsToClipLength(seconds: number | undefined | null): string | null {
   if (seconds === 15) return 's15';
   if (seconds === 30) return 's30';
   if (seconds === 60) return 's60';
   if (seconds === 90) return 's90';
-  return 'auto';
+  return null;
 }
 
 /** Output resolutions, portrait-first for Shorts/TikTok/Reels. */

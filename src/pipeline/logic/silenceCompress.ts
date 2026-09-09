@@ -159,7 +159,7 @@ function mergeAdjacent(regions: SilenceWindow[], padSec: number): SilenceWindow[
  */
 export function buildSilenceRemoveFilter(duration: number, regions: SilenceWindow[]): string {
   if (regions.length === 0 || duration <= 0) {
-    return `atrim=start=0:end=${duration},asetpts=PTS-STARTPTS`;
+    return `atrim=start=0:end=${duration},asetpts=PTS-STARTPTS[voiced]`;
   }
 
   // Compute voiced segments = complement of silent regions.
@@ -174,7 +174,7 @@ export function buildSilenceRemoveFilter(duration: number, regions: SilenceWindo
   // Drop zero-duration segments.
   const real = voiced.filter(([a, b]) => b - a > 0.001);
   if (real.length === 0) {
-    return `atrim=start=0:end=${duration},asetpts=PTS-STARTPTS`;
+    return `atrim=start=0:end=${duration},asetpts=PTS-STARTPTS[voiced]`;
   }
 
   if (real.length === 1) {
@@ -193,6 +193,26 @@ export function buildSilenceRemoveFilter(duration: number, regions: SilenceWindo
   }
   parts.push(`${labels.join('')}concat=n=${real.length}:v=0:a=1[voiced]`);
   return parts.join(';');
+}
+
+/**
+ * Build a *video* select/setpts filter that removes the same silence
+ * windows as the audio trim, so re-encoded video stays aligned with the
+ * shortened voice track (prevents audio/video desync during silence
+ * removal). Pure logic — no process. Caller must re-encode (not map/copy).
+ */
+export function buildSilenceRemoveVideoFilter(
+  regions: SilenceWindow[],
+  frameRate: number = 30,
+): string {
+  if (regions.length === 0) {
+    return 'null';
+  }
+  // Keep frames whose timestamp is NOT inside any silence window.
+  const keep = regions
+    .map((r) => `not(between(t,${r.startSec.toFixed(3)},${r.endSec.toFixed(3)}))`)
+    .join('+');
+  return `select='${keep}',setpts=N/(${frameRate})/TB`;
 }
 
 /**

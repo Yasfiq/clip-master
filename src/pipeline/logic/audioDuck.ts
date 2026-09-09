@@ -43,6 +43,12 @@ export interface AudioDuckConfig {
   fadeSeconds: number;
   /** Backsound file path (absolute). */
   backsoundPath: string;
+  /**
+   * Mix length in seconds. Drives the fade-out start (st = length -
+   * fadeSeconds) so the out-fade lands at the END of the mix, not at t=0.
+   * When absent, defaults to a short no-op window for safety.
+   */
+  mixLengthSec?: number;
 }
 
 /** Default configuration. Gains chosen so duck depth ≈ 6-10 dB while speaking. */
@@ -81,7 +87,16 @@ export function buildAudioDuckFilter(config: AudioDuckConfig): string {
     releaseMs,
     peakLimit,
     fadeSeconds,
+    mixLengthSec,
   } = config;
+
+  // Fade-out must start fadeSeconds before the mix ends, never at t=0
+  // (afade st=0 means the audio ramps to silence in the first 2s — the
+  // rest of the clip plays without an out-fade). Short mixes clamp so the
+  // fade window does not invert.
+  const len =
+    mixLengthSec && Number.isFinite(mixLengthSec) && mixLengthSec > 0 ? mixLengthSec : null;
+  const fadeOutStart = len === null ? 0 : Math.max(0, len - fadeSeconds);
 
   const g = (v: number) => round3(v);
   const parts = [
@@ -93,8 +108,8 @@ export function buildAudioDuckFilter(config: AudioDuckConfig): string {
     `[music][vd]sidechaincompress=threshold=${g(sidechainThreshold)}:ratio=${sidechainRatio}:attack=${attackMs}:release=${releaseMs}[duck]`,
     // Mix dry voice + ducked music.
     `[vm][duck]amix=inputs=2:duration=first[mixed]`,
-    // Fades and peak limit.
-    `[mixed]afade=t=in:st=0:d=${fadeSeconds},afade=t=out:st=0:d=${fadeSeconds}[faded]`,
+    // Fades and peak limit. Fade-IN from t=0; fade-OUT ends at mix length.
+    `[mixed]afade=t=in:st=0:d=${fadeSeconds},afade=t=out:st=${g(fadeOutStart)}:d=${fadeSeconds}[faded]`,
     `[faded]alimiter=limit=${g(peakLimit)}:attack=5:release=50[limited]`,
   ];
 

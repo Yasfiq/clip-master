@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   detectSilenceRegions,
   buildSilenceRemoveFilter,
+  buildSilenceRemoveVideoFilter,
   type SilenceWindow,
 } from '../../src/pipeline/logic/silenceCompress';
 
@@ -96,7 +97,7 @@ describe('silenceCompress', () => {
     it('returns trim-only filter when no silences detected', () => {
       const regions: SilenceWindow[] = [];
       const filter = buildSilenceRemoveFilter(10, regions);
-      expect(filter).toBe('atrim=start=0:end=10,asetpts=PTS-STARTPTS');
+      expect(filter).toBe('atrim=start=0:end=10,asetpts=PTS-STARTPTS[voiced]');
     });
 
     it('builds atrim + concat filter concatenating voiced segments', () => {
@@ -138,7 +139,7 @@ describe('silenceCompress', () => {
     it('falls back to trim when silences cover the entire timeline', () => {
       const regions: SilenceWindow[] = [{ startSec: 0, endSec: 10 }];
       const filter = buildSilenceRemoveFilter(10, regions);
-      expect(filter).toBe('atrim=start=0:end=10,asetpts=PTS-STARTPTS');
+      expect(filter).toBe('atrim=start=0:end=10,asetpts=PTS-STARTPTS[voiced]');
     });
 
     it('uses [0:a] input label and [voiced] output for filter graph composition', () => {
@@ -147,6 +148,25 @@ describe('silenceCompress', () => {
       expect(filter).toContain('[0:a]atrim=start=0.000:end=3.000');
       expect(filter).toContain('[0:a]atrim=start=5.000:end=10.000');
       expect(filter).toContain('[voiced]');
+    });
+  });
+
+  describe('buildSilenceRemoveVideoFilter', () => {
+    it('returns null passthrough when no regions', () => {
+      const f = buildSilenceRemoveVideoFilter([]);
+      expect(f).toBe('null');
+    });
+
+    it('emits a select that keeps only frames outside every silence window', () => {
+      const regions: SilenceWindow[] = [
+        { startSec: 2, endSec: 3 },
+        { startSec: 5, endSec: 6 },
+      ];
+      const f = buildSilenceRemoveVideoFilter(regions, 24);
+      expect(f).toContain('not(between(t,2.000,3.000))');
+      expect(f).toContain('not(between(t,5.000,6.000))');
+      expect(f).toContain('select=');
+      expect(f).toContain('setpts=N/(24)/TB');
     });
   });
 });

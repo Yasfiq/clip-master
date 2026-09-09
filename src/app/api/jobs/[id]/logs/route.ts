@@ -15,6 +15,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const { id } = await params;
     const { searchParams } = new URL(req.url);
     const since = searchParams.get('since'); // ISO date string
+    const limitRaw = searchParams.get('limit');
+    const limit = limitRaw ? Math.min(Math.max(parseInt(limitRaw, 10) || 200, 1), 1000) : 200;
 
     const job = await db.job.findUnique({ where: { id } });
     if (!job) {
@@ -23,14 +25,22 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const where: any = { jobId: id };
     if (since) {
-      where.timestamp = { gt: new Date(since) };
+      const sinceDate = new Date(since);
+      if (Number.isNaN(sinceDate.getTime())) {
+        return apiError(ErrorCode.VALIDATION_FAILED, 'since must be an ISO date string');
+      }
+      // gte (not gt): logs written in the SAME millisecond as `since` must
+      // not be skipped forever. Client dedupes by id on the receiving end.
+      where.timestamp = { gte: sinceDate };
     }
 
     const logs = await db.jobLog.findMany({
       where,
-      orderBy: { timestamp: 'asc' },
-      take: 1000,
+      orderBy: { timestamp: 'desc' },
+      take: limit,
     });
+    // Newest-first fetch, oldest-first render.
+    logs.reverse();
 
     return apiSuccess({ logs, status: job.status });
   }, req);

@@ -9,6 +9,18 @@ import {
   resolutionToTarget,
 } from '@/pipeline/logic/configPresets';
 
+/** Color grading presets accepted by the EDIT stage (see src/pipeline/logic/
+ *  colorGrade.ts). Kept local to the panel; the server validates the same set
+ *  at /api/config POST time. */
+const GRADING_OPTIONS: Array<{ id: string; label: string }> = [
+  { id: 'natural', label: 'Natural (original)' },
+  { id: 'vivid', label: 'Vivid' },
+  { id: 'warm', label: 'Warm' },
+  { id: 'cool', label: 'Cool' },
+  { id: 'cinematic', label: 'Cinematic' },
+  { id: 'vintage', label: 'Vintage' },
+];
+
 /**
  * The writable config surface this panel edits — exactly the columns the
  * pipeline reads (see prisma/schema.prisma PipelineConfig). Anything not
@@ -46,7 +58,7 @@ type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
   const [config, setConfig] = useState<PipelineConfigValues>(DEFAULT_VALUES);
-  const [loaded, setLoaded] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [saveMessage, setSaveMessage] = useState('');
 
@@ -68,10 +80,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
         if (active) {
           setConfig((prev) => ({ ...prev, ...pickWritable(active) }));
         }
-        setLoaded(true);
+        setIsLoaded(true);
       })
       .catch(() => {
-        if (!cancelled) setLoaded(true); // keep defaults, surface save errors later
+        if (!cancelled) setIsLoaded(true); // keep defaults, surface save errors later
       });
     return () => {
       cancelled = true;
@@ -113,13 +125,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
   const clipLengthId = targetSecondsToClipLength(config.targetDuration);
   const onClipLength = (id: string) => {
     const seconds = clipLengthToTargetSeconds(id);
-    if (seconds === undefined) {
-      // Auto: pipeline picks from the source. Persist the default target so a
-      // job always has a concrete row value.
-      update('targetDuration', DEFAULT_VALUES.targetDuration);
-    } else {
-      update('targetDuration', seconds);
-    }
+    if (seconds !== undefined) update('targetDuration', seconds);
   };
 
   const saveTone =
@@ -155,13 +161,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
             <div className="flex items-baseline justify-between">
               <label className="text-sm font-medium text-gray-900">Clip length</label>
               <span className="text-xs text-gray-400 tabular-nums">
-                {clipLengthId === 'auto'
-                  ? 'Automatic — pick the best length per video'
-                  : `${config.targetDuration}s clips`}
+                {config.targetDuration}s clips
               </span>
             </div>
             <div
-              className="mt-2 grid grid-cols-3 sm:grid-cols-5 gap-2"
+              className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2"
               role="radiogroup"
               aria-label="Clip length"
             >
@@ -192,9 +196,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
               })}
             </div>
             <p className="mt-1.5 text-[11px] text-gray-400 px-0.5">
-              {clipLengthId === 'auto'
-                ? 'Pipeline picks the best length per video.'
-                : `Each clip targets ${config.targetDuration} seconds.`}
+              Each clip targets {config.targetDuration} seconds.
             </p>
           </div>
 
@@ -230,7 +232,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
           <button
             type="button"
             onClick={handleSave}
-            disabled={saveState === 'saving'}
+            disabled={!isLoaded || saveState === 'saving'}
             className="inline-flex items-center px-5 py-2.5 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-60 transition-colors"
           >
             {saveState === 'saving' ? 'Saving…' : 'Save settings'}
@@ -373,6 +375,28 @@ const AdvancedSection: React.FC<{
             </div>
           </div>
 
+          {/* Color grading preset */}
+          <div>
+            <label htmlFor="grading" className="text-sm font-medium text-gray-900">
+              Color grading
+            </label>
+            <select
+              id="grading"
+              value={config.colorGrading}
+              onChange={(e) => update('colorGrading', e.target.value)}
+              className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              {GRADING_OPTIONS.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-400 mt-1">
+              Look-and-feel applied in the EDIT stage. Natural keeps the original image.
+            </p>
+          </div>
+
           {/* Backsound */}
           <div className="flex items-start justify-between gap-6">
             <div>
@@ -418,9 +442,9 @@ const AdvancedSection: React.FC<{
                 id="min-segment"
                 type="range"
                 min="30"
-                max="180"
+                max={Math.max(180, config.minSegmentDuration)}
                 step="15"
-                value={Math.min(config.minSegmentDuration, 180)}
+                value={config.minSegmentDuration}
                 onChange={(e) => update('minSegmentDuration', Number(e.target.value))}
                 className="w-full accent-blue-600"
               />

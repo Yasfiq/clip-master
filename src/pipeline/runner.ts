@@ -50,10 +50,31 @@ export async function runPhase1(config: RunnerConfig): Promise<void> {
 
     await orchestrator.runPhase1(jobId);
 
+    // A stage failure inside the orchestrator already marked the job FAILED/
+    // REJECTED_AD and re-threw. Do not overwrite that terminal state with
+    // completePhase1 — re-check the row before declaring success.
+    const afterRun = await db.job.findUnique({
+      where: { id: jobId },
+      select: { status: true },
+    });
+    if (afterRun && afterRun.status !== JobStatus.RUNNING_PHASE1) {
+      logger.warn('Phase 1 runner aborted; stage failure set a terminal state', {
+        jobId,
+        status: afterRun.status,
+      });
+      return;
+    }
+
     const clips = await db.clip.findMany({
       where: { jobId },
       orderBy: { startTime: 'asc' },
     });
+
+    if (clips.length === 0) {
+      throw new Error(
+        'NO_QUALIFYING_SEGMENTS: all candidate segments were empty or too short after filtering — nothing to review',
+      );
+    }
 
     await jobService.completePhase1(jobId, clips.length);
     logger.info('Phase 1 completed', { jobId, clipsCount: clips.length });
@@ -61,10 +82,25 @@ export async function runPhase1(config: RunnerConfig): Promise<void> {
     const msg = err.message || String(err);
     logger.error('Phase 1 failed', { jobId, error: msg });
 
+    // If the job already left RUNNING_PHASE1 (operator cancelled in the gap
+    // before this runner registered), do not overwrite the terminal state.
+    const current = await db.job.findUnique({ where: { id: jobId } });
+    if (current && current.status !== JobStatus.RUNNING_PHASE1) {
+      logger.warn('Phase 1 runner aborted; job status already changed', {
+        jobId,
+        currentStatus: current.status,
+      });
+      return;
+    }
+
     let code: JobErrorCode = JobErrorCode.INTERNAL;
-    if (msg.includes('ad')) code = JobErrorCode.PURE_AD_REJECTED;
-    else if (msg.includes('segment')) code = JobErrorCode.NO_QUALIFYING_SEGMENTS;
+    if (msg.includes('PURE_AD_REJECTED')) code = JobErrorCode.PURE_AD_REJECTED;
+    else if (msg.includes('NO_QUALIFYING_SEGMENTS')) code = JobErrorCode.NO_QUALIFYING_SEGMENTS;
+    else if (msg.includes('BINARY_NOT_FOUND')) code = JobErrorCode.BINARY_NOT_FOUND;
     else if (msg.includes('binary') || msg.includes('not found') || msg.includes('Preflight')) {
+      // A stage failing to produce/download a file (e.g. yt-dlp left nothing)
+      // is a binary/tooling failure. Row-missing errors never reach this
+      // catch — they are guarded before the runner starts.
       code = JobErrorCode.BINARY_NOT_FOUND;
     }
 
@@ -136,6 +172,20 @@ export async function runPhase2(config: RunnerConfig): Promise<void> {
 
     await orchestrator.runPhase2(jobId, ctx);
 
+    // Stage failure inside the orchestrator already set a terminal state and
+    // re-threw — never overwrite with completeJob.
+    const afterRun = await db.job.findUnique({
+      where: { id: jobId },
+      select: { status: true },
+    });
+    if (afterRun && afterRun.status !== JobStatus.RUNNING_PHASE2) {
+      logger.warn('Phase 2 runner aborted; stage failure set a terminal state', {
+        jobId,
+        status: afterRun.status,
+      });
+      return;
+    }
+
     const finalClips = await db.clip.findMany({
       where: { jobId },
       orderBy: { startTime: 'asc' },
@@ -144,18 +194,39 @@ export async function runPhase2(config: RunnerConfig): Promise<void> {
     const totalDuration = finalClips.reduce((sum, c) => sum + c.duration, 0);
     const exportPaths = finalClips.map((c) => c.exportPath).filter((p): p is string => p !== null);
 
-    await jobService.completeJob(jobId, finalClips.length, totalDuration, exportPaths);
+    if (exportPaths.length === 0) {
+      // Every clip was skipped or failed during EDIT/EXPORT/COMPRESS. An
+      // explicit failure beats a COMPLETED job with zero usable exports.
+      throw new Error(
+        'NO_QUALIFYING_SEGMENTS: phase 2 produced no exported clips — all clips were skipped or failed',
+      );
+    }
+
+    await jobService.completeJob(jobId, exportPaths.length, totalDuration, exportPaths);
     logger.info('Phase 2 completed', { jobId, clipsCount: finalClips.length, totalDuration });
   } catch (err: any) {
     const msg = err.message || String(err);
     logger.error('Phase 2 failed', { jobId, error: msg });
 
+    // Preserve terminal states set by the operator (cancel) or recovery.
+    const current = await db.job.findUnique({ where: { id: jobId } });
+    if (current && current.status !== JobStatus.RUNNING_PHASE2) {
+      logger.warn('Phase 2 runner aborted; job status already changed', {
+        jobId,
+        currentStatus: current.status,
+      });
+      return;
+    }
+
     let code: JobErrorCode = JobErrorCode.INTERNAL;
-    if (msg.includes('ad')) code = JobErrorCode.PURE_AD_REJECTED;
-    else if (msg.includes('segment') || msg.includes('Clip'))
-      code = JobErrorCode.NO_QUALIFYING_SEGMENTS;
-    else if (msg.includes('binary') || msg.includes('not found'))
+    if (msg.includes('PURE_AD_REJECTED')) code = JobErrorCode.PURE_AD_REJECTED;
+    else if (msg.includes('NO_QUALIFYING_SEGMENTS')) code = JobErrorCode.NO_QUALIFYING_SEGMENTS;
+    else if (msg.includes('BINARY_NOT_FOUND')) code = JobErrorCode.BINARY_NOT_FOUND;
+    else if (msg.includes('binary') || msg.includes('not found') || msg.includes('Preflight')) {
+      // A stage failing to produce/download a file is a binary/tooling
+      // failure. Row-missing errors never reach this catch — guarded before.
       code = JobErrorCode.BINARY_NOT_FOUND;
+    }
 
     try {
       await jobService.failJob(jobId, code, msg);

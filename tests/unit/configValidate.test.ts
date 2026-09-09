@@ -40,6 +40,12 @@ describe('validateConfigValues', () => {
     expect(validateConfigValues({ colorGrading: 'sepia' })).not.toEqual([]);
   });
 
+  it('accepts every EDIT-stage grading preset (validation must not block the pipeline)', () => {
+    for (const preset of ['natural', 'vivid', 'warm', 'cool', 'cinematic', 'vintage']) {
+      expect(validateConfigValues({ colorGrading: preset })).toEqual([]);
+    }
+  });
+
   it('rejects malformed targetResolution', () => {
     expect(validateConfigValues({ targetResolution: '1080p' })).not.toEqual([]);
     expect(validateConfigValues({ targetResolution: '1080x1920' })).toEqual([]);

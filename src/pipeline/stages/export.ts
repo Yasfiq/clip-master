@@ -144,8 +144,11 @@ export class ExportStage implements PipelineStageHandler {
 
       // Architecture spec (from summary):
       // maxLineLength 42, maxLines 2, minDuration 1.0s, maxDuration 7.0s
+      // NOTE: the SRT producer (srtLineWrap) allows up to 3 visual lines per
+      // cue (MAX_LINES=3), so validation must accept 3 or it would silently
+      // reject every 3-line cue the producer emits.
       const maxLineSpec = 42;
-      const maxLinesSpec = 2;
+      const maxLinesSpec = 3;
 
       if (maxLineLength > maxLineSpec) {
         return {

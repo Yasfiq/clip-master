@@ -24,7 +24,7 @@ export class CutStage implements PipelineStageHandler {
 
     const segments = ctx.stageData.segments;
     if (!segments || segments.length === 0) {
-      throw new Error('No qualifying segments found from ANALYZE stage');
+      throw new Error('NO_QUALIFYING_SEGMENTS: no qualifying segments found from ANALYZE stage');
     }
 
     if (!ctx.sourcePath || !(await this.fileExists(ctx.sourcePath))) {
@@ -90,7 +90,10 @@ export class CutStage implements PipelineStageHandler {
       completed++;
     }
 
-    await onProgress(1.0, `CUT stage completed: ${totalSegments} raw clips saved`);
+    await onProgress(
+      1.0,
+      `CUT stage completed: ${ctx.stageData.clips.length} raw clips saved (${totalSegments} segment${totalSegments === 1 ? '' : 's'} processed)`,
+    );
     logger.info(`CUT stage produced ${ctx.stageData.clips.length} clips in ${cutDir}`);
   }
 
@@ -181,7 +184,12 @@ export class CutStage implements PipelineStageHandler {
 
     const stat = await fs.stat(cutPath);
     if (stat.size < 1024) {
-      throw new Error(`Cut file too small (${stat.size} bytes) — likely cut error`);
+      // A single corrupt/empty cut should not fail the whole job: skip it
+      // and let the remaining segments proceed. Zero surviving clips is
+      // handled explicitly upstream (NO_QUALIFYING_SEGMENTS).
+      logger.warn(`Cut file too small (${stat.size} bytes), skipping ${clipId}`);
+      await fs.unlink(cutPath).catch(() => {});
+      return;
     }
 
     ctx.stageData.clips!.push({

@@ -137,13 +137,16 @@ export class SubtitleStage implements PipelineStageHandler {
     // and push the first overlapping cue forward. Without this, the subtitle
     // appears 2-3s before the speaker actually starts (whisper sometimes
     // aligns the first cue to t=0 even when the speaker is still preparing).
+    // Cap at 25% of clip duration so very short clips are not stripped bare.
     const LEAD_OFFSET_S = 3.5;
-    const trimmed = applyLeadOffset(wrapped, LEAD_OFFSET_S);
+    const clipDuration = Math.max(1, clipEnd - clipStart);
+    const lead = Math.min(LEAD_OFFSET_S, clipDuration * 0.25);
+    const trimmed = applyLeadOffset(wrapped, lead);
 
     const srt = renderSrt(trimmed);
     await fs.writeFile(srtPath, srt, 'utf8');
     logger.debug(
-      `SRT sliced: ${relevant.length} raw → ${trimmed.length} entries (max ${MAX_CHARS} chars/line, lead offset ${LEAD_OFFSET_S}s)`,
+      `SRT sliced: ${relevant.length} raw → ${trimmed.length} entries (max ${MAX_CHARS} chars/line, lead offset ${lead}s)`,
     );
   }
 

@@ -19,6 +19,27 @@ describe('audioDuck', () => {
       expect(filter).toContain('alimiter');
     });
 
+    it('anchors fade-out at mix end, not at t=0', () => {
+      // 60s mix, 2s fade -> out-fade must start at st=58.
+      const filter = buildAudioDuckFilter({
+        ...DEFAULT_AUDIO_CONFIG,
+        backsoundPath: '/tmp/music.mp3',
+        mixLengthSec: 60,
+      });
+      expect(filter).toContain('afade=t=out:st=58:d=2');
+      expect(filter).not.toContain('afade=t=out:st=0');
+    });
+
+    it('clamps fade-out when mix shorter than the fade window', () => {
+      const filter = buildAudioDuckFilter({
+        ...DEFAULT_AUDIO_CONFIG,
+        backsoundPath: '/tmp/music.mp3',
+        mixLengthSec: 1,
+      });
+      // st clamps to 0 rather than going negative.
+      expect(filter).toContain('afade=t=out:st=0:d=2');
+    });
+
     it('places music as sidechaincompress MAIN input and voice as sidechain', () => {
       const filter = buildAudioDuckFilter({
         ...DEFAULT_AUDIO_CONFIG,

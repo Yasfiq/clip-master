@@ -9,14 +9,14 @@ import {
 
 describe('configPresets', () => {
   describe('CLIP_LENGTH_OPTIONS', () => {
-    it('offers Auto plus market-standard shorts durations', () => {
+    it('offers concrete market-standard shorts durations only (no fake auto)', () => {
       const ids = CLIP_LENGTH_OPTIONS.map((o) => o.id);
-      expect(ids).toEqual(['auto', 's15', 's30', 's60', 's90']);
+      expect(ids).toEqual(['s15', 's30', 's60', 's90']);
     });
   });
 
   describe('clipLengthToTargetSeconds', () => {
-    it('maps auto to undefined (pipeline decides)', () => {
+    it('returns undefined for the legacy auto id (caller keeps its value)', () => {
       expect(clipLengthToTargetSeconds('auto')).toBeUndefined();
     });
 
@@ -27,7 +27,7 @@ describe('configPresets', () => {
       expect(clipLengthToTargetSeconds('s90')).toBe(90);
     });
 
-    it('falls back to auto for unknown ids', () => {
+    it('returns undefined for unknown ids', () => {
       expect(clipLengthToTargetSeconds('bogus')).toBeUndefined();
     });
   });
@@ -40,9 +40,9 @@ describe('configPresets', () => {
       expect(targetSecondsToClipLength(90)).toBe('s90');
     });
 
-    it('returns auto for anything else (incl. legacy 180)', () => {
-      expect(targetSecondsToClipLength(180)).toBe('auto');
-      expect(targetSecondsToClipLength(undefined)).toBe('auto');
+    it('returns null when the stored value is not a preset (no lying radio)', () => {
+      expect(targetSecondsToClipLength(180)).toBeNull();
+      expect(targetSecondsToClipLength(undefined)).toBeNull();
     });
   });
 

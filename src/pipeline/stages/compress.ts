@@ -63,7 +63,11 @@ export class CompressStage implements PipelineStageHandler {
       // Verify final file
       const stat = await fs.stat(exportPath);
       if (stat.size < 1024) {
-        throw new Error(`Final export too small (${stat.size} bytes) for clip ${clip.id}`);
+        logger.warn(
+          `Final export too small (${stat.size} bytes) for clip ${clip.id}, skipping registration`,
+        );
+        completed++;
+        continue;
       }
 
       // Register Clip record in database

@@ -10,7 +10,14 @@
 
 export type ConfigValue = string | number | boolean | undefined | null;
 
-const COLOR_GRADING_PRESETS: ReadonlySet<string> = new Set(['natural']);
+const COLOR_GRADING_PRESETS: ReadonlySet<string> = new Set([
+  'natural',
+  'vivid',
+  'warm',
+  'cool',
+  'cinematic',
+  'vintage',
+]);
 
 /** Resolution strings accepted by the compress stage ("WxH" portrait). */
 const RESOLUTION_PATTERN = /^\d{3,4}x\d{3,4}$/;

@@ -17,10 +17,13 @@ import { logger } from '@/server/logger';
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   return catchApiErrors(async () => {
     const { id } = await params;
-    const body = await req.json().catch(() => ({}));
+    const body = (await req.json().catch(() => ({}))) || {};
+    if (Array.isArray(body) || typeof body !== 'object') {
+      return apiError(ErrorCode.VALIDATION_FAILED, 'Request body must be a JSON object');
+    }
 
     try {
-      const job = await jobService.startPhase2(id, body.configId);
+      const job = await jobService.startPhase2(id, (body as any).configId);
       logger.info('Phase 2 started via API', { jobId: id, configId: body.configId || null });
       return apiSuccess(job);
     } catch (e) {
@@ -33,6 +36,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           ErrorCode.JOB_NOT_READY,
           `Job ${id} is not ready for Phase 2 (must be in PHASE1_DONE)`,
         );
+      }
+      if (msg.includes('already running')) {
+        return apiError(ErrorCode.JOB_ALREADY_RUNNING, msg);
+      }
+      if (msg.includes('Unknown configId')) {
+        return apiError(ErrorCode.VALIDATION_FAILED, msg);
       }
       logger.error('Failed to start Phase 2', { jobId: id, error: msg });
       return apiError(ErrorCode.INTERNAL, msg);

@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { db } from '@/server/db';
 import { JobStatus } from '@prisma/client';
+import type { JobLog } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,8 +16,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const stream = new ReadableStream({
     async start(controller) {
-      let lastTimestamp = new Date(0);
+      let cursor: { timestamp: Date; id: string } | null = null; // null = nothing sent yet
       let lastStatus = job.status;
+      let lastStage = job.currentStage;
+      let lastProgress = job.progress;
       let isClosed = false;
 
       // Keep-alive ping
@@ -49,37 +52,65 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
               status: true,
               currentStage: true,
               stageProgress: true,
+              progress: true,
               exportedClipsCount: true,
               errorCode: true,
+              errorMessage: true,
             },
           });
 
           if (
             currentJob &&
-            (currentJob.status !== lastStatus || currentJob.currentStage !== job.currentStage)
+            (currentJob.status !== lastStatus ||
+              currentJob.currentStage !== lastStage ||
+              currentJob.progress !== lastProgress)
           ) {
             lastStatus = currentJob.status;
+            lastStage = currentJob.currentStage;
+            lastProgress = currentJob.progress;
             const statusPayload = {
               type: 'status',
               status: currentJob.status,
               stage: currentJob.currentStage,
-              progress: currentJob.stageProgress,
+              // Global progress 0..1 on the job row.
+              progress: currentJob.progress ?? currentJob.stageProgress,
               clipsCount: currentJob.exportedClipsCount,
               errorCode: currentJob.errorCode,
+              errorMessage: currentJob.errorMessage,
             };
             controller.enqueue(
               new TextEncoder().encode(`data: ${JSON.stringify(statusPayload)}\n\n`),
             );
           }
 
-          // 2. Check for new logs
-          const newLogs = await db.jobLog.findMany({
-            where: { jobId, timestamp: { gt: lastTimestamp } },
-            orderBy: { timestamp: 'asc' },
-          });
+          // 2. Check for new logs. The very first poll backfills the most
+          //    recent 500 rows (desc, then reversed) so a reconnect replays a
+          //    bounded window; the client dedupes by id. Every later poll walks
+          //    FORWARD with gte + lastLogId exclusion (several rows can share a
+          //    millisecond; strict `gt` would skip those siblings forever). The
+          //    asc poll is capped too: with the cursor still at epoch (no logs
+          //    existed at open) an uncapped asc replay would stream the whole
+          //    table on a job that has since produced many logs.
+          const newLogs: JobLog[] = cursor
+            ? await db.jobLog.findMany({
+                where: {
+                  jobId,
+                  timestamp: { gte: cursor.timestamp },
+                  NOT: { id: cursor.id },
+                } as any,
+                orderBy: { timestamp: 'asc' },
+                take: 500,
+              })
+            : await db.jobLog.findMany({
+                where: { jobId, timestamp: { gt: new Date(0) } },
+                orderBy: { timestamp: 'desc' },
+                take: 500,
+              });
+          if (cursor === null) newLogs.reverse();
 
           if (newLogs.length > 0) {
-            lastTimestamp = newLogs[newLogs.length - 1].timestamp;
+            const last: JobLog = newLogs[newLogs.length - 1]!;
+            cursor = { timestamp: last.timestamp, id: last.id };
             const logPayload = { type: 'logs', logs: newLogs };
             controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(logPayload)}\n\n`));
           }
@@ -105,8 +136,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
             break;
           }
 
-          // Wait before next poll
-          await new Promise((resolve) => setTimeout(resolve, 1000));
+          // Wait before next poll. Idle states (PHASE1_DONE pause, queued
+          // PENDING) poll slowly; an active phase polls fast.
+          const idle =
+            !currentJob ||
+            (currentJob.status !== 'RUNNING_PHASE1' && currentJob.status !== 'RUNNING_PHASE2');
+          await new Promise((resolve) => setTimeout(resolve, idle ? 4000 : 1000));
         } catch (error) {
           console.error('SSE Error:', error);
           if (!isClosed) {

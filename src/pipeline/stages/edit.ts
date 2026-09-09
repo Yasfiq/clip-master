@@ -7,10 +7,15 @@ import { buildAudioDuckFilter, DEFAULT_AUDIO_CONFIG } from '../logic/audioDuck';
 import {
   detectSilenceRegions,
   buildSilenceRemoveFilter,
+  buildSilenceRemoveVideoFilter,
   type SilenceDetectConfig,
   type SilenceWindow,
 } from '../logic/silenceCompress';
-export { detectSilenceRegions, buildSilenceRemoveFilter } from '../logic/silenceCompress';
+export {
+  detectSilenceRegions,
+  buildSilenceRemoveFilter,
+  buildSilenceRemoveVideoFilter,
+} from '../logic/silenceCompress';
 import { logger } from '../../server/logger';
 import { db } from '../../server/db';
 import { PATHS } from '../../server/paths';
@@ -87,6 +92,7 @@ export class EditStage implements PipelineStageHandler {
       if (backsoundPath && ctx.metadata?.hasAudio) {
         // Apply color grading + audio mixing
         const dur = clip.duration ?? ctx.metadata?.duration ?? 0;
+        const fps = ctx.metadata?.fps || 30;
         await this.applyColorAndAudio(
           clip.cutPath,
           editedPath,
@@ -94,6 +100,7 @@ export class EditStage implements PipelineStageHandler {
           backsoundPath,
           dur,
           videoPassThrough,
+          fps,
         );
       } else if (ctx.metadata?.hasAudio && !backsoundPath) {
         // Apply color grading only, keep original audio
@@ -106,7 +113,10 @@ export class EditStage implements PipelineStageHandler {
       // Verify edited file
       const stat = await fs.stat(editedPath);
       if (stat.size < 1024) {
-        throw new Error(`Edited file too small (${stat.size} bytes) for clip ${clip.id}`);
+        logger.warn(`Edited file too small (${stat.size} bytes) for clip ${clip.id}, skipping`);
+        await fs.unlink(editedPath).catch(() => {});
+        completed++;
+        continue;
       }
 
       // Update clip with edited path in both context and DB
@@ -168,6 +178,7 @@ export class EditStage implements PipelineStageHandler {
     backsoundPath: string,
     clipDuration: number,
     videoPassThrough: boolean,
+    fps: number = 30,
   ): Promise<void> {
     // Detect silences on the voice track (input [0:a]) before mixing.
     // Skipped when the voice track is shorter than the configured minimum
@@ -186,6 +197,13 @@ export class EditStage implements PipelineStageHandler {
       peakLimit: 0.891,
       fadeSeconds: 2,
       backsoundPath,
+      // Fade-out anchored to the clip's (post-silence-removal) length.
+      // Total cut is known from the detected regions, so the out-fade
+      // lands near the real end instead of t=0.
+      mixLengthSec:
+        clipDuration > 0
+          ? clipDuration - voiceSilenceRegions.reduce((s, r) => s + (r.endSec - r.startSec), 0)
+          : clipDuration,
     });
 
     // Compose filter graph: video on [0:v], audio on [0:a] and [1:a].
@@ -194,15 +212,24 @@ export class EditStage implements PipelineStageHandler {
     // the voiced segments. The music sidechain then sees accurate voice
     // activity, and the resulting stream is shorter than the source.
     let filterComplex: string;
+    let silenceTrimmed = false;
     if (voiceSilenceRegions.length > 0) {
+      // Silence removal trims the voice track shorter than the source. The
+      // video must be re-encoded through a matching select (timestamp
+      // removal), otherwise a stream-copy video stays full-length and the
+      // result desyncs (audio ends, video keeps playing).
+      silenceTrimmed = true;
       const voicePre = buildSilenceRemoveFilter(clipDuration, voiceSilenceRegions);
+      const videoTrim = buildSilenceRemoveVideoFilter(voiceSilenceRegions, fps);
       // The silence-remove sub-graph ends with label [voiced]. The ducking
       // graph in audioFilter references [0:a] for the source voice; remap
       // that label to [voiced] so the trimmed stream feeds the sidechain
       // detector and the mix bus.
       const voicedLabel = '[voiced]';
       const remappedAudio = audioFilter.replaceAll('[0:a]', voicedLabel);
-      filterComplex = `[0:v] ${colorFilter} [graded]; [0:a] ${voicePre}; ${remappedAudio}`;
+      // Natural grading colorFilter is empty; trim the video directly.
+      const videoChain = colorFilter ? `${colorFilter},${videoTrim}` : videoTrim;
+      filterComplex = `[0:v] ${videoChain} [graded]; [0:a] ${voicePre}; ${remappedAudio}`;
     } else {
       filterComplex = `[0:v] ${colorFilter} [graded]; ${audioFilter}`;
     }
@@ -211,21 +238,28 @@ export class EditStage implements PipelineStageHandler {
     // filter_complex graph must contain only audio filters — an empty video
     // filter chain would corrupt the graph. The audio branch references
     // [0:a]/[1:a] only, so drop the video edge entirely.
-    if (videoPassThrough) {
+    //
+    // When silence was trimmed, the video must be re-encoded through a
+    // matching select (timestamp removal) so it aligns with the shortened
+    // audio — a stream copy cannot timeline-trim.
+    if (videoPassThrough && !silenceTrimmed) {
       const audioOnlyGraph = filterComplex
         .replace(`[0:v] ${colorFilter} [graded]; `, '')
         .replace(`[0:v] ${colorFilter} [graded];`, '');
       filterComplex = audioOnlyGraph;
     }
 
+    // When silence was trimmed the video goes through [graded] (trimmed),
+    // so it must be re-encoded — never mapped as a stream copy, which would
+    // produce a full-length video desynced from the shortened audio.
+    const useReencode = !videoPassThrough || silenceTrimmed;
     const args = [
       '-i',
       inputPath,
       '-i',
       backsoundPath,
-      ...(videoPassThrough
-        ? ['-map', '0:v', '-c:v', 'copy']
-        : [
+      ...(useReencode
+        ? [
             '-filter_complex',
             filterComplex,
             '-map',
@@ -236,7 +270,8 @@ export class EditStage implements PipelineStageHandler {
             'medium',
             '-crf',
             '23',
-          ]),
+          ]
+        : ['-map', '0:v', '-c:v', 'copy']),
       '-map',
       '[limited]',
       '-c:a',

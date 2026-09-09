@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   return catchApiErrors(async () => {
-    const body = await req.json();
+    const body = (await req.json().catch(() => ({}))) || {};
     const { name, description, isDefault, ...rest } = body;
 
     if (!name) {
@@ -43,6 +43,11 @@ export async function POST(req: NextRequest) {
     }
 
     try {
+      const updateData: Record<string, unknown> = {};
+      if (description !== undefined) updateData.description = description;
+      if (isDefault !== undefined) updateData.isDefault = !!isDefault;
+      for (const [k, v] of Object.entries(configValues)) updateData[k] = v;
+
       if (isDefault) {
         await db.pipelineConfig.updateMany({
           where: { isDefault: true },
@@ -50,16 +55,17 @@ export async function POST(req: NextRequest) {
         });
       }
 
+      // Prisma rejects an empty update object, so a name-only body must be
+      // rejected as a validation failure instead of surfacing as a 500.
+      if (Object.keys(updateData).length === 0) {
+        return apiError(ErrorCode.VALIDATION_FAILED, 'No writable config values provided');
+      }
+
       const config = await db.pipelineConfig.upsert({
         where: { name },
-        update: {
-          ...(description !== undefined ? { description } : {}),
-          ...(isDefault !== undefined ? { isDefault: !!isDefault } : {}),
-          ...configValues,
-        },
+        update: updateData,
         create: {
           name,
-          ...(description !== undefined ? { description } : {}),
           isDefault: !!isDefault,
           ...configValues,
         },
@@ -72,3 +78,9 @@ export async function POST(req: NextRequest) {
     }
   }, req);
 }
+
+/**
+ * PUT /api/config — alias for POST; same upsert behaviour.
+ * Aligns with AGENTS.md REST contract while preserving existing POST callers.
+ */
+export const PUT = POST;

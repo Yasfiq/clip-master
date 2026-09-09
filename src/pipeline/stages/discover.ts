@@ -1,7 +1,7 @@
 import { PipelineStage } from '@prisma/client';
 import { PipelineStageHandler, StageContext } from '../runner-types';
 import { probeMedia } from '../binaries/ffprobe';
-import { runBinary } from '../binaries/spawn';
+import { runBinaryChecked } from '../binaries/spawn';
 import { logger } from '../../server/logger';
 import { db } from '../../server/db';
 import path from 'path';
@@ -41,8 +41,11 @@ export class DiscoverStage implements PipelineStageHandler {
         const filenamePattern = ctx.jobId + '.%(ext)s';
         const tempPathPattern = path.join(ctx.workDir, filenamePattern);
 
-        // Download best video + best audio
-        await runBinary(
+        // Download best video + best audio. runBinaryChecked throws on
+        // non-zero exit and includes the real yt-dlp stderr tail — an
+        // invalid URL or private video surfaces its actual cause instead of
+        // a generic "output file not found".
+        await runBinaryChecked(
           'yt-dlp',
           [
             '-f',

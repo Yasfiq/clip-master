@@ -15,6 +15,8 @@ interface Clip {
   thumbnailPath?: string;
   isExported: boolean;
   createdAt: string;
+  jobName?: string;
+  jobStatus?: string;
 }
 
 interface Job {
@@ -32,39 +34,46 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
   const [clips, setClips] = useState<Clip[]>([]);
   const [jobs, setJobs] = useState<Record<string, Job>>({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'exported' | 'pending'>('all');
   const [sortBy, setSortBy] = useState<'newest' | 'duration' | 'score'>('newest');
 
   useEffect(() => {
     fetchClips();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
   const fetchClips = async () => {
     setLoading(true);
+    setError(null);
     try {
-      // Fetch all jobs first to map jobId -> job name
-      const jobsRes = await fetch('/api/jobs');
-      const jobsData = await jobsRes.json();
-      // API returns { success, data: { jobs, total, ... } } envelope.
+      const params = new URLSearchParams({ limit: '500' });
+      if (jobId) params.set('jobId', jobId);
+
+      const clipsRes = await fetch(`/api/clips?${params.toString()}`);
+      const clipsPayload = await clipsRes.json().catch(() => ({}));
+      if (!clipsRes.ok) throw new Error(clipsPayload?.error?.message || `HTTP ${clipsRes.status}`);
+      const clipRows = clipsPayload.success ? clipsPayload.data?.clips : clipsPayload.clips;
+      setClips(Array.isArray(clipRows) ? clipRows : []);
+
+      // Fetch jobs to map jobId -> display name when the API doesn't include it.
+      const jobsRes = await fetch('/api/jobs?limit=500');
+      const jobsData = await jobsRes.json().catch(() => ({}));
       const jobsList = jobsData.success ? jobsData.data?.jobs : jobsData.jobs;
       const jobMap: Record<string, Job> = {};
       (jobsList || []).forEach((j: Job) => {
         jobMap[j.id] = j;
       });
       setJobs(jobMap);
-
-      // Fetch clips (mock for now - real API needed)
-      // In production: GET /api/clips
-      const mockClips: Clip[] = [];
-      setClips(mockClips);
-    } catch {
+    } catch (e: any) {
+      setError(e.message || 'Failed to load clips');
       setClips([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const getJobName = (jId: string) => jobs[jId]?.name || jId;
+  const getJobName = (c: Clip) => c.jobName || jobs[c.jobId]?.name || c.jobId;
 
   const filteredClips = clips
     .filter((clip) => {
@@ -81,15 +90,15 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
 
   const handlePlay = async (clipId: string) => {
     const clip = clips.find((c) => c.id === clipId);
-    if (!clip?.exportPath) return;
-    // Open video player or navigate to clip detail
+    // File route falls back exportPath -> editedPath -> cutPath, so preview
+    // works for Phase-1 clips too. Only guard on an id.
+    if (!clip) return;
     window.open(`/api/clips/${clipId}/file`, '_blank');
   };
 
   const handleDownload = async (clipId: string) => {
     const clip = clips.find((c) => c.id === clipId);
-    if (!clip?.exportPath) return;
-    // Trigger download
+    if (!clip) return;
     const a = document.createElement('a');
     a.href = `/api/clips/${clipId}/file`;
     a.download = `clip_${clipId}.mp4`;
@@ -158,8 +167,17 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
             <div className="text-5xl mb-4">🎬</div>
             <h3 className="text-lg font-medium text-gray-900 mb-2">No clips yet</h3>
             <p className="text-gray-500 text-sm max-w-sm mx-auto">
-              Clips will appear here once jobs complete processing. Create a job to get started.
+              {error ||
+                (jobId
+                  ? 'No clips for this job yet. Clips appear after the cut stage finishes.'
+                  : 'Clips will appear here once jobs complete processing. Create a job to get started.')}
             </p>
+            <button
+              onClick={fetchClips}
+              className="mt-4 px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+            >
+              ⟳ Refresh
+            </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -174,8 +192,8 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
                 {/* Job info */}
                 <div className="mt-2 px-1">
                   <span className="text-xs text-gray-500">
-                    From: {getJobName(clip.jobId).substring(0, 30)}
-                    {getJobName(clip.jobId).length > 30 ? '...' : ''}
+                    From: {getJobName(clip).substring(0, 30)}
+                    {getJobName(clip).length > 30 ? '...' : ''}
                   </span>
                 </div>
               </div>

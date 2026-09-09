@@ -40,19 +40,30 @@ export async function recoverStaleJobs(): Promise<void> {
 
     logger.warn(`Crash recovery: found ${staleJobs.length} stale RUNNING jobs, marking as FAILED`);
 
-    // Mark each as FAILED
-    const updates = staleJobs.map((job) => {
-      return db.job.update({
+    // Mark each as FAILED + write a JobLog entry so the user-visible
+    // log timeline shows the recovery event.
+    const now = new Date();
+    const updates = staleJobs.flatMap((job) => [
+      db.job.update({
         where: { id: job.id },
         data: {
           status: JobStatus.FAILED,
           errorCode: JobErrorCode.INTERNAL,
           errorMessage: 'Job failed due to server restart/crash during execution',
-          stageEndedAt: new Date(),
+          stageEndedAt: now,
           currentStage: null,
         },
-      });
-    });
+      }),
+      db.jobLog.create({
+        data: {
+          jobId: job.id,
+          stage: null,
+          level: 'error',
+          message: 'Marked FAILED by crash recovery on server startup',
+          metadata: { recoveredAt: now.toISOString() },
+        },
+      }),
+    ]);
 
     await Promise.all(updates);
 

@@ -278,11 +278,14 @@ export function wrapSrtCues(
 
 /** Format seconds → SRT timestamp `HH:MM:SS,mmm`. */
 export function formatSrtTimestamp(seconds: number): string {
-  const safe = Math.max(0, seconds);
+  // Round to whole ms first so the sub-second field never reaches 1000
+  // (0.9996s -> 1.000s must carry into the second field, not emit ,1000).
+  const totalMs = Math.round(Math.max(0, seconds) * 1000);
+  const safe = Math.floor(totalMs / 1000);
   const h = Math.floor(safe / 3600);
   const m = Math.floor((safe % 3600) / 60);
-  const s = Math.floor(safe % 60);
-  const ms = Math.round((safe - Math.floor(safe)) * 1000);
+  const s = safe % 60;
+  const ms = totalMs % 1000;
   return `${pad2(h)}:${pad2(m)}:${pad2(s)},${pad3(ms)}`;
 }
 

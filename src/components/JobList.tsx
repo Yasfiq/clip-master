@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import useJobStore from '@/stores/useJobStore';
+import { useToastStore } from '@/stores/useToastStore';
 
 interface JobListProps {
   onJobSelect?: (jobId: string) => void;
@@ -13,8 +14,9 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
   const isLoading = useJobStore((state) => state.isLoading);
   const error = useJobStore((state) => state.error);
   const updateJob = useJobStore((state) => state.updateJob);
+  const setLoading = useJobStore((state) => state.setLoading);
+  const addToast = useToastStore((state) => state.addToast);
   const setSelectedJob = useJobStore((state) => state.setSelectedJob);
-  const lastUpdated = useJobStore((state) => state.lastUpdated);
 
   const [filteredJobs, setFilteredJobs] = useState<typeof jobs>([]);
 
@@ -29,8 +31,12 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
 
   // Real-time polling & data fetching
   useEffect(() => {
+    const abortRef = { current: null as AbortController | null };
+    let firstFetch = true;
+
     // Initial fetch
     const fetchJobs = async () => {
+      if (firstFetch) setLoading(true);
       try {
         const res = await fetch(`/api/jobs?limit=${limit}`);
         const data = await res.json();
@@ -40,18 +46,29 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
             id: j.id,
             name: j.sourceFilename || j.sourceUrl || j.id,
             sourceUrl: j.sourceUrl ?? undefined,
+            sourcePath: j.sourcePath ?? undefined,
             status: j.status,
             // progress is 0..1 in Prisma, store Job expects 0..100.
             progress: typeof j.progress === 'number' ? Math.round(j.progress * 100) : 0,
             clipsCount: j.exportedClipsCount ?? 0,
             duration: j.sourceDuration ?? undefined,
+            errorCode: j.errorCode ?? undefined,
+            errorMessage: j.errorMessage ?? undefined,
             createdAt: j.createdAt,
             updatedAt: j.updatedAt,
           }));
           useJobStore.getState().setJobs(mapped);
+          if (data.data.counts) {
+            useJobStore.getState().setServerJobCounts(data.data.counts);
+          }
         }
       } catch (e) {
         console.error('Failed to fetch jobs', e);
+      } finally {
+        if (firstFetch) {
+          firstFetch = false;
+          setLoading(false);
+        }
       }
     };
 
@@ -61,7 +78,7 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
     const checkSSE = () => {
       const state = useJobStore.getState();
       state.jobs.forEach((job) => {
-        if (job.status === 'RUNNING' || job.status === 'PENDING') {
+        if (['RUNNING_PHASE1', 'RUNNING_PHASE2'].includes(job.status)) {
           state.connectSSE(job.id);
         }
       });
@@ -74,7 +91,11 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
       checkSSE();
     }, 5000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      abortRef.current?.abort();
+      if (firstFetch) setLoading(false);
+    };
   }, [limit]);
 
   const isRunning = (s: string) => s === 'RUNNING_PHASE1' || s === 'RUNNING_PHASE2';
@@ -84,7 +105,6 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
     switch (status) {
       case 'PENDING':
         return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'RUNNING':
       case 'RUNNING_PHASE1':
       case 'RUNNING_PHASE2':
         return 'bg-blue-100 text-blue-800 border-blue-200';
@@ -126,12 +146,66 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
       case 'CANCELLED':
       case 'REJECTED_AD':
         return 'bg-red-500';
-      case 'RUNNING':
+      case 'RUNNING_PHASE1':
+      case 'RUNNING_PHASE2':
         return 'bg-blue-500';
+      case 'PHASE1_DONE':
+        return 'bg-indigo-500';
       default:
         return 'bg-yellow-500';
     }
   };
+
+  const handleRunPhase2 = async (job: (typeof jobs)[number]) => {
+    try {
+      const res = await fetch(`/api/jobs/${job.id}/phase2`, { method: 'POST' });
+      if (res.ok) {
+        updateJob(job.id, { status: 'RUNNING_PHASE2' });
+        useJobStore.getState().connectSSE(job.id);
+      } else {
+        const errPayload = await res.json().catch(() => ({}));
+        const msg = errPayload.error?.message || `HTTP ${res.status}`;
+        if (errPayload.error?.code === 'JOB_ALREADY_RUNNING') {
+          addToast('Another job is running — this job stays queued (PHASE 1 DONE).', 'warning');
+        } else {
+          addToast(`Phase 2 start failed: ${msg}`, 'error');
+          console.error('Phase 2 start failed', msg);
+        }
+      }
+    } catch {
+      // poll reconciles
+    }
+  };
+
+  const handleStart = async (job: (typeof jobs)[number]) => {
+    try {
+      const res = await fetch(`/api/jobs/${job.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'start' }),
+      });
+      if (res.ok) {
+        updateJob(job.id, { status: 'RUNNING_PHASE1' });
+        useJobStore.getState().connectSSE(job.id);
+      } else {
+        const errPayload = await res.json().catch(() => ({}));
+        const msg = errPayload.error?.message || `HTTP ${res.status}`;
+        if (errPayload.error?.code === 'JOB_ALREADY_RUNNING') {
+          addToast('Another job is running — this job stays queued (PENDING).', 'warning');
+        } else {
+          addToast(`Start failed: ${msg}`, 'error');
+          console.error('Start failed', msg);
+        }
+      }
+    } catch {
+      // poll reconciles
+    }
+  };
+
+  // "One active job" guard: only allow starting while nothing else runs.
+  const hasActiveJob = jobs.some(
+    (j) => j.status === 'RUNNING_PHASE1' || j.status === 'RUNNING_PHASE2',
+  );
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -161,14 +235,18 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
   };
 
   const handleCancel = async (job: (typeof jobs)[number]) => {
-    // Call API to cancel job
     try {
       const res = await fetch(`/api/jobs/${job.id}?action=cancel`, { method: 'POST' });
       if (res.ok) {
         updateJob(job.id, { status: 'CANCELLED' });
+        useJobStore.getState().disconnectSSE(job.id);
+      } else {
+        const errPayload = await res.json().catch(() => ({}));
+        const msg = errPayload.error?.message || 'Failed to cancel';
+        addToast(`Cancel failed: ${msg}`, 'error');
       }
     } catch {
-      // Handle error
+      addToast('Cancel failed: network error', 'error');
     }
   };
 
@@ -287,12 +365,33 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
                       ✕ Cancel
                     </button>
                   ) : job.status === 'PHASE1_DONE' ? (
-                    <span
-                      className="inline-flex items-center px-2 py-1 text-xs font-medium text-indigo-600 border border-indigo-200 rounded bg-indigo-50"
-                      title="Phase 1 complete. Run Phase 2 to cut clips."
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRunPhase2(job);
+                      }}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-indigo-600 border border-indigo-200 rounded bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-300 cursor-pointer"
+                      title="Phase 1 complete. Run Phase 2 to edit, subtitle, export and compress."
                     >
                       ⏵ Run P2
-                    </span>
+                    </button>
+                  ) : job.status === 'PENDING' ? (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStart(job);
+                      }}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 border border-blue-200 rounded bg-blue-50 hover:bg-blue-100 hover:border-blue-300 cursor-pointer"
+                      title={
+                        hasActiveJob
+                          ? 'Another job is already running (one active job at a time)'
+                          : 'Start Phase 1 for this pending job'
+                      }
+                    >
+                      ▶ Start
+                    </button>
                   ) : (
                     <span className="text-xs text-gray-400">—</span>
                   )}

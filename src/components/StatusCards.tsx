@@ -28,12 +28,13 @@ const EMPTY_COUNTS: JobCounts = {
 };
 
 const StatusCards: React.FC<StatusCardsProps> = ({ counts: countsProp, loading = false }) => {
-  // Derive counts from the global job store so the cards stay in sync with
-  // the JobList without an extra round-trip to /api/jobs.
+  // Prefer server-computed per-status counts (accurate even when loaded window
+  // is narrower than the whole DB). Fall back to deriving from the in-memory
+  // job list (e.g. while the first fetch is still pending or DB is empty).
+  const serverCounts = useJobStore((state) => state.serverJobCounts);
   const jobs = useJobStore((state) => state.jobs);
 
-  const isRunning = (s: string) =>
-    s === 'RUNNING' || s === 'RUNNING_PHASE1' || s === 'RUNNING_PHASE2';
+  const isRunning = (s: string) => s === 'RUNNING_PHASE1' || s === 'RUNNING_PHASE2';
 
   const derived: JobCounts =
     jobs.length > 0
@@ -48,7 +49,23 @@ const StatusCards: React.FC<StatusCardsProps> = ({ counts: countsProp, loading =
         }
       : EMPTY_COUNTS;
 
-  const counts = { ...EMPTY_COUNTS, ...derived, ...countsProp };
+  // serverJobCounts covers all statuses; use it whenever available.
+  // Caller-supplied countsProp overrides always win.
+  const server: JobCounts = {
+    ...EMPTY_COUNTS,
+    pending: (serverCounts && (serverCounts['PENDING'] ?? 0)) || 0,
+    running:
+      (serverCounts &&
+        (serverCounts['RUNNING_PHASE1'] ?? 0) + (serverCounts['RUNNING_PHASE2'] ?? 0)) ||
+      0,
+    phase1Done: (serverCounts && (serverCounts['PHASE1_DONE'] ?? 0)) || 0,
+    completed: (serverCounts && (serverCounts['COMPLETED'] ?? 0)) || 0,
+    failed: (serverCounts && (serverCounts['FAILED'] ?? 0)) || 0,
+    cancelled: (serverCounts && (serverCounts['CANCELLED'] ?? 0)) || 0,
+    rejectedAd: (serverCounts && (serverCounts['REJECTED_AD'] ?? 0)) || 0,
+  };
+  const base = serverCounts ? server : derived;
+  const counts = { ...EMPTY_COUNTS, ...base, ...countsProp };
   const cards = [
     {
       status: 'pending' as const,
@@ -161,20 +178,19 @@ const StatusCards: React.FC<StatusCardsProps> = ({ counts: countsProp, loading =
           </div>
         );
       })()}
-      {(counts.cancelled ?? 0) > 0 ||
-        ((counts.rejectedAd ?? 0) > 0 && (
-          <div className="mt-4 pt-4 border-t border-gray-200">
-            <div className="text-sm text-gray-500">
-              Other:{' '}
-              {(counts.cancelled ?? 0) > 0 && (
-                <span className="inline-block ml-2">{counts.cancelled} cancelled</span>
-              )}
-              {(counts.rejectedAd ?? 0) > 0 && (
-                <span className="inline-block ml-2">{counts.rejectedAd} rejected (ads)</span>
-              )}
-            </div>
+      {(counts.cancelled ?? 0) > 0 || (counts.rejectedAd ?? 0) > 0 ? (
+        <div className="mt-4 pt-4 border-t border-gray-200">
+          <div className="text-sm text-gray-500">
+            Other:
+            {(counts.cancelled ?? 0) > 0 && (
+              <span className="inline-block ml-2">{counts.cancelled} cancelled</span>
+            )}
+            {(counts.rejectedAd ?? 0) > 0 && (
+              <span className="inline-block ml-2">{counts.rejectedAd} rejected (ads)</span>
+            )}
           </div>
-        ))}
+        </div>
+      ) : null}
     </div>
   );
 };

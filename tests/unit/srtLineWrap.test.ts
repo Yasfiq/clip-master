@@ -219,6 +219,13 @@ describe('srtLineWrap', () => {
     it('clamps negative to zero', () => {
       expect(formatSrtTimestamp(-5)).toBe('00:00:00,000');
     });
+
+    it('carries rounded ms into seconds (never emits ,1000)', () => {
+      // 1.9996s rounds to 2000ms -> 00:00:02,000, not 00:00:01,1000.
+      expect(formatSrtTimestamp(1.9996)).toBe('00:00:02,000');
+      expect(formatSrtTimestamp(59.9996)).toBe('00:01:00,000');
+      expect(formatSrtTimestamp(0.9994)).toBe('00:00:00,999');
+    });
   });
 
   describe('constants', () => {

@@ -21,7 +21,13 @@ export interface ApiError {
 
 export function apiError(code: ErrorCode, message: string, details?: any): NextResponse {
   const status =
-    code === ErrorCode.JOB_NOT_FOUND ? 404 : code === ErrorCode.VALIDATION_FAILED ? 400 : 500;
+    code === ErrorCode.JOB_NOT_FOUND
+      ? 404
+      : code === ErrorCode.VALIDATION_FAILED
+        ? 400
+        : code === ErrorCode.JOB_ALREADY_RUNNING || code === ErrorCode.JOB_NOT_READY
+          ? 409
+          : 500;
   logger.error(`API Error [${code}]: ${message}`);
   return NextResponse.json({ error: { code, message, details } }, { status });
 }
