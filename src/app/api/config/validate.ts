@@ -70,8 +70,8 @@ export function validateConfigValues(values: Record<string, ConfigValue>): strin
         break;
 
       case 'maxClips':
-        if (!isFiniteNumber(v) || !Number.isInteger(v) || v < 1 || v > 10) {
-          errors.push('maxClips must be an integer between 1 and 10');
+        if (!isFiniteNumber(v) || !Number.isInteger(v) || v < 1 || v > 50) {
+          errors.push('maxClips must be an integer between 1 and 50');
         }
         break;
 

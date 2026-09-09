@@ -31,9 +31,10 @@ describe('validateConfigValues', () => {
     expect(validateConfigValues({ minSegmentDuration: -5 })).not.toEqual([]);
   });
 
-  it('rejects maxClips out of 1..10', () => {
+  it('rejects maxClips out of 1..50', () => {
     expect(validateConfigValues({ maxClips: 0 })).not.toEqual([]);
-    expect(validateConfigValues({ maxClips: 11 })).not.toEqual([]);
+    expect(validateConfigValues({ maxClips: 51 })).not.toEqual([]);
+    expect(validateConfigValues({ maxClips: 50 })).toEqual([]);
   });
 
   it('rejects unknown colorGrading presets', () => {
