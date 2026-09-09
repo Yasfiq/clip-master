@@ -10,12 +10,12 @@
  */
 
 import { PipelineStage } from '@prisma/client';
-import { PipelineStageHandler, StageContext } from '../runner-types';
+import { PipelineStageHandler, StageContext, TranscriptSegment } from '../runner-types';
 import { runBinaryChecked } from '../binaries/spawn';
 import { logger } from '../../server/logger';
 import { db } from '../../server/db';
 import { BINARIES, PATHS } from '../../server/paths';
-import { wrapSrtCues, renderSrt, MAX_CHARS, applyLeadOffset } from '../logic/srtLineWrap';
+import { chunkWords, renderSrt, splitTextIntoWordTimings, WordTiming } from '../logic/wordChunker';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -93,16 +93,12 @@ export class SubtitleStage implements PipelineStageHandler {
 
   /**
    * Slice full-video transcript segments into an SRT file for the clip window.
-   * Offsets timestamps to start at 0:00:00,000. Applies short-style line wrap
-   * (max 32 chars/line, 2 lines max) via the pure-logic srtLineWrap module.
-   *
-   * Applies a leading offset (LEAD_OFFSET_S) to the first cue so the subtitle
-   * appears once the speaker has actually started talking, not at t=0 of the
-   * clip. Whisper sometimes aligns the first cue to t=0 even when the speaker
-   * is still reading notes, which makes the subtitle lead the speech.
+   * Offsets timestamps to start at 0:00:00,000. Utilizes word-level timestamps
+   * from TranscriptSegment.words to generate max 3-word chunks with exact
+   * timing, falling back to evenly spaced words if word timings are absent.
    */
   private async sliceSrt(
-    segments: Array<{ start: number; end: number; text: string }>,
+    segments: TranscriptSegment[],
     clipStart: number,
     clipEnd: number,
     srtPath: string,
@@ -113,40 +109,43 @@ export class SubtitleStage implements PipelineStageHandler {
       return;
     }
 
-    // Build cue inputs (with clip-relative timestamps) and sentence-case text.
-    const cues = relevant
-      .map((seg) => {
+    const clipWords: WordTiming[] = [];
+
+    for (const seg of relevant) {
+      if (seg.words && seg.words.length > 0) {
+        for (const w of seg.words) {
+          if (w.end <= clipStart || w.start >= clipEnd) continue;
+          const s = Math.max(0, w.start - clipStart);
+          const e = Math.min(clipEnd - clipStart, w.end - clipStart);
+          if (e > s) {
+            clipWords.push({
+              text: w.text,
+              start: s,
+              end: e,
+            });
+          }
+        }
+      } else {
+        // Fallback: estimate word timings from segment text
         const s = Math.max(0, seg.start - clipStart);
-        const e = Math.min(seg.end - clipStart, clipEnd - clipStart);
-        if (s >= e) return null;
-        return {
-          start: s,
-          end: e,
-          text: seg.text
-            .trim()
-            .replace(/^\w/, (c) => c.toUpperCase())
-            .replace(/\s+/g, ' '),
-        };
-      })
-      .filter((c): c is { start: number; end: number; text: string } => c !== null);
+        const e = Math.min(clipEnd - clipStart, seg.end - clipStart);
+        if (e > s && seg.text.trim().length > 0) {
+          const estimated = splitTextIntoWordTimings(seg.text, s, e);
+          clipWords.push(...estimated);
+        }
+      }
+    }
 
-    // Apply short-style wrap: max 32 chars/line, 2 lines max, extend flash cues.
-    const wrapped = wrapSrtCues(cues, { maxChars: MAX_CHARS });
+    if (clipWords.length === 0) {
+      await fs.writeFile(srtPath, '');
+      return;
+    }
 
-    // Lead offset: drop cues entirely inside the first LEAD_OFFSET_S seconds
-    // and push the first overlapping cue forward. Without this, the subtitle
-    // appears 2-3s before the speaker actually starts (whisper sometimes
-    // aligns the first cue to t=0 even when the speaker is still preparing).
-    // Cap at 25% of clip duration so very short clips are not stripped bare.
-    const LEAD_OFFSET_S = 3.5;
-    const clipDuration = Math.max(1, clipEnd - clipStart);
-    const lead = Math.min(LEAD_OFFSET_S, clipDuration * 0.25);
-    const trimmed = applyLeadOffset(wrapped, lead);
-
-    const srt = renderSrt(trimmed);
+    const cues = chunkWords(clipWords, 3);
+    const srt = renderSrt(cues);
     await fs.writeFile(srtPath, srt, 'utf8');
     logger.debug(
-      `SRT sliced: ${relevant.length} raw → ${trimmed.length} entries (max ${MAX_CHARS} chars/line, lead offset ${lead}s)`,
+      `SRT sliced: ${relevant.length} segments (${clipWords.length} words) → ${cues.length} cues`,
     );
   }
 
