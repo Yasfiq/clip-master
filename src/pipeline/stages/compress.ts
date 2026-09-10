@@ -35,7 +35,7 @@ export class CompressStage implements PipelineStageHandler {
     let completed = 0;
 
     for (const [idx, clip] of clips.entries()) {
-      if (clip.isExported) {
+      if ((clip as any).isExported) {
         logger.info(`Clip ${clip.id} already exported, skipping`);
         completed++;
         continue;

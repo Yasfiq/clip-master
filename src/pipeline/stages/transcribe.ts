@@ -124,13 +124,6 @@ export class TranscribeStage implements PipelineStageHandler {
       `TRANSCRIBE complete: ${segments.length} segments, ${Math.round(text.length / 5)} words, duration up to ${segments.length > 0 ? segments[segments.length - 1]!.end : 0}s`,
     );
 
-    // Clean up audio (transcript JSON is enough downstream)
-    try {
-      await fs.unlink(audioPath);
-    } catch {
-      // ignore
-    }
-
     await onProgress(1.0, `TRANSCRIBE completed: ${segments.length} transcript segments`);
   }
 

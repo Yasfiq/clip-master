@@ -86,6 +86,11 @@ export function pickStyle(clipIndex: number): SubtitleStyle {
   return CLIP_STYLE_POOL[clipIndex % CLIP_STYLE_POOL.length]!;
 }
 
+export function getStyleById(styleId: string): SubtitleStyle | undefined {
+  if (!styleId) return undefined;
+  return CLIP_STYLE_POOL.find((s) => s.id.toLowerCase() === styleId.toLowerCase());
+}
+
 /**
  * Build an ASS `force_style=...` string from a SubtitleStyle.
  * Handles escaping of values that contain special chars (e.g. `=`).
