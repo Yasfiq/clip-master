@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import ClipCard from './ClipCard';
+import SubtitleEditorModal from './SubtitleEditorModal';
 
 interface Clip {
   id: string;
@@ -37,6 +38,7 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'exported' | 'pending'>('all');
   const [sortBy, setSortBy] = useState<'newest' | 'duration' | 'score'>('newest');
+  const [editingClipId, setEditingClipId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchClips();
@@ -188,6 +190,7 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
                   index={index}
                   onPlay={handlePlay}
                   onDownload={handleDownload}
+                  onEditSubtitle={(id) => setEditingClipId(id)}
                 />
                 {/* Job info */}
                 <div className="mt-2 px-1">
@@ -217,6 +220,15 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
             </button>
           </div>
         </div>
+      )}
+
+      {editingClipId && (
+        <SubtitleEditorModal
+          clipId={editingClipId}
+          isOpen={true}
+          onClose={() => setEditingClipId(null)}
+          onSuccess={() => fetchClips()}
+        />
       )}
     </div>
   );

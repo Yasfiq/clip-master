@@ -363,7 +363,7 @@ const AdvancedSection: React.FC<{
               id="max-clips"
               type="range"
               min="1"
-              max="10"
+              max="50"
               step="1"
               value={config.maxClips}
               onChange={(e) => update('maxClips', Number(e.target.value))}

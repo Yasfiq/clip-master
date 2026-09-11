@@ -1,303 +1,205 @@
 # Clip Master
 
-**Local-first automation tool untuk mengubah long-form video menjadi viral short clips.**
+**Local-first automation tool untuk mengubah long-form video menjadi klip pendek vertikal (Shorts, Reels, TikTok) berkualitas tinggi.**
 
-🎬 YouTube → 🎯 TikTok/Reels/Shorts siap unggah dalam satu pipeline.
-
----
-
-## Features
-
-- ✅ Download otomatis dari YouTube (via yt-dlp)
-- ✅ Pure-ad detection & filtering
-- ✅ Segment scoring berbasis viral metrics (motion, audio, hook strength)
-- ✅ Auto-cutting ke 2-5 menit clips
-- ✅ Audio mixing dengan background music + ducking
-- ✅ Subtitle generation (Whisper ASR → SRT)
-- ✅ Color grading (5 preset: vivid, warm, cool, cinematic, vintage)
-- ✅ H.264 export (1080p max, CRF 21)
-- ✅ Real-time dashboard & job monitoring
+🎬 Video Panjang (YouTube / Berkas Lokal) → 🎯 Klip Siap Unggah 1080x1920 (9:16) dalam satu pipeline otomatis.
 
 ---
 
-## Tech Stack
+## Fitur Utama
 
-- **Frontend:** Next.js 16 + React 19 + Tailwind CSS v4
-- **Backend:** Node.js 24 + Prisma 7 + SQLite
-- **Media:** FFmpeg 8.0, yt-dlp (latest), Whisper.cpp
-- **Testing:** Vitest 4
+- **Ingesti & Filter Iklan:**
+  - Unduh otomatis dari YouTube melalui `yt-dlp` atau gunakan berkas video lokal.
+  - _Pure-ad rejection_: Menolak video yang sepenuhnya merupakan iklan, menerima video dengan iklan sisipan (_mid-roll/embedded ads_).
+- **Transkripsi & Chunking Subtitle:**
+  - Ekstraksi audio dan transkripsi lokal menggunakan `whisper.cpp` (model multilingual `ggml-small.bin`).
+  - _Word-level chunking_: Membatasi subtitle maksimal 3 kata per baris dengan sinkronisasi waktu perkata yang presisi tanpa memotong kata tunggal menjadi suku kata.
+- **Analisis Segmen Viral:**
+  - Penilaian segmen otomatis berdasarkan pergerakan visual, intensitas audio, dan kekuatan hook.
+  - Batas klip dinamis hingga 50 klip per job.
+- **Deteksi Wajah & Framing Dinamis (9:16):**
+  - _Spatial face clustering_: Mendeteksi pembicara dominan pada wawancara/podcast dua orang (menghindari pemotongan ruang kosong di tengah).
+  - Efek _Ken Burns_ (slow push-in zoom) untuk gerakan kamera dinamis pada video potret.
+- **Penyuntingan & Audio Mixing:**
+  - 5 preset color grading (vivid, warm, cool, cinematic, vintage).
+  - Penyesuaian volume audio latar belakang (_backsound_) otomatis dengan _ducking_ saat suara vokal terdeteksi.
+- **Editor Subtitle Manual & Re-Burn Langsung:**
+  - Pratinjau video vertikal langsung di dashboard dengan navigasi waktu cue interaktif.
+  - Penyuntingan teks dan durasi cue subtitle secara manual untuk memperbaiki kesalahan transkripsi.
+  - Render ulang video mandiri (_re-burn_) secara atomik tanpa perlu memproses ulang pemotongan video dari awal.
+  - Dukungan beragam gaya subtitle (_TikTok_, _SULE_, _KAMAL_).
+- **Ekspor & Kompresi:**
+  - H.264 / CRF 21, resolusi target 1080x1920, audio stereo AAC 192k 48kHz.
+- **Dashboard Web Lokal:**
+  - Dibangun dengan Next.js App Router, Tailwind CSS, dan Zustand.
+  - Monitoring log dan status real-time via SSE (_Server-Sent Events_).
+  - 100% lokal, privasi penuh, tanpa ketergantungan API eksternal berbayar.
 
 ---
 
-## Prerequisites
+## Arsitektur Pipeline (Two-Phase Architecture)
 
-1. **Node.js 22.x LTS** atau lebih baru (tested: v24.19.0)
-2. **FFmpeg 7.0+** di PATH
-3. **yt-dlp** (latest) di PATH
-4. **Whisper.cpp** compiled dengan model `ggml-base.bin`
+Pipeline pemrosesan video dibagi menjadi dua fase terpisah:
 
-### Install Binary Dependencies
-
-#### FFmpeg (Ubuntu/Debian)
-
-```bash
-sudo apt update
-sudo apt install ffmpeg
-ffmpeg -version  # Verify 7.0+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      FASE 1: PRE-PROCESSING                     │
+│  DISCOVER ──► AD_FILTER ──► TRANSCRIBE ──► ANALYZE ──► CUT      │
+│  (Ingesti)    (Filter Ad)   (Whisper)      (Scoring)   (Potong) │
+└────────────────────────────────┬────────────────────────────────┘
+                                 │
+                                 ▼ (Status: PHASE1_DONE)
+┌─────────────────────────────────────────────────────────────────┐
+│                      FASE 2: POST-PROCESSING                    │
+│    EDIT     ──►   SUBTITLE   ──►   EXPORT   ──►   COMPRESS      │
+│  (Grading)       (Bakar SRT)     (Assemble)    (Final Encode)   │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-#### yt-dlp
+1. **Fase 1 (DISCOVER s/d CUT):** Menghasilkan potongan video mentah (`cuts/`) dan transkrip kata. Status job berhenti di `PHASE1_DONE` sehingga operator dapat meninjau hasil segmen.
+2. **Fase 2 (EDIT s/d COMPRESS):** Menerapkan color grading, perataan framing wajah 9:16, pembakaran subtitle, dan kompresi akhir ke direktori `media/exports/`.
+
+---
+
+## Antarmuka REST API
+
+| Method        | Endpoint                    | Deskripsi                                                      |
+| ------------- | --------------------------- | -------------------------------------------------------------- |
+| `GET`         | `/api/jobs`                 | Mengambil daftar riwayat job pemrosesan                        |
+| `POST`        | `/api/jobs`                 | Membuat job baru dari URL YouTube atau path lokal              |
+| `GET`         | `/api/jobs/:id`             | Detail status, progres, dan metadata job                       |
+| `POST`        | `/api/jobs/:id`             | Mengontrol aksi job (`start`, `cancel`, `delete`)              |
+| `POST`        | `/api/jobs/:id/phase2`      | Memulai eksekusi Fase 2 untuk job yang berada di `PHASE1_DONE` |
+| `GET`         | `/api/jobs/:id/logs/stream` | Stream log real-time menggunakan SSE                           |
+| `GET`         | `/api/clips`                | Mengambil daftar seluruh klip hasil ekspor                     |
+| `GET`         | `/api/clips/:id/file`       | Streaming video klip dengan dukungan HTTP Range                |
+| `GET`         | `/api/clips/:id/subtitles`  | Mengambil daftar cue subtitle (SRT) klip                       |
+| `PUT`         | `/api/clips/:id/subtitles`  | Menyimpan perubahan cue subtitle ke disk dan database          |
+| `POST`        | `/api/clips/:id/re-burn`    | Merender ulang video dengan subtitle yang telah disunting      |
+| `GET` / `PUT` | `/api/config`               | Mengambil dan memperbarui konfigurasi pipeline                 |
+
+---
+
+## Prasyarat Sistem
+
+1. **Node.js 22+ LTS** (disarankan Node.js v24)
+2. **FFmpeg 7.0+** (tersedia di PATH sistem)
+3. **yt-dlp** (versi terbaru di PATH sistem)
+4. **Whisper.cpp** dengan model terkompilasi (misalnya `ggml-small.bin` atau `ggml-base.bin`)
+
+### Pemasangan Binary (Ubuntu / Debian)
 
 ```bash
+# 1. FFmpeg
+sudo apt update && sudo apt install -y ffmpeg
+
+# 2. yt-dlp
 sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
 sudo chmod a+rx /usr/local/bin/yt-dlp
-yt-dlp --version
-```
 
-#### Whisper.cpp
-
-```bash
-cd ~
+# 3. Whisper.cpp
 git clone https://github.com/ggerganov/whisper.cpp.git
 cd whisper.cpp
 make
-bash ./models/download-ggml-model.sh base
-# Binary: ~/whisper.cpp/build/bin/whisper-cli
-# Model: ~/whisper.cpp/models/ggml-base.bin
-```
-
-Update `.env` dengan path binary:
-
-```bash
-WHISPER_BIN=/home/yourusername/whisper.cpp/build/bin/whisper-cli
-WHISPER_MODEL=/home/yourusername/whisper.cpp/models/ggml-base.bin
+bash ./models/download-ggml-model.sh small
 ```
 
 ---
 
-## Quick Start
+## Panduan Memulai Cepat (Quick Start)
 
-### 1. Install Dependencies
+### 1. Pasang Dependensi
 
 ```bash
 npm install
 ```
 
-### 2. Setup Database
+### 2. Konfigurasi Environment
+
+Salin berkas `.env.example` menjadi `.env` dan sesuaikan path binary:
+
+```bash
+cp .env.example .env
+```
+
+Contoh isi `.env`:
+
+```env
+PORT=3000
+DATABASE_URL="file:./dev.db"
+MEDIA_ROOT="./media"
+WHISPER_BIN="/path/to/whisper.cpp/build/bin/whisper-cli"
+WHISPER_MODEL="/path/to/whisper.cpp/models/ggml-small.bin"
+```
+
+### 3. Inisialisasi Database SQLite
 
 ```bash
 npx prisma migrate dev --name init
 npx prisma db seed
 ```
 
-### 3. Create Media Directories
+### 4. Buat Direktori Media
 
 ```bash
 mkdir -p media/{sources,work,exports,assets}
 ```
 
-### 4. Configure Environment
-
-```bash
-cp .env.example .env
-# Edit .env dengan path binary Whisper
-```
-
-### 5. Run Preflight Check
-
-```bash
-npm run check
-```
-
-Expected output:
-
-```
-✅ FFmpeg: 8.0.1
-✅ yt-dlp: 2026.08.19
-✅ Whisper: 1.9.3-dev
-```
-
-### 6. Start Development Server
+### 5. Jalankan Server Aplikasi
 
 ```bash
 npm run dev
 ```
 
-Open http://localhost:3000
+Buka peramban di `http://localhost:3000`.
 
 ---
 
-## Usage
+## Pengujian & Verifikasi
 
-### Via Web UI
-
-1. Buka dashboard di `http://localhost:3000`
-2. Klik **New Job**
-3. Paste YouTube URL atau pilih file lokal
-4. Klik **Start Job**
-5. Monitor progress real-time
-6. Download clips dari tab **Clips**
-
-### Via CLI (Experimental)
+Proyek dilengkapi dengan pengujian unit otomatis dan pengujian end-to-end berbasis browser:
 
 ```bash
-npm run pipeline -- --url "https://youtube.com/watch?v=VIDEO_ID"
-```
+# Menjalankan seluruh pengujian unit (281 test suite)
+npm run test:unit
 
----
+# Verifikasi kompilasi TypeScript
+npx tsc --noEmit
 
-## Configuration
+# Menjalankan pengujian browser End-to-End Playwright
+npx playwright test tests/e2e/subtitle-editor.spec.ts
 
-Default pipeline config tersimpan di database (`PipelineConfig` table).
-
-Edit via UI: **Settings** → **Pipeline**, **Video**, **Export** tabs.
-
-Key parameters:
-
-- **Min Duration:** 120s
-- **Max Duration:** 300s
-- **Target Duration:** 180s
-- **Ad Filter:** Enabled, threshold 0.7
-- **Color Grading:** vivid
-- **Subtitle:** Enabled (Indonesian)
-
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────┐
-│               Next.js App (Port 3000)            │
-│  ┌──────────┐  ┌──────────┐  ┌────────────┐     │
-│  │Dashboard │  │ Settings │  │ Clip Gallery│    │
-│  └────┬─────┘  └─────┬────┘  └─────┬──────┘     │
-│       │              │              │            │
-│       └──────────────┴──────────────┘            │
-│                      │                           │
-│              ┌───────▼────────┐                  │
-│              │   REST API     │                  │
-│              │ /api/jobs      │                  │
-│              │ /api/config    │                  │
-│              └───────┬────────┘                  │
-│                      │                           │
-│         ┌────────────▼───────────┐               │
-│         │   Pipeline Runner      │               │
-│         │  8-Stage Orchestrator  │               │
-│         └────────────┬───────────┘               │
-│                      │                           │
-│    ┌─────────────────┴──────────────────┐        │
-│    │ DISCOVER → AD_FILTER → ANALYZE →   │        │
-│    │ CUT → EDIT → SUBTITLE → EXPORT →   │        │
-│    │ COMPRESS                            │        │
-│    └─────────────────┬──────────────────┘        │
-│                      │                           │
-│         ┌────────────▼───────────┐               │
-│         │  FFmpeg | yt-dlp |     │               │
-│         │  Whisper.cpp           │               │
-│         └────────────────────────┘               │
-└─────────────────────────────────────────────────┘
-           │                    │
-      ┌────▼─────┐        ┌────▼────┐
-      │  SQLite  │        │  Media  │
-      │  dev.db  │        │  Files  │
-      └──────────┘        └─────────┘
-```
-
----
-
-## Testing
-
-```bash
-# Unit tests
-npm run test
-
-# Integration tests (require dev server running)
-npm run test:integration
-
-# Build verification
+# Production build check
 npm run build
 ```
 
 ---
 
-## Project Structure
+## Struktur Direktori
 
 ```
 clip-master/
 ├── src/
-│   ├── app/              # Next.js App Router
-│   │   ├── api/          # REST endpoints
-│   │   ├── page.tsx      # Dashboard
-│   │   ├── settings/     # Settings page
-│   │   └── clips/        # Clip gallery
-│   ├── components/       # React components
-│   ├── pipeline/         # Core logic
-│   │   ├── stages/       # 8 pipeline stages
-│   │   ├── logic/        # Pure functions
-│   │   └── binaries/     # Binary wrappers
-│   ├── server/           # Backend services
-│   └── stores/           # Zustand state
-├── prisma/
-│   └── schema.prisma     # Database schema
+│   ├── app/              # Next.js App Router (halaman & REST API)
+│   ├── components/       # Komponen UI React (Dashboard, SubtitleEditorModal, dll.)
+│   ├── pipeline/         # Logika media & eksekusi binary
+│   │   ├── logic/        # Logika murni (adFilter, faceCrop, srtParser, wordChunker)
+│   │   ├── stages/       # Modul tahapan pipeline (transcribe, cut, edit, reBurn)
+│   │   └── binaries/     # Wrapper proses eksternal (FFmpeg, Whisper, yt-dlp)
+│   ├── server/           # Database Prisma, paths, logger
+│   └── stores/           # Zustand client state management
+├── prisma/               # Skema database SQLite
 ├── tests/
-│   ├── unit/             # Unit tests
-│   └── integration/      # Integration tests
-├── media/                # Media storage
-│   ├── sources/          # Downloaded videos
-│   ├── work/             # Temp processing
-│   ├── exports/          # Final clips
-│   └── assets/           # Background music
-└── scripts/              # Automation scripts
+│   ├── unit/             # Pengujian unit Vitest
+│   └── e2e/              # Pengujian Playwright browser nyata
+└── media/                # Penyimpanan berkas media lokal
+    ├── sources/          # Video sumber asli
+    ├── work/             # Berkas kerja sementara (cuts, transcripts, edited)
+    └── exports/          # Hasil klip akhir siap unggah
 ```
 
 ---
 
-## Troubleshooting
+## Lisensi
 
-### "Binary not found: ffmpeg"
-
-Pastikan FFmpeg di PATH: `which ffmpeg`
-
-### "Whisper model not found"
-
-Check path di `.env`: `WHISPER_MODEL=/path/to/ggml-base.bin`
-
-### "Job stuck in RUNNING"
-
-Restart: `npm run dev` (crash recovery auto-detects)
-
-### "UI beku total — klik tidak bereaksi apa pun"
-
-Buka dashboard via **`http://localhost:3000`**, jangan pernah `127.0.0.1`.
-
-Next.js dev mode (Turbopack) memblokir koneksi HMR WebSocket dari origin `127.0.0.1` (log server: `Blocked cross-origin request to Next.js dev resource /_next/hmr`). Tanpa koneksi HMR, React **tidak pernah hydrate** — halaman tampak normal tapi semua `onClick` mati dan state tidak pernah berubah. Tidak ada error di console browser.
-
-Verifikasi cepat: buka halaman Settings lalu klik salah satu pill durasi. Kalau pilihan tidak berpindah — Anda membuka lewat `127.0.0.1`. Pindah ke `localhost` dan refresh.
-
-Catatan tambahan: jangan `rm -rf .next` atau rebuild produksi sementara server produksi lama masih jalan — chunk JS lama akan 500 dan UI tampak kosong. Restart server setelah build baru.
-
-### "Out of memory during subtitle"
-
-Whisper base model butuh ~2GB RAM per clip
-
----
-
-## License
-
-MIT License - lihat LICENSE file.
-
----
-
-## Contributing
-
-Project ini local-first & single-user by design. Kontribusi welcome untuk:
-
-- Bug fixes
-- Test coverage
-- Documentation improvements
-
-Open issue dulu sebelum PR besar.
-
----
-
-**Built with ❤️ for content creators**
+MIT License. Dibuat untuk pemrosesan video lokal yang cepat, efisien, dan bebas biaya API eksternal.

@@ -103,7 +103,14 @@ function rgb24ToChw(buf: Uint8Array): Float32Array {
  * Exported so other binaries (e.g. live preview) can reuse the same math.
  */
 export function remapDetection(
-  det: { xmin: number; ymin: number; xmax: number; ymax: number; score: number },
+  det: {
+    xmin: number;
+    ymin: number;
+    xmax: number;
+    ymax: number;
+    score: number;
+    timestamp?: number;
+  },
   transform: LetterboxTransform,
   srcW: number,
   srcH: number,
@@ -120,6 +127,7 @@ export function remapDetection(
     xmax: src.xmax / srcW,
     ymax: src.ymax / srcH,
     score: det.score,
+    timestamp: det.timestamp,
   };
 }
 
@@ -198,6 +206,8 @@ export async function detectFacesInVideo(
         // Convert and run detection synchronously per frame so we can
         // cap framesAnalyzed without buffering detections.
         // (Off-thread: worker_threads could be added later if needed.)
+        const frameTimestamp = framesAnalyzed / sampleFps;
+        framesAnalyzed++;
         const chw = rgb24ToChw(frame);
         const feeds = buildFeeds(session, chw, config);
         session
@@ -216,6 +226,7 @@ export async function detectFacesInVideo(
                   xmax: row[3],
                   ymax: row[2],
                   score: row[16],
+                  timestamp: frameTimestamp,
                 },
                 transform,
                 srcW,
@@ -223,7 +234,6 @@ export async function detectFacesInVideo(
               );
               allBoxes.push(mapped);
             }
-            framesAnalyzed++;
           })
           .catch((err) => {
             child.kill('SIGTERM');
@@ -310,6 +320,7 @@ export async function detectFacesInVideoSync(
       while (leftover.length >= FRAME_BYTES && framesAnalyzed < maxFrames) {
         const frame = leftover.subarray(0, FRAME_BYTES);
         leftover = leftover.subarray(FRAME_BYTES);
+        const frameTimestamp = framesAnalyzed / sampleFps;
         framesAnalyzed++;
         try {
           const chw = rgb24ToChw(frame);
@@ -328,6 +339,7 @@ export async function detectFacesInVideoSync(
                 xmax: row[3],
                 ymax: row[2],
                 score: row[16],
+                timestamp: frameTimestamp,
               },
               transform,
               srcW,

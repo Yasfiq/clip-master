@@ -18,6 +18,8 @@ import { defineConfig } from '@playwright/test';
  * Browser: system Chrome (channel: 'chrome') — no Playwright-bundled
  * download required, keeps offline installs deterministic.
  */
+const PORT = process.env.PORT || '3005';
+
 export default defineConfig({
   testDir: './tests/e2e',
   timeout: 900_000, // 15 min: a real pipeline job run dominates the budget
@@ -27,16 +29,16 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: [['list']],
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL: `http://localhost:${PORT}`,
     channel: 'chrome',
     headless: true,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
   webServer: {
-    command: 'npm run build && npm run start',
-    url: 'http://localhost:3000',
-    reuseExistingServer: !process.env.CI,
+    command: `npx next start -p ${PORT}`,
+    url: `http://localhost:${PORT}`,
+    reuseExistingServer: false,
     timeout: 300_000, // first build after a cold .next can take a while
   },
 });

@@ -6,7 +6,13 @@ import { logger } from '../../server/logger';
 import { PATHS } from '../../server/paths';
 import { pickStyle, buildForceStyle } from '../logic/subtitleStyle';
 import { buildKenBurnsFilter, DEFAULT_KEN_BURNS, validateKenBurnsConfig } from '../logic/kenBurns';
-import { chooseCropX, DEFAULT_FACE_CROP, validateFaceCropConfig } from '../logic/faceCrop';
+import {
+  chooseCropX,
+  computeDynamicCropSegments,
+  buildFfmpegCropFilter,
+  DEFAULT_FACE_CROP,
+  validateFaceCropConfig,
+} from '../logic/faceCrop';
 import { detectFacesInVideoSync } from '../binaries/faceDetect';
 import fs from 'fs/promises';
 import path from 'path';
@@ -29,6 +35,12 @@ export class CompressStage implements PipelineStageHandler {
     let completed = 0;
 
     for (const [idx, clip] of clips.entries()) {
+      if ((clip as any).isExported) {
+        logger.info(`Clip ${clip.id} already exported, skipping`);
+        completed++;
+        continue;
+      }
+
       await onProgress(
         completed / totalClips,
         `Compressing clip ${idx + 1}/${totalClips}: ${clip.id}`,
@@ -114,29 +126,33 @@ export class CompressStage implements PipelineStageHandler {
         if (!faceErr) {
           const srcW = ctx.metadata?.width ?? 1280;
           const srcH = ctx.metadata?.height ?? 720;
-          // Sample up to 12 frames for short clips to keep compute cheap.
-          const sampleDur = Math.max(2, Math.min(clip?.duration ?? 10, 12));
+          const duration = clip?.duration ?? 60;
+          // Uniform temporal sampling across the clip (sample every 2s, capped to 36 frames)
+          const sampleFps = 0.5;
+          const maxFrames = Math.max(8, Math.min(Math.ceil(duration * sampleFps), 36));
           const det = await detectFacesInVideoSync(inputPath, srcW, srcH, faceConfig, {
-            maxFrames: sampleDur,
+            sampleFps,
+            maxFrames,
           });
           if (det.detections.length > 0) {
             const targetAspect = targetW / targetH;
-            const win = chooseCropX(det.detections, srcW, srcH, targetAspect, faceConfig);
-            // After scale=-1:H the stream width becomes srcW * H / srcH.
-            // win.x / win.cropWidth were computed in *source* pixels, so
-            // rescale to the new stream dimensions before cropping.
+            const segments = computeDynamicCropSegments(
+              det.detections,
+              duration,
+              srcW,
+              srcH,
+              targetAspect,
+              faceConfig,
+            );
             const scaledH = targetH;
             const scaledSrcW = Math.round((srcW * scaledH) / srcH);
-            const scaleFactor = scaledSrcW / srcW;
-            const cropW = Math.round(win.cropWidth * scaleFactor);
-            const cropX = Math.max(
-              0,
-              Math.min(scaledSrcW - cropW, Math.round(win.x * scaleFactor)),
-            );
-            filter = `scale=-1:${scaledH},crop=${cropW}:${scaledH}:${cropX}:0`;
+            const cropW = Math.round(Math.round(srcH * targetAspect) * (scaledSrcW / srcW));
+            const cropResult = buildFfmpegCropFilter(segments, srcW, scaledSrcW, cropW, scaledH);
+
+            filter = `scale=-1:${scaledH},${cropResult.filter}`;
             faceCropApplied = true;
             logger.info(
-              `Face crop ${clip.id}: x=${cropX} cropW=${cropW} srcW=${scaledSrcW} (${win.source}, ${det.detections.length} dets / ${det.framesAnalyzed} frames)`,
+              `Face crop ${clip.id}: primaryX=${cropResult.primaryX} cropW=${cropW} srcW=${scaledSrcW} dynamic=${cropResult.isDynamic} segments=${segments.length} (${det.detections.length} dets / ${det.framesAnalyzed} frames)`,
             );
           }
         }

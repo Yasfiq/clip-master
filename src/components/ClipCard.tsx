@@ -19,9 +19,10 @@ interface ClipCardProps {
   index: number;
   onPlay?: (clipId: string) => void;
   onDownload?: (clipId: string) => void;
+  onEditSubtitle?: (clipId: string) => void;
 }
 
-const ClipCard: React.FC<ClipCardProps> = ({ clip, index, onPlay, onDownload }) => {
+const ClipCard: React.FC<ClipCardProps> = ({ clip, index, onPlay, onDownload, onEditSubtitle }) => {
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
@@ -129,20 +130,31 @@ const ClipCard: React.FC<ClipCardProps> = ({ clip, index, onPlay, onDownload }) 
         )}
 
         {/* Actions */}
-        <div className="flex gap-2">
-          <button
-            onClick={() => onPlay?.(clip.id)}
-            className="flex-1 py-2 px-3 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
-          >
-            ▶ Play
-          </button>
-          <button
-            onClick={() => onDownload?.(clip.id)}
-            disabled={!clip.isExported}
-            className="flex-1 py-2 px-3 text-sm font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            ⬇ Download
-          </button>
+        <div className="flex flex-col gap-2">
+          <div className="flex gap-2">
+            <button
+              onClick={() => onPlay?.(clip.id)}
+              className="flex-1 py-2 px-3 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+            >
+              ▶ Play
+            </button>
+            <button
+              onClick={() => onDownload?.(clip.id)}
+              disabled={!clip.isExported}
+              className="flex-1 py-2 px-3 text-sm font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              ⬇ Download
+            </button>
+          </div>
+          {onEditSubtitle && (
+            <button
+              onClick={() => onEditSubtitle(clip.id)}
+              className="w-full py-1.5 px-3 text-xs font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors flex items-center justify-center gap-1.5"
+            >
+              <span>✏️</span>
+              <span>Edit Subtitle</span>
+            </button>
+          )}
         </div>
 
         {/* File path */}

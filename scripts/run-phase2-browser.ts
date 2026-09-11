@@ -44,7 +44,7 @@ async function main() {
   const page: Page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 
   page.on('console', (msg) => {
-    if (msg.type() === 'error' || msg.type() === 'warn') {
+    if (msg.type() === 'error' || msg.type() === 'warning') {
       console.log(`[BROWSER ${msg.type().toUpperCase()}]`, msg.text());
     }
   });
