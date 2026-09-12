@@ -120,8 +120,23 @@ export async function reBurnClipSubtitles(
     }
   }
 
+  // Fallback to exportPath if work files were cleaned up
+  if (!videoInputPath && clip.exportPath) {
+    const expCandidate1 = path.isAbsolute(clip.exportPath)
+      ? clip.exportPath
+      : path.join(PATHS.exports, clip.exportPath);
+    if (await fileExists(expCandidate1)) {
+      videoInputPath = expCandidate1;
+    } else {
+      const expCandidate2 = path.join(PATHS.exports, path.basename(clip.exportPath));
+      if (await fileExists(expCandidate2)) {
+        videoInputPath = expCandidate2;
+      }
+    }
+  }
+
   if (!videoInputPath) {
-    throw new Error(`Clip ${clipId} has no valid video file (edited or cut) to re-burn`);
+    throw new Error(`Clip ${clipId} has no valid video file (edited, cut, or exported) to re-burn`);
   }
 
   let srtPath: string | null = null;
