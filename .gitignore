@@ -13,6 +13,8 @@ dist/
 # Database
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
 
 # Media artifacts (keep directory structure)
 media/*

@@ -184,7 +184,8 @@ export async function reBurnClipSubtitles(
           );
           const scaledH = targetH;
           const scaledSrcW = Math.round((srcW * scaledH) / srcH);
-          const cropW = Math.round(Math.round(srcH * targetAspect) * (scaledSrcW / srcW));
+          const rawCropW = Math.round(Math.round(srcH * targetAspect) * (scaledSrcW / srcW));
+          const cropW = Math.floor(rawCropW / 2) * 2;
           const cropResult = buildFfmpegCropFilter(segments, srcW, scaledSrcW, cropW, scaledH);
 
           filter = `scale=-1:${scaledH},${cropResult.filter}`;
@@ -220,7 +221,7 @@ export async function reBurnClipSubtitles(
     filter += `,crop=${targetW}:${targetH}:(iw-${targetW})/2:0`;
   }
 
-  const escSrtPath = srtPath.replace(/:/g, '\\:');
+  const escSrtPath = srtPath.replace(/\\/g, '/').replace(/'/g, "'\\\\''").replace(/:/g, '\\:');
   const forceStyle = buildForceStyle(style);
   filter += `,subtitles='${escSrtPath}':force_style='${forceStyle}'`;
 

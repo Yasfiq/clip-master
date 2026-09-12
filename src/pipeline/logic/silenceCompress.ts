@@ -211,7 +211,7 @@ export function buildSilenceRemoveVideoFilter(
   // Keep frames whose timestamp is NOT inside any silence window.
   const keep = regions
     .map((r) => `not(between(t,${r.startSec.toFixed(3)},${r.endSec.toFixed(3)}))`)
-    .join('+');
+    .join('*');
   return `select='${keep}',setpts=N/(${frameRate})/TB`;
 }
 

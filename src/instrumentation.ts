@@ -9,7 +9,7 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
     // Server-side only (not in Edge Runtime)
-    const { recoverStaleJobs } = await import('./src/server/recovery');
+    const { recoverStaleJobs } = await import('./server/recovery');
     await recoverStaleJobs();
   }
 }

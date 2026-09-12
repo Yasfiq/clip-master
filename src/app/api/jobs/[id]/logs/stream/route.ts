@@ -11,8 +11,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   // Verify job exists
   const job = await db.job.findUnique({ where: { id: jobId } });
   if (!job) {
-    return new Response('Job not found', { status: 404 });
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: { code: 'JOB_NOT_FOUND', message: `Job ${jobId} not found` },
+      }),
+      { status: 404, headers: { 'Content-Type': 'application/json' } },
+    );
   }
+
+  let isClosed = false;
+  let pingInterval: NodeJS.Timeout | null = null;
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -20,10 +29,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       let lastStatus = job.status;
       let lastStage = job.currentStage;
       let lastProgress = job.progress;
-      let isClosed = false;
 
       // Keep-alive ping
-      const pingInterval = setInterval(() => {
+      pingInterval = setInterval(() => {
         if (!isClosed) {
           try {
             controller.enqueue(new TextEncoder().encode(': ping\n\n'));
@@ -34,7 +42,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       // Setup cleanup when client disconnects
       req.signal.addEventListener('abort', () => {
         isClosed = true;
-        clearInterval(pingInterval);
+        if (pingInterval) clearInterval(pingInterval);
       });
 
       // Send initial connection success
@@ -95,15 +103,19 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
             ? await db.jobLog.findMany({
                 where: {
                   jobId,
-                  timestamp: { gte: cursor.timestamp },
-                  NOT: { id: cursor.id },
-                } as any,
-                orderBy: { timestamp: 'asc' },
+                  OR: [
+                    { timestamp: { gt: cursor.timestamp } },
+                    {
+                      AND: [{ timestamp: cursor.timestamp }, { id: { gt: cursor.id } }],
+                    },
+                  ],
+                },
+                orderBy: [{ timestamp: 'asc' }, { id: 'asc' }],
                 take: 500,
               })
             : await db.jobLog.findMany({
                 where: { jobId, timestamp: { gt: new Date(0) } },
-                orderBy: { timestamp: 'desc' },
+                orderBy: [{ timestamp: 'desc' }, { id: 'desc' }],
                 take: 500,
               });
           if (cursor === null) newLogs.reverse();
@@ -123,14 +135,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
             // Give a short delay for final logs to flush, then end stream
             setTimeout(() => {
               if (!isClosed) {
-                controller.enqueue(
-                  new TextEncoder().encode(`data: ${JSON.stringify({ type: 'complete' })}\n\n`),
-                );
-                isClosed = true;
-                clearInterval(pingInterval);
                 try {
+                  controller.enqueue(
+                    new TextEncoder().encode(`data: ${JSON.stringify({ type: 'complete' })}\n\n`),
+                  );
+                  isClosed = true;
+                  if (pingInterval) clearInterval(pingInterval);
                   controller.close();
-                } catch (e) {}
+                } catch (e) {
+                  // Stream already closed or client disconnected
+                }
               }
             }, 2000);
             break;
@@ -145,14 +159,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         } catch (error) {
           console.error('SSE Error:', error);
           if (!isClosed) {
-            controller.enqueue(
-              new TextEncoder().encode(
-                `data: ${JSON.stringify({ type: 'error', message: 'Stream error' })}\n\n`,
-              ),
-            );
-            isClosed = true;
-            clearInterval(pingInterval);
             try {
+              controller.enqueue(
+                new TextEncoder().encode(
+                  `data: ${JSON.stringify({ type: 'error', message: 'Stream error' })}\n\n`,
+                ),
+              );
+              isClosed = true;
+              if (pingInterval) clearInterval(pingInterval);
               controller.close();
             } catch (e) {}
           }
@@ -161,7 +175,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       }
     },
     cancel() {
-      // Handled by abort signal
+      isClosed = true;
+      if (pingInterval) clearInterval(pingInterval);
     },
   });
 

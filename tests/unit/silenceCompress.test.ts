@@ -163,8 +163,7 @@ describe('silenceCompress', () => {
         { startSec: 5, endSec: 6 },
       ];
       const f = buildSilenceRemoveVideoFilter(regions, 24);
-      expect(f).toContain('not(between(t,2.000,3.000))');
-      expect(f).toContain('not(between(t,5.000,6.000))');
+      expect(f).toContain('not(between(t,2.000,3.000))*not(between(t,5.000,6.000))');
       expect(f).toContain('select=');
       expect(f).toContain('setpts=N/(24)/TB');
     });
