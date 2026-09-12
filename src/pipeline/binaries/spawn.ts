@@ -26,6 +26,10 @@ export function runBinary(
   args: string[],
   options: SpawnOptions = {},
 ): Promise<SpawnResult> {
+  if (options.signal?.aborted) {
+    return Promise.reject(new Error('ABORTED'));
+  }
+
   return new Promise((resolve, reject) => {
     logger.debug(`spawn: ${binary} ${args.join(' ')}`);
 
@@ -51,15 +55,23 @@ export function runBinary(
     const timer = options.timeoutMs
       ? setTimeout(() => {
           logger.warn(`Timeout after ${options.timeoutMs}ms, killing ${binary}`);
-          child.kill('SIGKILL');
+          try {
+            child.kill('SIGKILL');
+          } catch {}
         }, options.timeoutMs)
       : null;
 
     const onAbort = () => {
       logger.warn(`Abort requested, terminating ${binary}`);
-      child.kill('SIGTERM');
+      try {
+        child.kill('SIGTERM');
+      } catch {}
       setTimeout(() => {
-        if (!settled) child.kill('SIGKILL');
+        if (!settled) {
+          try {
+            child.kill('SIGKILL');
+          } catch {}
+        }
       }, 5000);
     };
     options.signal?.addEventListener('abort', onAbort, { once: true });
@@ -77,7 +89,11 @@ export function runBinary(
         stdoutRest += text;
         const lines = stdoutRest.split('\n');
         stdoutRest = lines.pop() ?? '';
-        for (const line of lines) options.onStdoutLine(line);
+        for (const line of lines) {
+          try {
+            Promise.resolve(options.onStdoutLine(line)).catch(() => {});
+          } catch {}
+        }
       }
     });
 
@@ -88,7 +104,11 @@ export function runBinary(
         stderrRest += text;
         const lines = stderrRest.split('\n');
         stderrRest = lines.pop() ?? '';
-        for (const line of lines) options.onStderrLine(line);
+        for (const line of lines) {
+          try {
+            Promise.resolve(options.onStderrLine(line)).catch(() => {});
+          } catch {}
+        }
       }
     });
 

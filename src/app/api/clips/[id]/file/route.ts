@@ -70,7 +70,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
           end = size - 1;
         } else {
           start = parseInt(rawStart, 10);
-          end = rawEnd ? parseInt(rawEnd, 10) : size - 1;
+          end = rawEnd ? Math.min(parseInt(rawEnd, 10), size - 1) : size - 1;
         }
         if (start >= size || end < start) {
           return new NextResponse(null, {

@@ -229,7 +229,8 @@ export class EditStage implements PipelineStageHandler {
       const remappedAudio = audioFilter.replaceAll('[0:a]', voicedLabel);
       // Natural grading colorFilter is empty; trim the video directly.
       const videoChain = colorFilter ? `${colorFilter},${videoTrim}` : videoTrim;
-      filterComplex = `[0:v] ${videoChain} [graded]; [0:a] ${voicePre}; ${remappedAudio}`;
+      const voiceGraph = voicePre.startsWith('[0:a]') ? voicePre : `[0:a]${voicePre}`;
+      filterComplex = `[0:v] ${videoChain} [graded]; ${voiceGraph}; ${remappedAudio}`;
     } else {
       filterComplex = `[0:v] ${colorFilter} [graded]; ${audioFilter}`;
     }

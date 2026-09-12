@@ -146,7 +146,8 @@ export class CompressStage implements PipelineStageHandler {
             );
             const scaledH = targetH;
             const scaledSrcW = Math.round((srcW * scaledH) / srcH);
-            const cropW = Math.round(Math.round(srcH * targetAspect) * (scaledSrcW / srcW));
+            const rawCropW = Math.round(Math.round(srcH * targetAspect) * (scaledSrcW / srcW));
+            const cropW = Math.floor(rawCropW / 2) * 2;
             const cropResult = buildFfmpegCropFilter(segments, srcW, scaledSrcW, cropW, scaledH);
 
             filter = `scale=-1:${scaledH},${cropResult.filter}`;
@@ -186,7 +187,7 @@ export class CompressStage implements PipelineStageHandler {
         kenBurnsApplied = true;
       }
     }
-    if (!kenBurnsApplied) {
+    if (!kenBurnsApplied && !faceCropApplied) {
       // Fallback / landscape: center-crop to target dimensions.
       filter += ',crop=' + targetW + ':' + targetH + ':(iw-' + targetW + ')/2:0';
     }
@@ -196,8 +197,11 @@ export class CompressStage implements PipelineStageHandler {
     if (clip?.subtitlePath && ctx.config?.subtitleEnabled !== false) {
       try {
         await fs.access(clip.subtitlePath);
-        // Escape colons in path for ffmpeg filter syntax
-        const esc = clip.subtitlePath.replace(/:/g, '\\:');
+        // Escape colons, single quotes, and backslashes in path for ffmpeg filter syntax
+        const esc = clip.subtitlePath
+          .replace(/\\/g, '/')
+          .replace(/'/g, "'\\\\''")
+          .replace(/:/g, '\\:');
         // Per-clip style picked by compress caller: SULE / TikTok / KAMAL.
         const styleParams = buildForceStyle(subtitleStyle);
         filter += `,subtitles='${esc}':force_style='${styleParams}'`;

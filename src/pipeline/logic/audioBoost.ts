@@ -42,7 +42,8 @@ export const DEFAULT_AUDIO_BOOST: AudioBoostConfig = {
  * Filter chain: loudnorm → volume → aformat.
  */
 export function buildAudioBoostFilter(cfg: AudioBoostConfig = DEFAULT_AUDIO_BOOST): string {
-  validateAudioBoostConfig(cfg);
+  const err = validateAudioBoostConfig(cfg);
+  if (err) throw new Error(err);
   // loudnorm pass 1: measure linear normalization.
   // We use a single-pass `loudnorm` (print_format=summary suppresses JSON).
   // For higher accuracy a two-pass would be ideal, but for transcription
@@ -53,6 +54,7 @@ export function buildAudioBoostFilter(cfg: AudioBoostConfig = DEFAULT_AUDIO_BOOS
   const parts: string[] = [
     `loudnorm=${loudnorm}`,
     `volume=${cfg.boostFactor}`,
+    'alimiter=limit=0.95',
     `aformat=sample_fmts=s16:channel_layouts=mono:sample_rates=${cfg.sampleRate}`,
   ];
   return parts.join(',');

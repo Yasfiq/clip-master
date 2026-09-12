@@ -239,6 +239,12 @@ export class JobService {
       db.job.delete({ where: { id: jobId } }),
     ]);
 
+    // Clean up temporary work files for this job
+    const workDir = path.join(PATHS.work, jobId);
+    await fs.rm(workDir, { recursive: true, force: true }).catch((err) => {
+      logger.warn(`Failed to clean up work dir for deleted job ${jobId}: ${err.message}`);
+    });
+
     logger.info('Job deleted', { jobId, hadStatus: job.status });
   }
 

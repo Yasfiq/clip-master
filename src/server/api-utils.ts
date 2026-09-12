@@ -29,7 +29,7 @@ export function apiError(code: ErrorCode, message: string, details?: any): NextR
           ? 409
           : 500;
   logger.error(`API Error [${code}]: ${message}`);
-  return NextResponse.json({ error: { code, message, details } }, { status });
+  return NextResponse.json({ success: false, error: { code, message, details } }, { status });
 }
 
 export function apiSuccess<T>(data: T, status = 200): NextResponse {
