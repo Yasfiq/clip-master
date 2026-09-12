@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Play, Download, Edit3, Film, Flame } from 'lucide-react';
+import { Play, Download, Edit3, Film, Flame, Sparkles } from 'lucide-react';
 
 interface Clip {
   id: string;
@@ -21,9 +21,17 @@ interface ClipCardProps {
   onPlay?: (clipId: string) => void;
   onDownload?: (clipId: string) => void;
   onEditSubtitle?: (clipId: string) => void;
+  onOpenStudio?: (clipId: string, tab?: 'hook' | 'branding' | 'subtitle' | 'transition') => void;
 }
 
-const ClipCard: React.FC<ClipCardProps> = ({ clip, index, onPlay, onDownload, onEditSubtitle }) => {
+const ClipCard: React.FC<ClipCardProps> = ({
+  clip,
+  index,
+  onPlay,
+  onDownload,
+  onEditSubtitle,
+  onOpenStudio,
+}) => {
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
@@ -145,14 +153,33 @@ const ClipCard: React.FC<ClipCardProps> = ({ clip, index, onPlay, onDownload, on
               <span>Unduh</span>
             </button>
           </div>
-          {onEditSubtitle && (
-            <button
-              onClick={() => onEditSubtitle(clip.id)}
-              className="w-full py-2 px-3 text-xs font-semibold text-zinc-200 bg-zinc-800/90 hover:bg-zinc-750 border border-zinc-700 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <Edit3 className="w-3.5 h-3.5 text-zinc-400" />
-              <span>Edit Subtitle</span>
-            </button>
+          {(onOpenStudio || onEditSubtitle) && (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  onOpenStudio ? onOpenStudio(clip.id, 'hook') : onEditSubtitle?.(clip.id)
+                }
+                className="flex-1 py-2 px-2.5 text-xs font-semibold text-indigo-200 bg-indigo-950/60 hover:bg-indigo-900/60 border border-indigo-700/70 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                title="Buka Studio Workspace (Hook, Branding, Subtitle, Transisi)"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Studio Editor</span>
+              </button>
+              {onEditSubtitle && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onOpenStudio ? onOpenStudio(clip.id, 'subtitle') : onEditSubtitle(clip.id)
+                  }
+                  className="py-2 px-2.5 text-xs font-semibold text-zinc-300 bg-zinc-800 hover:bg-zinc-750 border border-zinc-700 rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                  title="Edit Teks Subtitle"
+                >
+                  <Edit3 className="w-3.5 h-3.5 text-zinc-400" />
+                  <span>Edit Subtitle</span>
+                </button>
+              )}
+            </div>
           )}
         </div>
 

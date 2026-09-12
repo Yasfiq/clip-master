@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import ClipCard from './ClipCard';
-import SubtitleEditorModal from './SubtitleEditorModal';
+import ClipStudioModal from './ClipStudioModal';
 import { Film, RefreshCw } from 'lucide-react';
 
 interface Clip {
@@ -40,6 +40,9 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
   const [filter, setFilter] = useState<'all' | 'exported' | 'pending'>('all');
   const [sortBy, setSortBy] = useState<'newest' | 'duration' | 'score'>('newest');
   const [editingClipId, setEditingClipId] = useState<string | null>(null);
+  const [editingTab, setEditingTab] = useState<'hook' | 'branding' | 'subtitle' | 'transition'>(
+    'hook',
+  );
 
   useEffect(() => {
     fetchClips();
@@ -195,7 +198,14 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
                   index={index}
                   onPlay={handlePlay}
                   onDownload={handleDownload}
-                  onEditSubtitle={(id) => setEditingClipId(id)}
+                  onOpenStudio={(id, tab) => {
+                    setEditingClipId(id);
+                    setEditingTab(tab || 'hook');
+                  }}
+                  onEditSubtitle={(id) => {
+                    setEditingClipId(id);
+                    setEditingTab('subtitle');
+                  }}
                 />
                 {/* Job info */}
                 <div className="mt-1.5 px-1">
@@ -231,9 +241,10 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
       )}
 
       {editingClipId && (
-        <SubtitleEditorModal
+        <ClipStudioModal
           clipId={editingClipId}
           isOpen={true}
+          initialTab={editingTab}
           onClose={() => setEditingClipId(null)}
           onSuccess={() => fetchClips()}
         />

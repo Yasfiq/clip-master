@@ -16,9 +16,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     const body = await req.json().catch(() => ({}));
-    const styleId = typeof body.styleId === 'string' ? body.styleId : undefined;
+    const studioConfig =
+      body.studioConfig && typeof body.studioConfig === 'object' ? body.studioConfig : undefined;
+    const styleId =
+      typeof body.styleId === 'string' && body.styleId
+        ? body.styleId
+        : studioConfig?.subtitleStyleId;
 
-    const result = await reBurnClipSubtitles(id, styleId);
+    const result = await reBurnClipSubtitles(id, styleId, studioConfig);
     return apiSuccess(result);
   }, req);
 }
