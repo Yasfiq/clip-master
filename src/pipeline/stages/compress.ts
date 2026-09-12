@@ -83,7 +83,7 @@ export class CompressStage implements PipelineStageHandler {
       }
 
       // Register Clip record in database
-      await this.registerClipInDB(ctx.jobId, clip, exportPath, stat.size, ctx);
+      await this.registerClipInDB(ctx.jobId, clip, exportPath, stat.size, ctx, subtitleStyle);
 
       completed++;
     }
@@ -248,6 +248,7 @@ export class CompressStage implements PipelineStageHandler {
     finalPath: string,
     fileSize: number,
     ctx: StageContext,
+    subtitleStyle?: ReturnType<typeof pickStyle>,
   ): Promise<void> {
     // Store relative path from media/exports
     const relativePath = path.relative(PATHS.exports, finalPath);
@@ -262,6 +263,7 @@ export class CompressStage implements PipelineStageHandler {
           metadata: {
             segmentIndex: ctx.stageData.clips?.indexOf(clip) ?? 0,
             subtitlePath: clip.subtitlePath ? path.relative(PATHS.work, clip.subtitlePath) : null,
+            subtitleStyle: subtitleStyle?.id,
             fileSize,
           },
         },

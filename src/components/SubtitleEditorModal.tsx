@@ -40,6 +40,9 @@ export default function SubtitleEditorModal({
         throw new Error(payload?.error?.message || 'Gagal memuat subtitle');
       }
       setCues(payload.data?.cues || []);
+      if (payload.data?.subtitleStyle) {
+        setStyleId(payload.data.subtitleStyle);
+      }
     } catch (err: any) {
       setError(err.message || 'Terjadi kesalahan saat memuat subtitle');
     } finally {
@@ -81,10 +84,9 @@ export default function SubtitleEditorModal({
 
   const handleCueTimeChange = (index: number, field: 'start' | 'end', valStr: string) => {
     const num = parseFloat(valStr);
-    if (isNaN(num) || num < 0) return;
     setCues((prev) => {
       const updated = [...prev];
-      updated[index] = { ...updated[index], [field]: num };
+      updated[index] = { ...updated[index], [field]: isNaN(num) ? 0 : Math.max(0, num) };
       return updated;
     });
   };
@@ -159,7 +161,11 @@ export default function SubtitleEditorModal({
       }
 
       setStatusMessage('Video berhasil dirender ulang dengan subtitle terbaru!');
-      setVideoTimestampKey(Date.now());
+      const newKey = Date.now();
+      setVideoTimestampKey(newKey);
+      if (videoRef.current) {
+        videoRef.current.load();
+      }
       onSuccess?.();
     } catch (err: any) {
       setError(err.message || 'Gagal merender ulang video');
@@ -241,9 +247,9 @@ export default function SubtitleEditorModal({
                   onChange={(e) => setStyleId(e.target.value)}
                   className="text-xs bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-md px-2.5 py-1 text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-500"
                 >
-                  <option value="tiktok">TikTok (Bold Kuning)</option>
-                  <option value="sule">SULE (Stroke Hitam Tebal)</option>
-                  <option value="kamal">KAMAL (Minimalis Putih)</option>
+                  <option value="sule">SULE (Kuning, Stroke Hitam Tebal)</option>
+                  <option value="tiktok">TikTok (Putih, Stroke Hitam)</option>
+                  <option value="kamal">KAMAL (Kuning, Bayangan Merah)</option>
                 </select>
               </div>
             </div>

@@ -51,6 +51,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       'Content-Type': 'video/mp4',
       'Accept-Ranges': 'bytes',
       'Content-Length': String(size),
+      'Cache-Control': 'no-cache, must-revalidate',
     };
     const rangeHeader = req.headers.get('range');
 

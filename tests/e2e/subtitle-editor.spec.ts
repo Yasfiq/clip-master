@@ -33,6 +33,7 @@ test.describe('Manual Subtitle Editor E2E', () => {
 
     const originalCues = getData.data.cues;
     expect(originalCues.length).toBeGreaterThan(0);
+    expect(getData.data.subtitleStyle).toBeDefined();
 
     // 2. PUT updated subtitle text
     const updatedCues = [...originalCues];

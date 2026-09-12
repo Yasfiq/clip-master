@@ -13,7 +13,13 @@ import {
   validateFaceCropConfig,
 } from '../logic/faceCrop';
 import { buildKenBurnsFilter, DEFAULT_KEN_BURNS, validateKenBurnsConfig } from '../logic/kenBurns';
-import { getStyleById, buildForceStyle, TIKTOK_STYLE, SubtitleStyle } from '../logic/subtitleStyle';
+import {
+  getStyleById,
+  buildForceStyle,
+  TIKTOK_STYLE,
+  pickStyle,
+  SubtitleStyle,
+} from '../logic/subtitleStyle';
 
 async function fileExists(filePath: string): Promise<boolean> {
   try {
@@ -64,8 +70,23 @@ export async function reBurnClipSubtitles(
     }
   }
 
+  // Fallback to cutPath if editedPath is not present (similar to export stage)
+  if (!videoInputPath && clip.cutPath) {
+    const cutCandidate1 = path.isAbsolute(clip.cutPath)
+      ? clip.cutPath
+      : path.join(PATHS.work, clip.cutPath);
+    if (await fileExists(cutCandidate1)) {
+      videoInputPath = cutCandidate1;
+    } else {
+      const cutCandidate2 = path.join(PATHS.work, clip.jobId, 'cuts', path.basename(clip.cutPath));
+      if (await fileExists(cutCandidate2)) {
+        videoInputPath = cutCandidate2;
+      }
+    }
+  }
+
   if (!videoInputPath) {
-    throw new Error(`Clip ${clipId} has no valid edited video file at ${clip.editedPath}`);
+    throw new Error(`Clip ${clipId} has no valid video file (edited or cut) to re-burn`);
   }
 
   let srtPath: string | null = null;
@@ -114,9 +135,15 @@ export async function reBurnClipSubtitles(
     (clip.metadata as any).subtitleStyle
   ) {
     style = getStyleById((clip.metadata as any).subtitleStyle);
+  } else if (
+    typeof clip.metadata === 'object' &&
+    clip.metadata !== null &&
+    typeof (clip.metadata as any).segmentIndex === 'number'
+  ) {
+    style = pickStyle((clip.metadata as any).segmentIndex);
   }
   if (!style) {
-    style = TIKTOK_STYLE;
+    style = pickStyle(0);
   }
 
   const targetRes = clip.job?.config?.targetResolution || '1080x1920';
@@ -207,7 +234,7 @@ export async function reBurnClipSubtitles(
   }
 
   await fs.mkdir(path.dirname(finalExportPath), { recursive: true });
-  const tempExportPath = `${finalExportPath}.tmp.mp4`;
+  const tempExportPath = `${finalExportPath}.${Date.now()}.${process.pid}.tmp.mp4`;
 
   const ffmpegArgs: string[] = [
     '-i',
@@ -236,8 +263,13 @@ export async function reBurnClipSubtitles(
     tempExportPath,
   ];
 
-  await runBinaryChecked(BINARIES.ffmpeg, ffmpegArgs, { timeoutMs: 1800000 });
-  await fs.rename(tempExportPath, finalExportPath);
+  try {
+    await runBinaryChecked(BINARIES.ffmpeg, ffmpegArgs, { timeoutMs: 1800000 });
+    await fs.rename(tempExportPath, finalExportPath);
+  } catch (err) {
+    await fs.unlink(tempExportPath).catch(() => {});
+    throw err;
+  }
 
   const stat = await fs.stat(finalExportPath);
   const fileSize = stat.size;
@@ -255,6 +287,7 @@ export async function reBurnClipSubtitles(
     data: {
       exportPath: relativeExportPath,
       isExported: true,
+      duration: finalDuration,
       metadata: {
         ...existingMetadata,
         fileSize,

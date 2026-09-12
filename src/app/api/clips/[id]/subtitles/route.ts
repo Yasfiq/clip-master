@@ -5,6 +5,7 @@ import { db } from '@/server/db';
 import { PATHS } from '@/server/paths';
 import { apiError, apiSuccess, catchApiErrors, ErrorCode } from '@/server/api-utils';
 import { parseSrt, serializeSrt, validateCues, SubtitleCue } from '@/pipeline/logic/srtParser';
+import { pickStyle } from '@/pipeline/logic/subtitleStyle';
 
 async function fileExists(filePath: string): Promise<boolean> {
   try {
@@ -74,10 +75,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     const cues = parseSrt(srtContent);
+    const meta = (clip.metadata as any) || {};
+    let subtitleStyle: string = meta.subtitleStyle;
+    if (!subtitleStyle) {
+      const idx = typeof meta.segmentIndex === 'number' ? meta.segmentIndex : 0;
+      subtitleStyle = pickStyle(idx).id;
+    }
+
     return apiSuccess({
       clipId: clip.id,
       cues,
       srtContent,
+      subtitleStyle,
     });
   }, req);
 }
