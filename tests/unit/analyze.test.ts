@@ -8,6 +8,7 @@ import {
   CONFIDENCE_MEDIUM,
   type SegmentFeatures,
 } from '@/pipeline/logic/analyze';
+import { generateHookHeadline, createDefaultStudioConfig } from '@/pipeline/stages/analyze';
 
 describe('analyze', () => {
   describe('scoreSegment', () => {
@@ -212,6 +213,46 @@ describe('analyze', () => {
         const expectedDuration = Number((segment.endTime - segment.startTime).toFixed(3));
         expect(segment.duration).toBe(expectedDuration);
       });
+    });
+  });
+
+  describe('generateHookHeadline', () => {
+    it('extracts concise 3-5 word uppercase headline', () => {
+      const text = 'Gak naik kelas bisa jadi bos ternyata di masa depan';
+      const headline = generateHookHeadline(text);
+      expect(headline).toBe('GAK NAIK KELAS BISA JADI');
+      const words = headline.split(' ');
+      expect(words.length).toBeGreaterThanOrEqual(3);
+      expect(words.length).toBeLessThanOrEqual(5);
+    });
+
+    it('cleans quotes and punctuation', () => {
+      const text = '"Rahasia sukses: kerja cerdas!"';
+      const headline = generateHookHeadline(text);
+      expect(headline).toBe('RAHASIA SUKSES KERJA CERDAS');
+    });
+
+    it('returns default fallback when input is empty or whitespace', () => {
+      expect(generateHookHeadline('')).toBe('MOMEN VIRAL PILIHAN');
+      expect(generateHookHeadline('   ')).toBe('MOMEN VIRAL PILIHAN');
+      expect(generateHookHeadline(undefined)).toBe('MOMEN VIRAL PILIHAN');
+    });
+  });
+
+  describe('createDefaultStudioConfig', () => {
+    it('initializes default studio configuration with hook and source text', () => {
+      const config = createDefaultStudioConfig('GAK NAIK KELAS BISA JADI', 'Raditya Dika');
+      expect(config.hookText).toBe('GAK NAIK KELAS BISA JADI');
+      expect(config.sourceText).toBe('Sumber: Raditya Dika');
+      expect(config.sourceEnabled).toBe(true);
+      expect(config.freezeDuration).toBe(1.2);
+      expect(config.fadeInDuration).toBe(0.4);
+      expect(config.fadeOutDuration).toBe(0.6);
+    });
+
+    it('handles empty source channel', () => {
+      const config = createDefaultStudioConfig('MOMEN VIRAL PILIHAN', null);
+      expect(config.sourceText).toBe('');
     });
   });
 });

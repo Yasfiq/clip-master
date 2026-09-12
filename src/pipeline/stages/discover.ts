@@ -41,10 +41,7 @@ export class DiscoverStage implements PipelineStageHandler {
         const filenamePattern = ctx.jobId + '.%(ext)s';
         const tempPathPattern = path.join(ctx.workDir, filenamePattern);
 
-        // Download best video + best audio. runBinaryChecked throws on
-        // non-zero exit and includes the real yt-dlp stderr tail — an
-        // invalid URL or private video surfaces its actual cause instead of
-        // a generic "output file not found".
+        // Download best video + best audio and write metadata info JSON.
         await runBinaryChecked(
           'yt-dlp',
           [
@@ -52,6 +49,7 @@ export class DiscoverStage implements PipelineStageHandler {
             'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
             '--merge-output-format',
             'mp4',
+            '--write-info-json',
             '-o',
             tempPathPattern,
             job.sourceUrl,
@@ -59,17 +57,44 @@ export class DiscoverStage implements PipelineStageHandler {
           { timeoutMs: 3600000 }, // 1 hour max
         );
 
-        // Find the actual downloaded file (could be .mp4, .mkv, etc)
+        // Find the actual downloaded file (could be .mp4, .mkv, etc) and metadata
         try {
           const files = await fs.readdir(ctx.workDir);
           const downloadedFile = files.find(
-            (f) => f.startsWith(ctx.jobId) && !f.endsWith('.part') && !f.endsWith('.ytdl'),
+            (f) =>
+              f.startsWith(ctx.jobId) &&
+              !f.endsWith('.part') &&
+              !f.endsWith('.ytdl') &&
+              !f.endsWith('.json'),
           );
 
           if (!downloadedFile) throw new Error('File not found after yt-dlp complete');
 
           ctx.sourcePath = path.join(ctx.workDir, downloadedFile);
           logger.info('YouTube download completed', { path: ctx.sourcePath, url: job.sourceUrl });
+
+          const infoFile = files.find((f) => f.startsWith(ctx.jobId) && f.endsWith('.info.json'));
+          if (infoFile) {
+            try {
+              const raw = await fs.readFile(path.join(ctx.workDir, infoFile), 'utf-8');
+              const data = JSON.parse(raw);
+              const title = data.title || undefined;
+              const channel =
+                data.uploader || data.channel || data.creator || data.channel_id || undefined;
+              if (title) ctx.sourceTitle = title;
+              if (channel) ctx.sourceChannel = channel;
+              await db.job.update({
+                where: { id: ctx.jobId },
+                data: {
+                  ...(title ? { sourceTitle: title } : {}),
+                  ...(channel ? { sourceChannel: channel } : {}),
+                },
+              });
+              logger.info('Extracted YouTube source metadata', { title, channel });
+            } catch (err: any) {
+              logger.warn('Failed to parse yt-dlp info.json', { error: err.message });
+            }
+          }
         } catch (e) {
           throw new Error('yt-dlp download failed, output file not found');
         }
@@ -108,6 +133,22 @@ export class DiscoverStage implements PipelineStageHandler {
       bitRate: probe.bitRate,
       fileSize: probe.fileSizeBytes,
     };
+
+    if (!ctx.sourceChannel && (probe.tags.artist || probe.tags.uploader || probe.tags.author)) {
+      ctx.sourceChannel = probe.tags.artist || probe.tags.uploader || probe.tags.author;
+    }
+    if ((!ctx.sourceTitle || ctx.sourceTitle === 'Untitled Source') && probe.tags.title) {
+      ctx.sourceTitle = probe.tags.title;
+    }
+    if (ctx.sourceTitle || ctx.sourceChannel) {
+      await db.job.update({
+        where: { id: ctx.jobId },
+        data: {
+          ...(ctx.sourceTitle ? { sourceTitle: ctx.sourceTitle } : {}),
+          ...(ctx.sourceChannel ? { sourceChannel: ctx.sourceChannel } : {}),
+        },
+      });
+    }
 
     const sourceMinutes = Math.ceil(probe.durationSec / 60);
     await onProgress(

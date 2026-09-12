@@ -2,7 +2,9 @@ import { PipelineStage } from '@prisma/client';
 import { PipelineStageHandler, StageContext } from '../runner-types';
 import { runBinaryChecked } from '../binaries/spawn';
 import { logger } from '../../server/logger';
+import { db } from '../../server/db';
 import { scoreWindowsWithAI, windowText, AIScoredWindow } from '../ai/momentScorer';
+import { StudioConfig, DEFAULT_STUDIO_CONFIG } from '../../types/clipStudio';
 
 export class AnalyzeStage implements PipelineStageHandler {
   stage = PipelineStage.ANALYZE;
@@ -101,28 +103,43 @@ export class AnalyzeStage implements PipelineStageHandler {
     }
 
     // 5. Emit moments + backward-compatible segments
-    ctx.stageData.moments = selected.map((w) => ({
-      startTime: w.startTime,
-      endTime: w.endTime,
-      duration: Number((w.endTime - w.startTime).toFixed(3)),
-      scores: {
-        transcriptHook: w.transcriptHook,
-        audioInterest: w.audioInterest,
-        visualInterest: w.visualInterest,
-        viralPotential: w.viralPotential,
-      },
-      reasons: w.reasons,
-      confidence: w.confidence,
-      hasKineticTrigger: w.hasKineticTrigger,
-      hookLine: w.hookLine,
-    }));
-    ctx.stageData.segments = selected.map((w) => ({
-      startTime: w.startTime,
-      endTime: w.endTime,
-      duration: Number((w.endTime - w.startTime).toFixed(3)),
-      viralScore: w.viralPotential,
-      confidence: w.confidence,
-    }));
+    ctx.stageData.moments = selected.map((w) => {
+      const textToExtract =
+        w.hookLine ||
+        (transcriptAvailable && transcript
+          ? windowText(transcript.segments, w.startTime, w.endTime)
+          : '');
+      const hookHeadline = generateHookHeadline(textToExtract);
+      return {
+        startTime: w.startTime,
+        endTime: w.endTime,
+        duration: Number((w.endTime - w.startTime).toFixed(3)),
+        scores: {
+          transcriptHook: w.transcriptHook,
+          audioInterest: w.audioInterest,
+          visualInterest: w.visualInterest,
+          viralPotential: w.viralPotential,
+        },
+        reasons: w.reasons,
+        confidence: w.confidence,
+        hasKineticTrigger: w.hasKineticTrigger,
+        hookLine: w.hookLine,
+        hookHeadline,
+      };
+    });
+
+    ctx.stageData.segments = selected.map((w, idx) => {
+      const hookHeadline =
+        ctx.stageData.moments?.[idx]?.hookHeadline || generateHookHeadline(w.hookLine);
+      return {
+        startTime: w.startTime,
+        endTime: w.endTime,
+        duration: Number((w.endTime - w.startTime).toFixed(3)),
+        viralScore: w.viralPotential,
+        confidence: w.confidence,
+        hookHeadline,
+      };
+    });
 
     const aiTag = aiUsed ? 'AI' : 'HEURISTIC';
     logger.info(`ANALYZE (${aiTag}): selected ${selected.length} moments`, {
@@ -206,4 +223,73 @@ function overlap(a1: number, a2: number, b1: number, b2: number): boolean {
 /** Audio-only heuristic when no transcript: high energy = interesting. */
 function heuristicAudioOnly(interest: number): number {
   return Math.min(1, 0.3 + interest * 0.6);
+}
+
+/**
+ * Generate a concise 3-5 word uppercase hook headline for a segment.
+ */
+export function generateHookHeadline(text?: string): string {
+  if (!text || !text.trim()) {
+    return 'MOMEN VIRAL PILIHAN';
+  }
+  const cleaned = text
+    .replace(/[«»""''`]/g, '')
+    .replace(/[^\w\s-]/g, ' ')
+    .trim();
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  if (words.length === 0) {
+    return 'MOMEN VIRAL PILIHAN';
+  }
+  const count = Math.min(5, Math.max(3, words.length));
+  return words.slice(0, count).join(' ').toUpperCase();
+}
+
+/**
+ * Initialize default StudioConfig for a clip.
+ */
+export function createDefaultStudioConfig(
+  hookHeadline: string,
+  sourceChannel?: string | null,
+): StudioConfig {
+  return {
+    ...DEFAULT_STUDIO_CONFIG,
+    hookText: hookHeadline,
+    sourceText: sourceChannel ? `Sumber: ${sourceChannel}` : '',
+  };
+}
+
+export interface CreateClipRecordParams {
+  clipId: string;
+  jobId: string;
+  startTime: number;
+  endTime: number;
+  duration: number;
+  cutPath: string;
+  viralScore?: number;
+  confidence?: 'HIGH' | 'MEDIUM' | 'LOW';
+  hookHeadline?: string;
+  sourceChannel?: string | null;
+}
+
+/**
+ * Create a Clip record populated with hookHeadline and initial studioConfig.
+ */
+export async function createClipRecord(params: CreateClipRecordParams) {
+  const hookHeadline = params.hookHeadline || 'MOMEN VIRAL PILIHAN';
+  const studioConfig = createDefaultStudioConfig(hookHeadline, params.sourceChannel);
+
+  return db.clip.create({
+    data: {
+      id: params.clipId,
+      jobId: params.jobId,
+      startTime: params.startTime,
+      endTime: params.endTime,
+      duration: params.duration,
+      cutPath: params.cutPath,
+      viralScore: params.viralScore,
+      confidence: params.confidence,
+      hookHeadline,
+      studioConfig: studioConfig as any,
+    },
+  });
 }

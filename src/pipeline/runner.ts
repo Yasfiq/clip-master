@@ -144,7 +144,8 @@ export async function runPhase2(config: RunnerConfig): Promise<void> {
       workDir: path.join(PATHS.work, jobId),
       outputDir: PATHS.exports,
       config: job.config,
-      sourceTitle: job.sourceFilename || job.sourceUrl || 'Untitled Source',
+      sourceTitle: job.sourceTitle || job.sourceFilename || job.sourceUrl || 'Untitled Source',
+      sourceChannel: job.sourceChannel || undefined,
       metadata: (job.sourceMetadata as any) || {},
       stageData: {
         clips: clips.map((c) => ({

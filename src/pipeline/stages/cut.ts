@@ -10,6 +10,7 @@ import {
   dropTooShort,
   type FrameFeature,
 } from '../logic/emptyFrameFilter';
+import { createClipRecord } from './analyze';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -203,17 +204,26 @@ export class CutStage implements PipelineStageHandler {
     });
 
     const relativeCutPath = path.relative(PATHS.work, cutPath);
-    await db.clip.create({
-      data: {
-        id: clipId,
-        jobId: ctx.jobId,
-        startTime: rangeStart,
-        endTime: rangeEnd,
-        duration,
-        cutPath: relativeCutPath,
-        viralScore: seg.viralScore,
-        confidence: seg.confidence,
-      },
+    let sourceChannel = ctx.sourceChannel;
+    if (!sourceChannel) {
+      const job = await db.job.findUnique({
+        where: { id: ctx.jobId },
+        select: { sourceChannel: true },
+      });
+      sourceChannel = job?.sourceChannel || undefined;
+    }
+
+    await createClipRecord({
+      clipId,
+      jobId: ctx.jobId,
+      startTime: rangeStart,
+      endTime: rangeEnd,
+      duration,
+      cutPath: relativeCutPath,
+      viralScore: seg.viralScore,
+      confidence: seg.confidence,
+      hookHeadline: (seg as any).hookHeadline,
+      sourceChannel,
     });
   }
 

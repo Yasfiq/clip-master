@@ -20,6 +20,8 @@ import {
   pickStyle,
   SubtitleStyle,
 } from '../logic/subtitleStyle';
+import { StudioConfig, DEFAULT_STUDIO_CONFIG } from '../../types/clipStudio';
+import { buildStudioFilterGraph } from '../logic/studioFilterGraph';
 
 async function fileExists(filePath: string): Promise<boolean> {
   try {
@@ -32,8 +34,20 @@ async function fileExists(filePath: string): Promise<boolean> {
 
 export async function reBurnClipSubtitles(
   clipId: string,
-  styleId?: string,
+  styleIdOrConfig?: string | Partial<StudioConfig>,
+  studioConfigInput?: Partial<StudioConfig>,
 ): Promise<{ exportPath: string; fileSize: number; duration: number }> {
+  let styleId: string | undefined;
+  let studioConfigParam: Partial<StudioConfig> | undefined;
+
+  if (typeof styleIdOrConfig === 'string') {
+    styleId = styleIdOrConfig;
+    studioConfigParam = studioConfigInput;
+  } else if (typeof styleIdOrConfig === 'object' && styleIdOrConfig !== null) {
+    studioConfigParam = styleIdOrConfig;
+    styleId = studioConfigParam.subtitleStyleId;
+  }
+
   const clip = await db.clip.findUnique({
     where: { id: clipId },
     include: { job: { include: { config: true } } },
@@ -41,6 +55,27 @@ export async function reBurnClipSubtitles(
 
   if (!clip) {
     throw new Error(`Clip ${clipId} not found`);
+  }
+
+  const existingConfig =
+    typeof clip.studioConfig === 'object' && clip.studioConfig !== null
+      ? (clip.studioConfig as unknown as StudioConfig)
+      : null;
+
+  const baseConfig: StudioConfig = {
+    ...DEFAULT_STUDIO_CONFIG,
+    hookText: clip.hookHeadline || '',
+    sourceText: clip.job?.sourceChannel ? `Sumber: ${clip.job.sourceChannel}` : '',
+    ...(existingConfig || {}),
+  };
+
+  const finalStudioConfig: StudioConfig = {
+    ...baseConfig,
+    ...(studioConfigParam || {}),
+  };
+
+  if (styleId) {
+    finalStudioConfig.subtitleStyleId = styleId;
   }
 
   let videoInputPath: string | null = null;
@@ -127,8 +162,8 @@ export async function reBurnClipSubtitles(
   }
 
   let style: SubtitleStyle | undefined;
-  if (styleId) {
-    style = getStyleById(styleId);
+  if (finalStudioConfig.subtitleStyleId) {
+    style = getStyleById(finalStudioConfig.subtitleStyleId);
   } else if (
     typeof clip.metadata === 'object' &&
     clip.metadata !== null &&
@@ -146,6 +181,18 @@ export async function reBurnClipSubtitles(
     style = pickStyle(0);
   }
 
+  let logoResolvedPath: string | undefined;
+  if (finalStudioConfig.logoEnabled && finalStudioConfig.logoPath) {
+    const candidatePath = path.isAbsolute(finalStudioConfig.logoPath)
+      ? finalStudioConfig.logoPath
+      : path.join(PATHS.root, finalStudioConfig.logoPath);
+    if (await fileExists(candidatePath)) {
+      logoResolvedPath = candidatePath;
+    } else {
+      logger.warn(`Logo path not found at ${candidatePath}, omitting logo layer`);
+    }
+  }
+
   const targetRes = clip.job?.config?.targetResolution || '1080x1920';
   const [wStr, hStr] = targetRes.split('x');
   const targetW = parseInt(wStr, 10) || 1080;
@@ -158,7 +205,7 @@ export async function reBurnClipSubtitles(
   const srcH = probe.height ?? 720;
   const duration = probe.durationSec || clip.duration || 60;
 
-  let filter = `scale=-1:${targetH}`;
+  let baseFilter = `scale=-1:${targetH}`;
   let faceCropApplied = false;
 
   if (portrait) {
@@ -188,7 +235,7 @@ export async function reBurnClipSubtitles(
           const cropW = Math.floor(rawCropW / 2) * 2;
           const cropResult = buildFfmpegCropFilter(segments, srcW, scaledSrcW, cropW, scaledH);
 
-          filter = `scale=-1:${scaledH},${cropResult.filter}`;
+          baseFilter = `scale=-1:${scaledH},${cropResult.filter}`;
           faceCropApplied = true;
         }
       }
@@ -212,18 +259,27 @@ export async function reBurnClipSubtitles(
     const kbErr = validateKenBurnsConfig(kbConfig);
     if (!kbErr) {
       const kb = buildKenBurnsFilter(kbConfig);
-      filter += ',' + kb;
+      baseFilter += ',' + kb;
       kenBurnsApplied = true;
     }
   }
 
   if (!kenBurnsApplied && !faceCropApplied) {
-    filter += `,crop=${targetW}:${targetH}:(iw-${targetW})/2:0`;
+    baseFilter += `,crop=${targetW}:${targetH}:(iw-${targetW})/2:0`;
   }
 
-  const escSrtPath = srtPath.replace(/\\/g, '/').replace(/'/g, "'\\\\''").replace(/:/g, '\\:');
   const forceStyle = buildForceStyle(style);
-  filter += `,subtitles='${escSrtPath}':force_style='${forceStyle}'`;
+
+  const { filterComplex, hasLogoInput, effectiveDuration } = buildStudioFilterGraph({
+    inputVideoDuration: duration,
+    width: targetW,
+    height: targetH,
+    config: finalStudioConfig,
+    subtitlePath: srtPath,
+    logoResolvedPath,
+    subtitleForceStyle: forceStyle,
+    baseVideoFilter: baseFilter,
+  });
 
   let finalExportPath: string;
   if (clip.exportPath) {
@@ -240,8 +296,13 @@ export async function reBurnClipSubtitles(
   const ffmpegArgs: string[] = [
     '-i',
     videoInputPath,
-    '-vf',
-    filter,
+    ...(hasLogoInput && logoResolvedPath ? ['-i', logoResolvedPath] : []),
+    '-filter_complex',
+    filterComplex,
+    '-map',
+    '[v_out]',
+    '-map',
+    '[a_out]',
     '-c:v',
     'libx264',
     '-preset',
@@ -275,7 +336,7 @@ export async function reBurnClipSubtitles(
   const stat = await fs.stat(finalExportPath);
   const fileSize = stat.size;
   const finalProbe = await probeMedia(finalExportPath).catch(() => null);
-  const finalDuration = finalProbe?.durationSec || duration;
+  const finalDuration = finalProbe?.durationSec || effectiveDuration;
 
   const relativeExportPath = path.relative(PATHS.exports, finalExportPath);
   const existingMetadata =
@@ -289,6 +350,8 @@ export async function reBurnClipSubtitles(
       exportPath: relativeExportPath,
       isExported: true,
       duration: finalDuration,
+      hookHeadline: finalStudioConfig.hookText || clip.hookHeadline,
+      studioConfig: finalStudioConfig as any,
       metadata: {
         ...existingMetadata,
         fileSize,
@@ -303,10 +366,11 @@ export async function reBurnClipSubtitles(
       jobId: clip.jobId,
       stage: 'COMPRESS',
       level: 'info',
-      message: `Re-burned subtitles for clip ${clip.id} (style=${style.id})`,
+      message: `Re-burned subtitles and studio layers for clip ${clip.id} (style=${style.id})`,
       metadata: {
         clipId: clip.id,
         styleId: style.id,
+        hookText: finalStudioConfig.hookText,
         fileSize,
         duration: finalDuration,
       },
