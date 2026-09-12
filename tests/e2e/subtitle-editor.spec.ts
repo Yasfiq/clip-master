@@ -1,11 +1,15 @@
 import { test, expect } from '@playwright/test';
+import path from 'path';
+
+const ARTIFACT_DIR =
+  '/home/mohammad-yasfiq/.gemini/antigravity-cli/brain/3ec39e05-3067-46b8-a7c9-03a3fd658a81';
 
 test.describe('Manual Subtitle Editor E2E', () => {
   let testClipId = '';
 
   test.beforeAll(async ({ request }) => {
-    // Find an existing exported clip to test against
-    const res = await request.get('/api/clips?limit=10');
+    // Find an existing exported clip with subtitles to test against
+    const res = await request.get('/api/clips?exported=true&limit=10');
     expect(res.ok()).toBeTruthy();
     const data = await res.json();
     const clips = data.data?.clips || [];
@@ -66,8 +70,13 @@ test.describe('Manual Subtitle Editor E2E', () => {
     // Navigate to clips page
     await page.goto('/clips', { waitUntil: 'domcontentloaded' });
 
+    // Filter to exported clips with subtitles
+    const filterSelect = page.locator('select').first();
+    await filterSelect.selectOption('exported');
+
     // Ensure clips are rendered
     await page.waitForSelector('button:has-text("Edit Subtitle")', { timeout: 15_000 });
+    await page.screenshot({ path: path.join(ARTIFACT_DIR, 'playwright_01_clips_page.png') });
 
     // Click the first "Edit Subtitle" button
     const editBtn = page.locator('button:has-text("Edit Subtitle")').first();
@@ -86,6 +95,9 @@ test.describe('Manual Subtitle Editor E2E', () => {
     const firstCueInput = page.locator('input[placeholder="Ketik teks subtitle..."]').first();
     await expect(firstCueInput).toBeVisible({ timeout: 10_000 });
 
+    // Capture screenshot of open editor modal with video preview and cues
+    await page.screenshot({ path: path.join(ARTIFACT_DIR, 'playwright_02_subtitle_modal.png') });
+
     // Save initial value, then edit
     const currentVal = await firstCueInput.inputValue();
     await firstCueInput.fill(`${currentVal} - Edit UI`);
@@ -99,6 +111,9 @@ test.describe('Manual Subtitle Editor E2E', () => {
     await expect(page.locator('text=Subtitle berhasil disimpan ke disk.')).toBeVisible({
       timeout: 10_000,
     });
+
+    // Capture screenshot of saved state with success badge
+    await page.screenshot({ path: path.join(ARTIFACT_DIR, 'playwright_03_subtitle_saved.png') });
 
     // Revert back and save
     await firstCueInput.fill(currentVal);
