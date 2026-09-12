@@ -15,7 +15,7 @@ export default function DashboardPage() {
   const setSelectedJob = useJobStore((state) => state.setSelectedJob);
 
   return (
-    <main className="min-h-screen bg-gray-50">
+    <main className="min-h-screen bg-zinc-950 text-zinc-100">
       <Navigation activeTab="dashboard" />
       <div className="p-4 md:p-8">
         <div className="max-w-7xl mx-auto">

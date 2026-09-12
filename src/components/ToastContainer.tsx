@@ -12,46 +12,46 @@ export default function ToastContainer() {
     <div className="fixed bottom-4 right-4 z-50 flex flex-col space-y-2 pointer-events-none">
       {toasts.map((toast) => {
         let Icon = Info;
-        let bg = 'bg-blue-50';
-        let border = 'border-blue-200';
-        let text = 'text-blue-800';
-        let iconColor = 'text-blue-500';
+        let bg = 'bg-zinc-900';
+        let border = 'border-sky-800/70';
+        let text = 'text-sky-200';
+        let iconColor = 'text-sky-400';
 
         if (toast.type === 'success') {
           Icon = CheckCircle;
-          bg = 'bg-green-50';
-          border = 'border-green-200';
-          text = 'text-green-800';
-          iconColor = 'text-green-500';
+          bg = 'bg-zinc-900';
+          border = 'border-emerald-800/70';
+          text = 'text-emerald-200';
+          iconColor = 'text-emerald-400';
         } else if (toast.type === 'error') {
           Icon = AlertCircle;
-          bg = 'bg-red-50';
-          border = 'border-red-200';
-          text = 'text-red-800';
-          iconColor = 'text-red-500';
+          bg = 'bg-zinc-900';
+          border = 'border-rose-800/70';
+          text = 'text-rose-200';
+          iconColor = 'text-rose-400';
         } else if (toast.type === 'warning') {
           Icon = AlertTriangle;
-          bg = 'bg-amber-50';
-          border = 'border-amber-200';
-          text = 'text-amber-800';
-          iconColor = 'text-amber-500';
+          bg = 'bg-zinc-900';
+          border = 'border-amber-800/70';
+          text = 'text-amber-200';
+          iconColor = 'text-amber-400';
         }
 
         return (
           <div
             key={toast.id}
-            className={`pointer-events-auto flex items-start p-4 rounded-lg border shadow-sm ${bg} ${border} min-w-[300px] max-w-sm animate-in slide-in-from-right-8 fade-in duration-300`}
+            className={`pointer-events-auto flex items-start p-3.5 rounded-xl border shadow-xl ${bg} ${border} min-w-[280px] max-w-sm animate-in slide-in-from-right-8 fade-in duration-300`}
           >
-            <Icon className={`w-5 h-5 mr-3 shrink-0 mt-0.5 ${iconColor}`} />
-            <div className={`flex-1 text-sm font-medium ${text} mr-2 break-words`}>
+            <Icon className={`w-4 h-4 mr-2.5 shrink-0 mt-0.5 ${iconColor}`} />
+            <div className={`flex-1 text-xs font-medium ${text} mr-2 break-words`}>
               {toast.message}
             </div>
             <button
               onClick={() => removeToast(toast.id)}
-              aria-label="Dismiss notification"
-              className={`shrink-0 ${iconColor} hover:text-gray-900 focus:outline-none`}
+              aria-label="Tutup notifikasi"
+              className="shrink-0 text-zinc-400 hover:text-zinc-100 focus:outline-none cursor-pointer"
             >
-              <X className="w-4 h-4" />
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
         );

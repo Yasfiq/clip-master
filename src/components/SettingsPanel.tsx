@@ -130,38 +130,41 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
 
   const saveTone =
     saveState === 'saved'
-      ? 'text-green-700 bg-green-50 border-green-200'
+      ? 'text-emerald-300 bg-emerald-950/40 border-emerald-800/60'
       : saveState === 'error'
-        ? 'text-red-700 bg-red-50 border-red-200'
+        ? 'text-rose-300 bg-rose-950/40 border-rose-800/60'
         : 'border-transparent';
 
   return (
-    <div className={`bg-white rounded-xl shadow-sm overflow-hidden ${className}`}>
+    <div
+      className={`bg-zinc-900 border border-zinc-800 rounded-xl shadow-sm overflow-hidden text-zinc-100 ${className}`}
+    >
       {/* Header */}
-      <div className="px-6 py-5 border-b border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-900">Clip Settings</h2>
-        <p className="text-sm text-gray-500 mt-0.5">
-          How your clips are made. The defaults are tuned for Shorts — most people never need to
-          touch the Advanced section.
+      <div className="px-6 py-5 border-b border-zinc-800">
+        <h2 className="text-base font-semibold text-zinc-100">
+          Pengaturan Klip Video (Clip Settings)
+        </h2>
+        <p className="text-xs text-zinc-400 mt-1">
+          Konfigurasi otomatis pembuatan klip Shorts, Reels, dan TikTok.
         </p>
       </div>
 
       <div className="p-6 space-y-8">
-        {/* ——— Create section (laypeople) ——— */}
+        {/* ——— Create section ——— */}
         <section aria-labelledby="create-heading">
           <h3
             id="create-heading"
-            className="text-xs font-semibold text-gray-400 uppercase tracking-wider"
+            className="text-xs font-semibold text-zinc-400 uppercase tracking-wider"
           >
-            New clips
+            Klip Baru
           </h3>
 
           {/* Clip Length */}
           <div className="mt-4">
             <div className="flex items-baseline justify-between">
-              <label className="text-sm font-medium text-gray-900">Clip length</label>
-              <span className="text-xs text-gray-400 tabular-nums">
-                {config.targetDuration}s clips
+              <label className="text-xs font-medium text-zinc-300">Target Durasi Klip</label>
+              <span className="text-xs text-zinc-400 font-mono tabular-nums">
+                {config.targetDuration} dtk
               </span>
             </div>
             <div
@@ -171,7 +174,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
             >
               {CLIP_LENGTH_OPTIONS.map((opt) => {
                 const selected = clipLengthId === opt.id;
-                // Mobile shows a short name; desktop includes the duration.
                 const [name, dur] = opt.label.split(' ');
                 const mobileLabel = name;
                 const desktopLabel = opt.label;
@@ -182,10 +184,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
                     role="radio"
                     aria-checked={selected}
                     onClick={() => onClipLength(opt.id)}
-                    className={`px-2 py-2.5 text-sm font-medium rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500 ${
+                    className={`min-h-[44px] px-3 py-2.5 text-xs font-medium rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-zinc-400 cursor-pointer ${
                       selected
-                        ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
-                        : 'bg-white border-gray-200 text-gray-700 hover:border-blue-300 hover:text-blue-700'
+                        ? 'bg-zinc-100 border-transparent text-zinc-950 font-semibold shadow-sm'
+                        : 'bg-zinc-800/80 border-zinc-700 text-zinc-300 hover:bg-zinc-750 hover:text-white'
                     }`}
                   >
                     <span className="sm:hidden">{mobileLabel}</span>
@@ -195,17 +197,19 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
                 );
               })}
             </div>
-            <p className="mt-1.5 text-[11px] text-gray-400 px-0.5">
-              Each clip targets {config.targetDuration} seconds.
+            <p className="mt-1.5 text-[11px] text-zinc-500">
+              Setiap klip menargetkan durasi sekitar {config.targetDuration} detik.
             </p>
           </div>
 
           {/* Captions */}
-          <div className="mt-7 flex items-center justify-between gap-6 rounded-lg border border-gray-200 px-4 py-3.5">
+          <div className="mt-6 flex items-center justify-between gap-6 rounded-lg border border-zinc-800 bg-zinc-950/50 px-4 py-3.5">
             <div>
-              <p className="text-sm font-medium text-gray-900">Auto captions</p>
-              <p className="text-sm text-gray-500 mt-0.5">
-                Transcribe speech and burn subtitles into each clip
+              <p className="text-xs font-semibold text-zinc-200">
+                Subtitle Otomatis (Auto captions)
+              </p>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Transkrip suara Whisper dan burn-in teks subtitle ke dalam klip video
               </p>
             </div>
             <Toggle
@@ -216,13 +220,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
           </div>
         </section>
 
-        {/* ——— Advanced (collapsed by default) ——— */}
+        {/* ——— Advanced ——— */}
         <AdvancedSection config={config} update={update} />
 
         {/* Save bar */}
-        <div className="pt-2 border-t border-gray-100 flex items-center justify-between gap-4">
+        <div className="pt-4 border-t border-zinc-800 flex items-center justify-between gap-4">
           <p
-            className={`text-sm px-3 py-2 rounded-md border ${saveTone} ${saveMessage ? '' : 'invisible'}`}
+            className={`text-xs px-3 py-2 rounded-md border ${saveTone} ${saveMessage ? '' : 'invisible'}`}
             role="status"
             aria-live="polite"
             data-testid="settings-save-status"
@@ -233,9 +237,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
             type="button"
             onClick={handleSave}
             disabled={!isLoaded || saveState === 'saving'}
-            className="inline-flex items-center px-5 py-2.5 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-60 transition-colors"
+            className="inline-flex items-center min-h-[44px] px-5 py-2.5 border border-transparent text-xs font-semibold rounded-lg shadow-sm text-zinc-950 bg-zinc-100 hover:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-400 disabled:opacity-40 transition-colors cursor-pointer"
           >
-            {saveState === 'saving' ? 'Saving…' : 'Save settings'}
+            {saveState === 'saving' ? 'Menyimpan...' : 'Simpan Pengaturan'}
+            <span className="sr-only">Save settings</span>
           </button>
         </div>
       </div>
@@ -266,13 +271,13 @@ const Toggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void; label
     aria-checked={checked}
     aria-label={label}
     onClick={() => onChange(!checked)}
-    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
-      checked ? 'bg-blue-600' : 'bg-gray-300'
+    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-zinc-400 cursor-pointer ${
+      checked ? 'bg-zinc-100' : 'bg-zinc-700'
     }`}
   >
     <span
-      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-        checked ? 'translate-x-6' : 'translate-x-1'
+      className={`inline-block h-4 w-4 transform rounded-full shadow transition-transform ${
+        checked ? 'translate-x-6 bg-zinc-950' : 'translate-x-1 bg-zinc-300'
       }`}
     />
   </button>
@@ -293,26 +298,26 @@ const AdvancedSection: React.FC<{
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-controls={panelId}
-        className="flex w-full items-center justify-between text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-md px-1 py-1"
+        className="flex w-full items-center justify-between text-xs font-semibold text-zinc-300 hover:text-zinc-100 transition-colors focus:outline-none focus:ring-2 focus:ring-zinc-400 rounded-md px-1 py-1"
       >
         <span className="flex items-center gap-2">
-          <span id="advanced-heading">Advanced</span>
-          <span className="text-xs font-normal text-gray-400">
-            Ad filter · number of clips · output quality
+          <span id="advanced-heading">Pengaturan Lanjutan (Advanced)</span>
+          <span className="text-[11px] font-normal text-zinc-500">
+            Filter iklan &bull; Jumlah klip &bull; Kualitas output
           </span>
         </span>
         <Chevron open={open} />
       </button>
 
       {open && (
-        <div id={panelId} className="mt-4 space-y-6 border-t border-gray-100 pt-5">
+        <div id={panelId} className="mt-4 space-y-6 border-t border-zinc-800 pt-5">
           {/* Ad filter */}
           <div className="flex items-start justify-between gap-6">
             <div>
-              <p className="text-sm font-medium text-gray-900">Reject pure ad videos</p>
-              <p className="text-sm text-gray-500 mt-0.5">
-                Videos that are nothing but an advertisement are stopped before processing. Videos
-                with ads inside real content still go through.
+              <p className="text-xs font-semibold text-zinc-200">Filter Iklan Penuh (Pure Ad)</p>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Video yang sepenuhnya iklan ditolak sebelum diproses. Video dengan iklan sisipan
+                tetap diterima.
               </p>
             </div>
             <Toggle
@@ -325,10 +330,10 @@ const AdvancedSection: React.FC<{
           {config.adFilterEnabled && (
             <div className="pl-1">
               <div className="flex items-baseline justify-between">
-                <label htmlFor="ad-threshold" className="text-sm font-medium text-gray-700">
-                  Filter strictness
+                <label htmlFor="ad-threshold" className="text-xs font-medium text-zinc-300">
+                  Sensitivitas Filter Iklan
                 </label>
-                <span className="text-xs text-gray-400 tabular-nums">
+                <span className="text-xs text-zinc-400 font-mono tabular-nums">
                   {Math.round(config.adScoreThreshold * 100)}%
                 </span>
               </div>
@@ -340,11 +345,11 @@ const AdvancedSection: React.FC<{
                 step="5"
                 value={Math.round(config.adScoreThreshold * 100)}
                 onChange={(e) => update('adScoreThreshold', Number(e.target.value) / 100)}
-                className="mt-2 w-full accent-blue-600"
+                className="mt-2 w-full accent-zinc-200"
               />
-              <div className="flex justify-between text-[11px] text-gray-400">
-                <span>Fewer videos rejected</span>
-                <span>More strict</span>
+              <div className="flex justify-between text-[11px] text-zinc-500">
+                <span>Lebih longgar</span>
+                <span>Lebih ketat</span>
               </div>
             </div>
           )}
@@ -352,11 +357,11 @@ const AdvancedSection: React.FC<{
           {/* Max clips */}
           <div>
             <div className="flex items-baseline justify-between">
-              <label htmlFor="max-clips" className="text-sm font-medium text-gray-900">
-                Maximum clips per video
+              <label htmlFor="max-clips" className="text-xs font-medium text-zinc-300">
+                Maksimum Klip Per Video
               </label>
-              <span className="text-sm tabular-nums text-gray-700 font-medium">
-                {config.maxClips}
+              <span className="text-xs font-mono text-zinc-200 font-semibold">
+                {config.maxClips} klip
               </span>
             </div>
             <input
@@ -367,24 +372,24 @@ const AdvancedSection: React.FC<{
               step="1"
               value={config.maxClips}
               onChange={(e) => update('maxClips', Number(e.target.value))}
-              className="mt-2 w-full accent-blue-600"
+              className="mt-2 w-full accent-zinc-200"
             />
-            <div className="flex justify-between text-[11px] text-gray-400">
-              <span>Just the best</span>
-              <span>More clips</span>
+            <div className="flex justify-between text-[11px] text-zinc-500">
+              <span>Hanya yang terbaik</span>
+              <span>Hingga 50 klip</span>
             </div>
           </div>
 
           {/* Color grading preset */}
           <div>
-            <label htmlFor="grading" className="text-sm font-medium text-gray-900">
-              Color grading
+            <label htmlFor="grading" className="text-xs font-medium text-zinc-300">
+              Preset Color Grading
             </label>
             <select
               id="grading"
               value={config.colorGrading}
               onChange={(e) => update('colorGrading', e.target.value)}
-              className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="mt-1.5 w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
             >
               {GRADING_OPTIONS.map((o) => (
                 <option key={o.id} value={o.id}>
@@ -392,18 +397,18 @@ const AdvancedSection: React.FC<{
                 </option>
               ))}
             </select>
-            <p className="text-xs text-gray-400 mt-1">
-              Look-and-feel applied in the EDIT stage. Natural keeps the original image.
+            <p className="text-[11px] text-zinc-500 mt-1">
+              Nuansa warna diterapkan pada tahap EDIT. Pilihan Natural mempertahankan gambar asli.
             </p>
           </div>
 
           {/* Backsound */}
           <div className="flex items-start justify-between gap-6">
             <div>
-              <p className="text-sm font-medium text-gray-900">Background music</p>
-              <p className="text-sm text-gray-500 mt-0.5">
-                Duck a music track under the voice when one is present in
-                <span className="font-mono text-xs"> media/assets/ </span>
+              <p className="text-xs font-semibold text-zinc-200">Musik Latar (Background Music)</p>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Ducking audio musik otomatis saat suara pembicara aktif bila musik tersedia di
+                <span className="font-mono text-[11px] text-zinc-300"> media/assets/</span>.
               </p>
             </div>
             <Toggle
@@ -415,14 +420,14 @@ const AdvancedSection: React.FC<{
 
           {/* Resolution */}
           <div>
-            <label htmlFor="resolution" className="text-sm font-medium text-gray-900">
-              Output quality
+            <label htmlFor="resolution" className="text-xs font-medium text-zinc-300">
+              Resolusi &amp; Kualitas Output
             </label>
             <select
               id="resolution"
               value={config.targetResolution}
               onChange={(e) => update('targetResolution', e.target.value)}
-              className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="mt-1.5 w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
             >
               {RESOLUTION_OPTIONS.map((o) => (
                 <option key={o.id} value={o.id}>
@@ -432,10 +437,10 @@ const AdvancedSection: React.FC<{
             </select>
           </div>
 
-          {/* Segment minimum — matches analyze window lower bound */}
+          {/* Segment minimum */}
           <div>
-            <label htmlFor="min-segment" className="text-sm font-medium text-gray-900">
-              Shortest meaningful segment
+            <label htmlFor="min-segment" className="text-xs font-medium text-zinc-300">
+              Durasi Minimum Segmen Analisis
             </label>
             <div className="mt-1.5 flex items-center gap-3">
               <input
@@ -446,14 +451,14 @@ const AdvancedSection: React.FC<{
                 step="15"
                 value={config.minSegmentDuration}
                 onChange={(e) => update('minSegmentDuration', Number(e.target.value))}
-                className="w-full accent-blue-600"
+                className="w-full accent-zinc-200"
               />
-              <span className="w-14 text-right text-sm tabular-nums text-gray-700">
+              <span className="w-14 text-right text-xs font-mono text-zinc-300 tabular-nums">
                 {config.minSegmentDuration}s
               </span>
             </div>
-            <p className="text-xs text-gray-400 mt-1">
-              Candidate windows shorter than this are never considered.
+            <p className="text-[11px] text-zinc-500 mt-1">
+              Jendela kandidat yang lebih pendek dari durasi ini tidak akan diproses.
             </p>
           </div>
         </div>
@@ -466,7 +471,7 @@ const Chevron: React.FC<{ open: boolean }> = ({ open }) => (
   <svg
     viewBox="0 0 20 20"
     fill="currentColor"
-    className={`h-4 w-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}
+    className={`h-4 w-4 text-zinc-400 transition-transform ${open ? 'rotate-180' : ''}`}
     aria-hidden="true"
   >
     <path

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { SubtitleCue, formatSrtTimestamp } from '@/pipeline/logic/srtParser';
+import { X, Loader2 } from 'lucide-react';
 
 interface SubtitleEditorModalProps {
   clipId: string;
@@ -204,10 +205,10 @@ export default function SubtitleEditorModal({
             type="button"
             onClick={onClose}
             disabled={reBurning || saving}
-            className="text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 p-2 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50"
+            className="text-zinc-400 hover:text-zinc-100 p-2 rounded-lg hover:bg-zinc-800 transition-colors disabled:opacity-50 cursor-pointer"
             aria-label="Tutup jendela editor"
           >
-            ✕
+            <X className="w-5 h-5" />
           </button>
         </div>
 
@@ -414,7 +415,7 @@ export default function SubtitleEditorModal({
                 >
                   {reBurning ? (
                     <>
-                      <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white dark:border-zinc-900" />
+                      <Loader2 className="animate-spin h-3.5 w-3.5" />
                       <span>Merender Ulang...</span>
                     </>
                   ) : (

@@ -1,8 +1,7 @@
-'use client';
-
 import React, { useEffect, useState } from 'react';
 import useJobStore from '@/stores/useJobStore';
 import { useToastStore } from '@/stores/useToastStore';
+import { Video, Globe, HardDrive, Play, Loader2 } from 'lucide-react';
 
 interface QuickCreateProps {
   onSuccess?: (jobId: string) => void;
@@ -62,7 +61,9 @@ const QuickCreate: React.FC<QuickCreateProps> = ({ onSuccess, className = '' }) 
 
     if (!sourceValue.trim()) {
       addToast(
-        sourceType === 'local' ? 'Provide the video path on this machine' : 'Please provide a URL',
+        sourceType === 'local'
+          ? 'Masukkan jalur video di mesin ini'
+          : 'Masukkan URL video yang valid',
         'warning',
       );
       return;
@@ -86,10 +87,9 @@ const QuickCreate: React.FC<QuickCreateProps> = ({ onSuccess, className = '' }) 
 
       if (!res.ok) {
         const errPayload = await res.json().catch(() => ({}));
-        throw new Error(errPayload.error?.message || 'Failed to create job');
+        throw new Error(errPayload.error?.message || 'Gagal membuat job');
       }
       const responseBody = await res.json();
-      // API returns { success: true, data: { ...job } } envelope.
       const job = responseBody.success ? responseBody.data : responseBody;
 
       // Auto-start job. With one-active-job concurrency the start can fail
@@ -104,7 +104,7 @@ const QuickCreate: React.FC<QuickCreateProps> = ({ onSuccess, className = '' }) 
       if (!startRes.ok) {
         const startErr = await startRes.json().catch(() => ({}));
         if (startErr.error?.code !== 'JOB_ALREADY_RUNNING') {
-          throw new Error(startErr.error?.message || 'Failed to start job');
+          throw new Error(startErr.error?.message || 'Gagal memulai job');
         }
       } else {
         started = true;
@@ -113,10 +113,9 @@ const QuickCreate: React.FC<QuickCreateProps> = ({ onSuccess, className = '' }) 
       // Map to UI job type
       const jobData = {
         id: job.id,
-        name: job.sourceFilename || job.sourceUrl || 'Unknown source',
+        name: job.sourceFilename || job.sourceUrl || 'Sumber video',
         sourceUrl: job.sourceUrl || undefined,
         status: started ? ('RUNNING_PHASE1' as const) : ('PENDING' as const),
-        // Prisma stores progress as 0..1, UI shows 0..100.
         progress: typeof job.progress === 'number' ? Math.round(job.progress * 100) : 0,
         clipsCount: job.exportedClipsCount ?? 0,
         duration: job.sourceDuration ?? undefined,
@@ -128,7 +127,7 @@ const QuickCreate: React.FC<QuickCreateProps> = ({ onSuccess, className = '' }) 
       if (started) useJobStore.getState().connectSSE(job.id);
 
       addToast(
-        started ? 'Job started successfully' : 'Job queued — another job is running',
+        started ? 'Job berhasil dimulai' : 'Job masuk antrean (job lain sedang berjalan)',
         started ? 'success' : 'info',
       );
 
@@ -138,7 +137,7 @@ const QuickCreate: React.FC<QuickCreateProps> = ({ onSuccess, className = '' }) 
       onSuccess?.(jobData.id);
     } catch (err: any) {
       console.error('QuickCreate submit failed:', err);
-      addToast(err.message || 'Failed to create job', 'error');
+      addToast(err.message || 'Gagal membuat job', 'error');
     } finally {
       setIsSubmitting(false);
       setLoading(false);
@@ -146,36 +145,69 @@ const QuickCreate: React.FC<QuickCreateProps> = ({ onSuccess, className = '' }) 
   };
 
   return (
-    <div className={`bg-white rounded-xl shadow-sm p-6 ${className}`}>
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">Create New Job</h3>
+    <div
+      className={`bg-zinc-900 border border-zinc-800 rounded-xl p-5 shadow-sm text-zinc-100 ${className}`}
+    >
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-semibold text-zinc-200 uppercase tracking-wider">
+          Buat Job Baru
+        </h3>
+        <span className="sr-only">Create New Job</span>
+        <span className="text-[11px] text-zinc-400">Ingest video</span>
+      </div>
 
       <form onSubmit={handleSubmit}>
         {/* Source type selector */}
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Source Type</label>
-          <div className="flex space-x-2">
-            {(['youtube', 'url', 'local'] as const).map((type) => (
-              <button
-                key={type}
-                type="button"
-                onClick={() => setSourceType(type)}
-                className={`flex-1 py-2 px-3 text-sm font-medium rounded-lg border transition-colors ${
-                  sourceType === type
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                {type === 'youtube' ? 'YouTube' : type === 'url' ? 'URL' : 'Local File'}
-              </button>
-            ))}
+          <label className="block text-xs font-medium text-zinc-300 mb-2">Sumber Video</label>
+          <div className="grid grid-cols-3 gap-1.5">
+            <button
+              type="button"
+              onClick={() => setSourceType('youtube')}
+              aria-label="YouTube"
+              className={`inline-flex items-center justify-center min-h-[44px] py-2 px-2.5 text-xs font-medium rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-zinc-400 ${
+                sourceType === 'youtube'
+                  ? 'bg-zinc-100 text-zinc-950 font-semibold border-transparent shadow-sm'
+                  : 'bg-zinc-800/80 text-zinc-300 border-zinc-700 hover:bg-zinc-800 hover:text-zinc-100'
+              }`}
+            >
+              <Video className="w-3.5 h-3.5 mr-1.5 shrink-0 text-red-400" />
+              <span>YouTube</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSourceType('url')}
+              aria-label="Direct URL"
+              className={`inline-flex items-center justify-center min-h-[44px] py-2 px-2.5 text-xs font-medium rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-zinc-400 ${
+                sourceType === 'url'
+                  ? 'bg-zinc-100 text-zinc-950 font-semibold border-transparent shadow-sm'
+                  : 'bg-zinc-800/80 text-zinc-300 border-zinc-700 hover:bg-zinc-800 hover:text-zinc-100'
+              }`}
+            >
+              <Globe className="w-3.5 h-3.5 mr-1.5 shrink-0 text-sky-400" />
+              <span>URL Langsung</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSourceType('local')}
+              aria-label="Local File"
+              className={`inline-flex items-center justify-center min-h-[44px] py-2 px-2.5 text-xs font-medium rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-zinc-400 ${
+                sourceType === 'local'
+                  ? 'bg-zinc-100 text-zinc-950 font-semibold border-transparent shadow-sm'
+                  : 'bg-zinc-800/80 text-zinc-300 border-zinc-700 hover:bg-zinc-800 hover:text-zinc-100'
+              }`}
+            >
+              <HardDrive className="w-3.5 h-3.5 mr-1.5 shrink-0 text-emerald-400" />
+              <span>File Lokal</span>
+            </button>
           </div>
         </div>
 
         {/* URL input */}
         {(sourceType === 'youtube' || sourceType === 'url') && (
           <div className="mb-4">
-            <label htmlFor="url-input" className="block text-sm font-medium text-gray-700 mb-1">
-              {sourceType === 'youtube' ? 'YouTube URL' : 'Video URL'}
+            <label htmlFor="url-input" className="block text-xs font-medium text-zinc-300 mb-1.5">
+              {sourceType === 'youtube' ? 'Tautan YouTube' : 'Tautan Video (Direct URL)'}
             </label>
             <input
               id="url-input"
@@ -187,7 +219,7 @@ const QuickCreate: React.FC<QuickCreateProps> = ({ onSuccess, className = '' }) 
                   ? 'https://www.youtube.com/watch?v=...'
                   : 'https://example.com/video.mp4'
               }
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+              className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-700 text-zinc-100 placeholder-zinc-500 rounded-lg text-sm shadow-inner focus:outline-none focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 transition-colors"
               disabled={isSubmitting}
             />
           </div>
@@ -196,73 +228,85 @@ const QuickCreate: React.FC<QuickCreateProps> = ({ onSuccess, className = '' }) 
         {/* Local path input */}
         {sourceType === 'local' && (
           <div className="mb-4">
-            <label htmlFor="local-path" className="block text-sm font-medium text-gray-700 mb-1">
-              Video Path (on this machine)
+            <label htmlFor="local-path" className="block text-xs font-medium text-zinc-300 mb-1.5">
+              Jalur File Video (di mesin ini)
             </label>
             <input
               id="local-path"
               type="text"
               value={localPath}
               onChange={(e) => setLocalPath(e.target.value)}
-              placeholder="/home/you/videos/clip.mp4"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors font-mono text-sm"
+              placeholder="/home/username/videos/sample.mp4"
+              className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-700 text-zinc-100 placeholder-zinc-500 rounded-lg font-mono text-xs shadow-inner focus:outline-none focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 transition-colors"
               disabled={isSubmitting}
             />
-            <p className="mt-1 text-xs text-gray-500">
-              Absolute path to a video file on this machine. It is copied into media/sources and
-              processed locally — nothing leaves your disk.
+            <p className="mt-1.5 text-[11px] text-zinc-400">
+              Jalur absolut ke file video lokal. File disalin ke media/sources dan diproses di
+              komputer ini.
             </p>
           </div>
         )}
 
         {/* Config summary */}
-        <div className="mb-6 bg-gray-50 border border-gray-200 rounded-lg p-3">
-          <div className="text-xs font-medium text-gray-700 mb-1">
-            Pipeline Config{config ? ' (active defaults)' : ''}
+        <div className="mb-5 bg-zinc-950/60 border border-zinc-800 rounded-lg p-3">
+          <div className="text-[11px] font-semibold text-zinc-300 uppercase tracking-wider mb-2">
+            Konfigurasi Aktif {config ? '(Default)' : ''}
           </div>
           {config ? (
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-gray-600">
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs text-zinc-400">
               <div>
-                Min Segment: <span className="font-medium">{config.minSegmentDuration}s</span>
+                Segmen Min:{' '}
+                <span className="font-semibold text-zinc-200">{config.minSegmentDuration} dtk</span>
               </div>
               <div>
-                Target Duration: <span className="font-medium">{config.targetDuration}s</span>
+                Target:{' '}
+                <span className="font-semibold text-zinc-200">{config.targetDuration} dtk</span>
               </div>
               <div>
-                Ad Filter:{' '}
-                <span className="font-medium">{config.adFilterEnabled ? 'Enabled' : 'Off'}</span>
+                Filter Iklan:{' '}
+                <span
+                  className={`font-semibold ${config.adFilterEnabled ? 'text-emerald-400' : 'text-zinc-400'}`}
+                >
+                  {config.adFilterEnabled ? 'Aktif' : 'Nonaktif'}
+                </span>
               </div>
               <div>
-                Subtitles:{' '}
-                <span className="font-medium">{config.subtitleEnabled ? 'Enabled' : 'Off'}</span>
+                Subtitle:{' '}
+                <span
+                  className={`font-semibold ${config.subtitleEnabled ? 'text-emerald-400' : 'text-zinc-400'}`}
+                >
+                  {config.subtitleEnabled ? 'Aktif' : 'Nonaktif'}
+                </span>
               </div>
             </div>
           ) : (
-            <div className="text-xs text-gray-500">Loading active config…</div>
+            <div className="text-xs text-zinc-500">Memuat konfigurasi...</div>
           )}
         </div>
 
         {/* Submit button */}
         <button
           type="submit"
+          aria-label="Start Processing"
           disabled={isSubmitting || !sourceValue.trim()}
-          className="w-full py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="w-full min-h-[44px] py-2.5 px-4 rounded-lg font-semibold text-sm text-zinc-950 bg-zinc-100 hover:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-sm flex items-center justify-center gap-2"
         >
           {isSubmitting ? (
             <>
-              <span className="inline-block mr-2">⏳</span>
-              Creating job...
+              <Loader2 className="w-4 h-4 animate-spin text-zinc-950" />
+              <span>Membuat Job...</span>
             </>
           ) : (
             <>
-              <span className="inline-block mr-2">🚀</span>
-              Start Processing
+              <Play className="w-4 h-4 fill-current text-zinc-950" />
+              <span>Mulai Proses Video</span>
+              <span className="sr-only">Start Processing</span>
             </>
           )}
         </button>
 
-        <p className="mt-3 text-xs text-gray-500 text-center">
-          Processing runs in background • Cancel anytime • Progress updates live
+        <p className="mt-2.5 text-[11px] text-zinc-500 text-center">
+          Proses berjalan lokal • Dapat dibatalkan sewaktu-waktu
         </p>
       </form>
     </div>

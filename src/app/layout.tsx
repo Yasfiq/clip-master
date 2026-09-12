@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#ffffff',
+  themeColor: '#09090b',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 5,
@@ -22,8 +22,8 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="id">
-      <body className="bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+    <html lang="id" className="dark">
+      <body className="bg-zinc-950 text-zinc-100 min-h-screen antialiased selection:bg-zinc-800 selection:text-zinc-100">
         {children}
         <ToastContainer />
       </body>
