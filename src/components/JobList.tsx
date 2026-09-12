@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import useJobStore from '@/stores/useJobStore';
 import { useToastStore } from '@/stores/useToastStore';
+import { Play, X, Film, Sparkles, RefreshCw } from 'lucide-react';
 
 interface JobListProps {
   onJobSelect?: (jobId: string) => void;
@@ -96,7 +97,7 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
       abortRef.current?.abort();
       if (firstFetch) setLoading(false);
     };
-  }, [limit]);
+  }, [limit, setLoading]);
 
   const isRunning = (s: string) => s === 'RUNNING_PHASE1' || s === 'RUNNING_PHASE2';
   const isCancellable = (s: string) => isRunning(s);
@@ -104,22 +105,22 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'PENDING':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+        return 'bg-amber-950/40 text-amber-300 border-amber-800/60';
       case 'RUNNING_PHASE1':
       case 'RUNNING_PHASE2':
-        return 'bg-blue-100 text-blue-800 border-blue-200';
+        return 'bg-sky-950/40 text-sky-300 border-sky-800/60';
       case 'PHASE1_DONE':
-        return 'bg-indigo-100 text-indigo-800 border-indigo-200';
+        return 'bg-indigo-950/40 text-indigo-300 border-indigo-800/60';
       case 'COMPLETED':
-        return 'bg-green-100 text-green-800 border-green-200';
+        return 'bg-emerald-950/40 text-emerald-300 border-emerald-800/60';
       case 'FAILED':
-        return 'bg-red-100 text-red-800 border-red-200';
+        return 'bg-rose-950/40 text-rose-300 border-rose-800/60';
       case 'CANCELLED':
-        return 'bg-gray-100 text-gray-800 border-gray-200';
+        return 'bg-zinc-800 text-zinc-400 border-zinc-700';
       case 'REJECTED_AD':
-        return 'bg-orange-100 text-orange-800 border-orange-200';
+        return 'bg-orange-950/40 text-orange-300 border-orange-800/60';
       default:
-        return 'bg-gray-100 text-gray-800 border-gray-200';
+        return 'bg-zinc-800 text-zinc-400 border-zinc-700';
     }
   };
 
@@ -141,18 +142,18 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
   const getProgressColor = (status: string) => {
     switch (status) {
       case 'COMPLETED':
-        return 'bg-green-500';
+        return 'bg-emerald-500';
       case 'FAILED':
       case 'CANCELLED':
       case 'REJECTED_AD':
-        return 'bg-red-500';
+        return 'bg-rose-500';
       case 'RUNNING_PHASE1':
       case 'RUNNING_PHASE2':
-        return 'bg-blue-500';
+        return 'bg-sky-500';
       case 'PHASE1_DONE':
         return 'bg-indigo-500';
       default:
-        return 'bg-yellow-500';
+        return 'bg-amber-500';
     }
   };
 
@@ -166,9 +167,12 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
         const errPayload = await res.json().catch(() => ({}));
         const msg = errPayload.error?.message || `HTTP ${res.status}`;
         if (errPayload.error?.code === 'JOB_ALREADY_RUNNING') {
-          addToast('Another job is running — this job stays queued (PHASE 1 DONE).', 'warning');
+          addToast(
+            'Job lain sedang berjalan - job ini tetap di antrean (PHASE 1 DONE).',
+            'warning',
+          );
         } else {
-          addToast(`Phase 2 start failed: ${msg}`, 'error');
+          addToast(`Gagal memulai Phase 2: ${msg}`, 'error');
           console.error('Phase 2 start failed', msg);
         }
       }
@@ -191,9 +195,9 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
         const errPayload = await res.json().catch(() => ({}));
         const msg = errPayload.error?.message || `HTTP ${res.status}`;
         if (errPayload.error?.code === 'JOB_ALREADY_RUNNING') {
-          addToast('Another job is running — this job stays queued (PENDING).', 'warning');
+          addToast('Job lain sedang berjalan - job ini tetap di antrean (PENDING).', 'warning');
         } else {
-          addToast(`Start failed: ${msg}`, 'error');
+          addToast(`Gagal memulai job: ${msg}`, 'error');
           console.error('Start failed', msg);
         }
       }
@@ -215,18 +219,10 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
     const diffHours = Math.floor(diffMins / 60);
     const diffDays = Math.floor(diffHours / 24);
 
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    return `${diffDays}d ago`;
-  };
-
-  const formatDuration = (seconds: number | undefined) => {
-    if (!seconds) return '—';
-    if (seconds < 60) return `${seconds.toFixed(1)}s`;
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    if (diffMins < 1) return 'Baru saja';
+    if (diffMins < 60) return `${diffMins}m lalu`;
+    if (diffHours < 24) return `${diffHours}j lalu`;
+    return `${diffDays}h lalu`;
   };
 
   const handleJobClick = (job: (typeof jobs)[number]) => {
@@ -242,21 +238,23 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
         useJobStore.getState().disconnectSSE(job.id);
       } else {
         const errPayload = await res.json().catch(() => ({}));
-        const msg = errPayload.error?.message || 'Failed to cancel';
-        addToast(`Cancel failed: ${msg}`, 'error');
+        const msg = errPayload.error?.message || 'Gagal membatalkan job';
+        addToast(`Gagal membatalkan: ${msg}`, 'error');
       }
     } catch {
-      addToast('Cancel failed: network error', 'error');
+      addToast('Gagal membatalkan: kesalahan jaringan', 'error');
     }
   };
 
   if (isLoading && jobs.length === 0) {
     return (
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Jobs</h2>
-        <div className="space-y-4">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 shadow-sm">
+        <h2 className="text-sm font-semibold text-zinc-200 uppercase tracking-wider mb-4">
+          Daftar Job Video
+        </h2>
+        <div className="space-y-3">
           {[...Array(3)].map((_, i) => (
-            <div key={i} className="h-16 bg-gray-100 rounded-lg animate-pulse" />
+            <div key={i} className="h-16 bg-zinc-800/60 rounded-lg animate-pulse" />
           ))}
         </div>
       </div>
@@ -265,10 +263,12 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
 
   if (error) {
     return (
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Jobs</h2>
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-          <p className="text-sm text-red-800">{error}</p>
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 shadow-sm">
+        <h2 className="text-sm font-semibold text-zinc-200 uppercase tracking-wider mb-4">
+          Daftar Job Video
+        </h2>
+        <div className="p-4 bg-rose-950/30 border border-rose-800/50 rounded-lg">
+          <p className="text-sm text-rose-300">{error}</p>
         </div>
       </div>
     );
@@ -276,80 +276,97 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
 
   if (filteredJobs.length === 0) {
     return (
-      <div className="bg-white rounded-xl shadow-sm p-8 text-center">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Jobs</h2>
-        <div className="py-12">
-          <div className="text-6xl mb-4">📋</div>
-          <p className="text-gray-500 text-lg mb-2">No jobs yet</p>
-          <p className="text-gray-400 text-sm">Create your first job to get started</p>
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-8 text-center shadow-sm">
+        <h2 className="text-sm font-semibold text-zinc-200 uppercase tracking-wider mb-4">
+          Daftar Job Video
+        </h2>
+        <div className="py-12 flex flex-col items-center justify-center">
+          <div className="w-14 h-14 rounded-full bg-zinc-800 border border-zinc-700/60 flex items-center justify-center text-zinc-400 mb-4 shadow-inner">
+            <Film className="w-7 h-7" />
+          </div>
+          <p className="text-zinc-200 font-semibold text-base mb-1">Belum ada job video</p>
+          <p className="text-zinc-400 text-xs max-w-sm mx-auto">
+            No jobs yet &bull; Create your first job to get started
+          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm p-6">
-      <h2 className="text-xl font-semibold text-gray-900 mb-4">
-        Recent Jobs ({filteredJobs.length})
-      </h2>
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 shadow-sm text-zinc-100">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-sm font-semibold text-zinc-200 uppercase tracking-wider">
+          Daftar Job Video ({filteredJobs.length})
+        </h2>
+        <span className="text-xs text-zinc-400">Klik baris untuk membuka detail</span>
+      </div>
 
       <div className="overflow-x-auto">
         <table className="w-full table-fixed">
           <colgroup>
-            <col className="w-[112px]" /> {/* Status */}
+            <col className="w-[116px]" /> {/* Status */}
             <col /> {/* Source */}
-            <col className="w-[140px]" /> {/* Progress */}
+            <col className="w-[130px]" /> {/* Progress */}
             <col className="w-[60px]" /> {/* Clips */}
-            <col className="w-[88px]" /> {/* Created */}
-            <col className="w-[96px]" /> {/* Actions */}
+            <col className="w-[90px]" /> {/* Created */}
+            <col className="w-[100px]" /> {/* Actions */}
           </colgroup>
           <thead>
-            <tr className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              <th className="pb-3">Status</th>
-              <th className="pb-3">Source</th>
-              <th className="pb-3">Progress</th>
-              <th className="pb-3">Clips</th>
-              <th className="pb-3">Created</th>
-              <th className="pb-3 text-right">Actions</th>
+            <tr className="text-left text-[11px] font-semibold text-zinc-400 uppercase tracking-wider border-b border-zinc-800">
+              <th className="pb-2.5">Status</th>
+              <th className="pb-2.5">Sumber Video</th>
+              <th className="pb-2.5">Progres</th>
+              <th className="pb-2.5">Klip</th>
+              <th className="pb-2.5">Waktu</th>
+              <th className="pb-2.5 text-right">Aksi</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-zinc-800/70">
             {filteredJobs.map((job) => (
               <tr
                 key={job.id}
-                className="hover:bg-gray-50 cursor-pointer transition-colors"
+                className="hover:bg-zinc-800/50 cursor-pointer transition-colors"
                 onClick={() => handleJobClick(job)}
               >
                 <td className="py-3 pr-3 align-top">
                   <span
-                    className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border ${getStatusColor(job.status)}`}
+                    className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${getStatusColor(job.status)}`}
                   >
                     {formatStatus(job.status)}
                   </span>
                 </td>
                 <td className="py-3 pr-3 align-top">
-                  <div className="text-sm text-gray-900 truncate" title={job.sourceUrl || job.name}>
-                    {job.sourceUrl || job.name || '—'}
+                  <div
+                    className="text-sm font-medium text-zinc-200 truncate"
+                    title={job.sourceUrl || job.name}
+                  >
+                    {job.sourceUrl || job.name || '-'}
                   </div>
-                  <div className="font-mono text-[11px] text-gray-400 truncate" title={job.id}>
+                  <div
+                    className="font-mono text-[10px] text-zinc-500 truncate mt-0.5"
+                    title={job.id}
+                  >
                     {job.id}
                   </div>
                 </td>
                 <td className="py-3 pr-3 align-top">
                   <div className="flex items-center gap-2">
-                    <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                    <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
                       <div
-                        className={`h-full rounded-full ${getProgressColor(job.status)}`}
+                        className={`h-full rounded-full transition-all duration-300 ${getProgressColor(job.status)}`}
                         style={{ width: `${job.progress}%` }}
                       />
                     </div>
-                    <span className="text-[11px] text-gray-600 w-7 text-right">
+                    <span className="text-[11px] font-mono text-zinc-400 w-7 text-right">
                       {job.progress}%
                     </span>
                   </div>
                 </td>
-                <td className="py-3 pr-3 align-top text-sm text-gray-900">{job.clipsCount || 0}</td>
-                <td className="py-3 pr-3 align-top text-sm text-gray-500">
+                <td className="py-3 pr-3 align-top text-sm font-semibold text-zinc-200">
+                  {job.clipsCount || 0}
+                </td>
+                <td className="py-3 pr-3 align-top text-xs text-zinc-400">
                   {formatDate(job.createdAt)}
                 </td>
                 <td className="py-3 pl-2 align-top text-right">
@@ -360,9 +377,10 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
                         e.stopPropagation();
                         handleCancel(job);
                       }}
-                      className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-red-600 border border-red-200 rounded hover:bg-red-50 hover:border-red-300"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-rose-400 border border-rose-800/60 bg-rose-950/30 rounded hover:bg-rose-900/40 hover:text-rose-300 transition-colors"
                     >
-                      ✕ Cancel
+                      <X className="w-3 h-3" />
+                      <span>Batal</span>
                     </button>
                   ) : job.status === 'PHASE1_DONE' ? (
                     <button
@@ -371,10 +389,11 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
                         e.stopPropagation();
                         handleRunPhase2(job);
                       }}
-                      className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-indigo-600 border border-indigo-200 rounded bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-300 cursor-pointer"
-                      title="Phase 1 complete. Run Phase 2 to edit, subtitle, export and compress."
+                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-indigo-300 border border-indigo-800/60 bg-indigo-950/40 rounded hover:bg-indigo-900/40 hover:text-indigo-200 transition-colors cursor-pointer shadow-sm"
+                      title="Phase 1 selesai. Jalankan Phase 2 untuk edit, subtitle, ekspor dan kompresi."
                     >
-                      ⏵ Run P2
+                      <Sparkles className="w-3 h-3" />
+                      <span>Run P2</span>
                     </button>
                   ) : job.status === 'PENDING' ? (
                     <button
@@ -383,17 +402,18 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
                         e.stopPropagation();
                         handleStart(job);
                       }}
-                      className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 border border-blue-200 rounded bg-blue-50 hover:bg-blue-100 hover:border-blue-300 cursor-pointer"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-sky-300 border border-sky-800/60 bg-sky-950/40 rounded hover:bg-sky-900/40 hover:text-sky-200 transition-colors cursor-pointer shadow-sm"
                       title={
                         hasActiveJob
-                          ? 'Another job is already running (one active job at a time)'
-                          : 'Start Phase 1 for this pending job'
+                          ? 'Job lain sedang berjalan (hanya satu job aktif dalam satu waktu)'
+                          : 'Mulai Phase 1 untuk job ini'
                       }
                     >
-                      ▶ Start
+                      <Play className="w-3 h-3 fill-current" />
+                      <span>Mulai</span>
                     </button>
                   ) : (
-                    <span className="text-xs text-gray-400">—</span>
+                    <span className="text-xs text-zinc-600">-</span>
                   )}
                 </td>
               </tr>
@@ -403,8 +423,8 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
       </div>
 
       {error && (
-        <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-          <p className="text-sm text-amber-800">{error}</p>
+        <div className="mt-4 p-3 bg-amber-950/30 border border-amber-800/50 rounded-lg">
+          <p className="text-xs text-amber-300">{error}</p>
         </div>
       )}
     </div>

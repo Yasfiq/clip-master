@@ -12,8 +12,10 @@ function ClipsContent() {
     <div className="p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Clips</h1>
-          <p className="text-sm text-gray-500 mt-1">Browse and download all generated clips</p>
+          <h1 className="text-2xl font-bold text-zinc-100">Galeri Klip Video</h1>
+          <p className="text-xs text-zinc-400 mt-1">
+            Koleksi klip vertikal siap unggah untuk media sosial Anda
+          </p>
         </div>
         <ClipBrowser jobId={jobId} />
       </div>
@@ -23,13 +25,13 @@ function ClipsContent() {
 
 export default function ClipsPage() {
   return (
-    <main className="min-h-screen bg-gray-50">
+    <main className="min-h-screen bg-zinc-950 text-zinc-100">
       <Navigation activeTab="clips" />
       <Suspense
         fallback={
           <div className="p-4 md:p-8">
             <div className="max-w-7xl mx-auto">
-              <div className="h-24 bg-gray-100 rounded-lg animate-pulse" />
+              <div className="h-24 bg-zinc-900 border border-zinc-800 rounded-lg animate-pulse" />
             </div>
           </div>
         }

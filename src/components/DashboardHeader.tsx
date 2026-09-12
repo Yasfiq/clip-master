@@ -3,6 +3,8 @@
 import { useRouter } from 'next/navigation';
 import useJobStore from '@/stores/useJobStore';
 
+import { Plus, SlidersHorizontal } from 'lucide-react';
+
 interface DashboardHeaderProps {
   // Title displayed in header
   title?: string;
@@ -11,8 +13,8 @@ interface DashboardHeaderProps {
 }
 
 const DashboardHeader: React.FC<DashboardHeaderProps> = ({
-  title = 'Clip Master Dashboard',
-  subtitle = 'Local video → viral clips pipeline',
+  title = 'Dasbor Studio',
+  subtitle = 'Otomasi video panjang menjadi klip vertikal siap posting',
 }) => {
   const router = useRouter();
   const setSelectedJob = useJobStore((s) => s.setSelectedJob);
@@ -39,10 +41,10 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   };
 
   return (
-    <header className="flex items-center justify-between">
+    <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 py-2">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">{title}</h1>
-        <p className="mt-1 text-sm text-gray-500">{subtitle}</p>
+        <h1 className="text-2xl sm:text-3xl font-bold text-zinc-100 tracking-tight">{title}</h1>
+        <p className="mt-1 text-sm text-zinc-400">{subtitle}</p>
       </div>
 
       {/* Quick actions */}
@@ -50,16 +52,18 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
         <button
           type="button"
           onClick={() => router.push('/settings')}
-          className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          className="inline-flex items-center min-h-[44px] px-4 py-2 text-sm font-medium text-zinc-300 bg-zinc-900 border border-zinc-800 rounded-lg shadow-sm hover:bg-zinc-800 hover:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 transition-colors"
         >
-          Settings
+          <SlidersHorizontal className="w-4 h-4 mr-2 text-zinc-400" />
+          Pengaturan
         </button>
         <button
           type="button"
           onClick={handleNewJob}
-          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          className="inline-flex items-center min-h-[44px] px-4 py-2 border border-transparent text-sm font-semibold rounded-lg shadow-sm text-zinc-950 bg-zinc-100 hover:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-400 transition-colors"
         >
-          New Job
+          <Plus className="w-4 h-4 mr-2 text-zinc-950" />
+          Buat Job Baru
         </button>
       </div>
     </header>

@@ -1,8 +1,7 @@
-'use client';
-
 import React, { useEffect } from 'react';
 import useJobStore from '@/stores/useJobStore';
 import { useToastStore } from '@/stores/useToastStore';
+import { Check, RefreshCw, Play, Sparkles, Film, Trash2, X, ArrowLeft } from 'lucide-react';
 
 interface JobDetailProps {
   jobId: string;
@@ -48,21 +47,13 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
   const jobClips = clips[jobId] || [];
   const addToast = useToastStore((s) => s.addToast);
 
-  // Self-heal SSE: JobList owns the reconnect loop, but it unmounts while the
-  // detail view is open. After a page reload with this job selected (or after
-  // any missed reconnect), nothing would poll it — status/progress would stay
-  // frozen forever. Connect whenever the watched job is mid-run; connectSSE is
-  // idempotent, and the stream's terminal/status event disconnects itself.
+  // Self-heal SSE
   const running = job?.status === 'RUNNING_PHASE1' || job?.status === 'RUNNING_PHASE2';
   useEffect(() => {
     if (running) useJobStore.getState().connectSSE(jobId);
   }, [jobId, running]);
 
-  // Reconcile once at mount: the persisted store can hold a stale RUNNING_*
-  // status while the server row already moved on (job finished or paused
-  // while the browser was closed). The SSE stream opens with its cursor at
-  // the CURRENT server state, so no 'status' event fires for the drift —
-  // only this fetch corrects the frozen UI.
+  // Reconcile once at mount
   useEffect(() => {
     let cancelled = false;
     fetch(`/api/jobs/${jobId}`)
@@ -78,9 +69,6 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
           errorCode: j.errorCode ?? undefined,
           errorMessage: j.errorMessage ?? undefined,
         });
-        // Server no longer mid-run: close the stream we may have opened based
-        // on the stale persisted status (a PHASE1_DONE/terminal SSE never ends
-        // on its own and would idle-poll forever).
         const serverRunning = j.status === 'RUNNING_PHASE1' || j.status === 'RUNNING_PHASE2';
         if (!serverRunning) {
           useJobStore.getState().disconnectSSE(jobId);
@@ -92,10 +80,6 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
     };
   }, [jobId]);
 
-  // Reset P2 config selection when the watched job changes. JobDetail is
-  // reused across job switches (same component type in page.tsx), so the
-  // local select state would otherwise leak from job A onto job B — silently
-  // applying job A's chosen config to job B's phase 2.
   const isPhase1Done = job?.status === 'PHASE1_DONE';
   useEffect(() => {
     setPhase2ConfigId('');
@@ -123,25 +107,23 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
 
   if (!job) {
     return (
-      <div className="bg-white rounded-xl shadow-lg p-6">
-        <p className="text-gray-500">
-          Job not found — it may have been deleted or is not loaded yet.
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 text-zinc-100">
+        <p className="text-zinc-400 text-sm">
+          Job tidak ditemukan - mungkin sudah dihapus atau belum dimuat.
         </p>
         {onClose && (
-          <button onClick={onClose} className="mt-4 text-sm text-blue-600 hover:text-blue-800">
-            ← Back to list
+          <button
+            onClick={onClose}
+            className="mt-4 text-xs text-zinc-300 hover:text-zinc-100 inline-flex items-center gap-1.5"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            Kembali ke daftar
           </button>
         )}
       </div>
     );
   }
 
-  // Map a 0..100 progress value onto the stage that owns it (progress here
-  // is the normalized store value, not the raw Prisma 0..1 one). Phase 1
-  // occupies 0..60 across 5 stages, Phase 2 occupies 60..100 across 4.
-  // Stage boundaries follow the orchestrator's equal-span split, NOT equal
-  // thirds: each of the 5 P1 stages gets 0.12 of global (0..0.6), each of
-  // the 4 P2 stages gets 0.1 (0.6..1.0).
   const stageAtProgress = (progress: number): Stage => {
     if (progress >= 100) return 'COMPRESS';
     const P1: Stage[] = ['DISCOVER', 'AD_FILTER', 'TRANSCRIBE', 'ANALYZE', 'CUT'];
@@ -158,15 +140,13 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
   const currentStage = isRunning ? stageAtProgress(job.progress) : null;
 
   const formatDate = (str: string) =>
-    new Date(str).toLocaleString('en-US', {
+    new Date(str).toLocaleString('id-ID', {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
     });
 
-  // Terminal / paused states: phase history stays visible so operators can
-  // tell how far a job got. Phase 1 caps at CUT, Phase 2 at COMPRESS.
   const PHASE1_END: Stage = 'CUT';
   const PHASE2_END: Stage = 'COMPRESS';
 
@@ -179,9 +159,6 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
         return STAGE_ORDER[stage] <= STAGE_ORDER[PHASE1_END] ? 'completed' : 'pending';
       }
       if (job.status === 'FAILED' || job.status === 'CANCELLED' || job.status === 'REJECTED_AD') {
-        // Show how far the job got using its recorded progress.
-        // errorCode gates only FAILED; CANCELLED and REJECTED_AD always have
-        // a recorded progress even without an error code.
         const failedAt = stageAtProgress(job.progress);
         return STAGE_ORDER[stage] <= STAGE_ORDER[failedAt] ? 'completed' : 'pending';
       }
@@ -197,22 +174,22 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'COMPLETED':
-        return 'bg-green-100 text-green-800';
+        return 'bg-emerald-950/60 text-emerald-300 border border-emerald-800/60';
       case 'RUNNING_PHASE1':
       case 'RUNNING_PHASE2':
-        return 'bg-blue-100 text-blue-800';
+        return 'bg-sky-950/60 text-sky-300 border border-sky-800/60';
       case 'FAILED':
-        return 'bg-red-100 text-red-800';
+        return 'bg-rose-950/60 text-rose-300 border border-rose-800/60';
       case 'PENDING':
-        return 'bg-yellow-100 text-yellow-800';
+        return 'bg-amber-950/60 text-amber-300 border border-amber-800/60';
       case 'PHASE1_DONE':
-        return 'bg-indigo-100 text-indigo-800';
+        return 'bg-indigo-950/60 text-indigo-300 border border-indigo-800/60';
       case 'CANCELLED':
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-zinc-800 text-zinc-400 border border-zinc-700';
       case 'REJECTED_AD':
-        return 'bg-orange-100 text-orange-800';
+        return 'bg-orange-950/60 text-orange-300 border border-orange-800/60';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-zinc-800 text-zinc-400 border border-zinc-700';
     }
   };
 
@@ -225,11 +202,11 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
         onClose?.();
       } else {
         const errPayload = await res.json().catch(() => ({}));
-        const msg = errPayload.error?.message || 'Failed to cancel';
-        addToast(`Cancel failed: ${msg}`, 'error');
+        const msg = errPayload.error?.message || 'Gagal membatalkan';
+        addToast(`Gagal membatalkan: ${msg}`, 'error');
       }
     } catch {
-      addToast('Cancel failed: network error', 'error');
+      addToast('Gagal membatalkan: kesalahan jaringan', 'error');
     }
   };
 
@@ -244,9 +221,9 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
         const errPayload = await res.json().catch(() => ({}));
         const msg = errPayload.error?.message || `HTTP ${res.status}`;
         if (errPayload.error?.code === 'JOB_ALREADY_RUNNING') {
-          addToast('Another job is running — this job stays queued (PENDING).', 'warning');
+          addToast('Job lain sedang berjalan - job ini tetap di antrean (PENDING).', 'warning');
         } else {
-          addToast(`Start failed: ${msg}`, 'error');
+          addToast(`Gagal memulai: ${msg}`, 'error');
           console.error('Start failed', msg);
         }
       } else {
@@ -260,10 +237,6 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
 
   const handleRunPhase2 = async () => {
     try {
-      // Optional config swap: when a specific config is selected, startPhase2
-      // persists the new configId on the job row; the phase-2 runner re-fetches
-      // the row (with fresh config) before each stage. Empty string = keep the
-      // config phase 1 used (no swap).
       const res = await fetch(`/api/jobs/${job.id}/phase2`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -273,9 +246,12 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
         const errPayload = await res.json().catch(() => ({}));
         const msg = errPayload.error?.message || `HTTP ${res.status}`;
         if (errPayload.error?.code === 'JOB_ALREADY_RUNNING') {
-          addToast('Another job is running — this job stays queued (PHASE 1 DONE).', 'warning');
+          addToast(
+            'Job lain sedang berjalan - job ini tetap di antrean (PHASE 1 DONE).',
+            'warning',
+          );
         } else {
-          addToast(`Phase 2 start failed: ${msg}`, 'error');
+          addToast(`Gagal memulai Phase 2: ${msg}`, 'error');
           console.error('Phase 2 start failed', msg);
         }
       } else {
@@ -288,9 +264,8 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
   };
 
   const handleDelete = async () => {
-    // Destructive, irreversible: confirm with the operator before any fetch.
     const confirmed = window.confirm(
-      `Delete job ${job.name || job.id}? This removes its history, logs, and clip records from the dashboard. Media files already on disk are left in place.`,
+      `Hapus job ${job.name || job.id}? Ini akan menghapus riwayat, log, dan data klip dari dasbor. File media di disk tetap tersimpan.`,
     );
     if (!confirmed) return;
     try {
@@ -298,15 +273,15 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
       if (!res.ok) {
         const errPayload = await res.json().catch(() => ({}));
         const msg = errPayload.error?.message || `HTTP ${res.status}`;
-        addToast(`Delete failed: ${msg}`, 'error');
+        addToast(`Gagal menghapus: ${msg}`, 'error');
         return;
       }
       useJobStore.getState().disconnectSSE(job.id);
       removeJob(job.id);
-      addToast(`Job deleted`, 'success');
+      addToast('Job berhasil dihapus', 'success');
       onClose?.();
     } catch {
-      addToast('Delete failed: network error', 'error');
+      addToast('Gagal menghapus: kesalahan jaringan', 'error');
     }
   };
 
@@ -326,17 +301,19 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-lg overflow-hidden text-zinc-100">
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-4 text-white">
-        <div className="flex items-start justify-between">
+      <div className="bg-zinc-900 border-b border-zinc-800 px-6 py-4">
+        <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-xl font-bold">{job.name || 'Unnamed Job'}</h2>
-            <p className="text-sm text-blue-100 mt-1 font-mono">{job.id}</p>
+            <h2 className="text-xl font-bold text-zinc-100 tracking-tight">
+              {job.name || 'Job Tanpa Judul'}
+            </h2>
+            <p className="text-xs text-zinc-400 mt-1 font-mono">{job.id}</p>
           </div>
           <div className="text-right">
             <span
-              className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(
+              className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(
                 job.status,
               )}`}
             >
@@ -347,13 +324,13 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
 
         {/* Progress bar */}
         <div className="mt-4">
-          <div className="flex justify-between text-sm text-blue-100 mb-1">
-            <span>Progress</span>
-            <span>{job.progress}%</span>
+          <div className="flex justify-between text-xs text-zinc-400 mb-1.5 font-medium">
+            <span>Progres Keseluruhan</span>
+            <span className="font-mono text-zinc-200">{job.progress}%</span>
           </div>
-          <div className="h-2 bg-blue-800 rounded-full overflow-hidden">
+          <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
             <div
-              className="h-full bg-white rounded-full transition-all duration-500"
+              className="h-full bg-zinc-100 rounded-full transition-all duration-500"
               style={{ width: `${job.progress}%` }}
             />
           </div>
@@ -361,8 +338,10 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
       </div>
 
       {/* Stage pipeline */}
-      <div className="px-6 py-4 border-b border-gray-200">
-        <h3 className="text-sm font-medium text-gray-700 mb-3">Pipeline Stages</h3>
+      <div className="px-6 py-4 border-b border-zinc-800">
+        <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">
+          Tahapan Pipeline (Pipeline Stages)
+        </h3>
         <div className="flex items-center gap-1 overflow-x-auto py-1">
           {STAGES.map((stage, idx) => {
             const status = getStageStatus(stage);
@@ -372,23 +351,31 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
                   <div
                     className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
                       status === 'completed'
-                        ? 'bg-green-500 text-white'
+                        ? 'bg-emerald-950 text-emerald-400 border border-emerald-700/60'
                         : status === 'running'
-                          ? 'bg-blue-500 text-white animate-pulse'
-                          : 'bg-gray-200 text-gray-500'
+                          ? 'bg-sky-950 text-sky-300 border border-sky-600 animate-pulse'
+                          : 'bg-zinc-800 text-zinc-500 border border-zinc-700'
                     }`}
                     title={stage}
                   >
-                    {status === 'completed' ? '✓' : status === 'running' ? '●' : idx + 1}
+                    {status === 'completed' ? (
+                      <Check className="w-4 h-4" />
+                    ) : status === 'running' ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      idx + 1
+                    )}
                   </div>
-                  <span className="text-[10px] text-gray-500 mt-1 hidden sm:block">
+                  <span className="text-[10px] text-zinc-400 mt-1 hidden sm:block">
                     {stage.replace('_', '\n')}
                   </span>
                 </div>
                 {idx < STAGES.length - 1 && (
                   <div
                     className={`flex-1 h-0.5 ${
-                      getStageStatus(STAGES[idx + 1]) !== 'pending' ? 'bg-green-500' : 'bg-gray-200'
+                      getStageStatus(STAGES[idx + 1]) !== 'pending'
+                        ? 'bg-emerald-500/70'
+                        : 'bg-zinc-800'
                     }`}
                     style={{ minWidth: '8px' }}
                   />
@@ -400,67 +387,83 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
       </div>
 
       {/* Details grid */}
-      <div className="px-6 py-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="px-6 py-4 grid grid-cols-2 md:grid-cols-4 gap-4 bg-zinc-900/50 border-b border-zinc-800">
         <div>
-          <div className="text-xs text-gray-500">Source</div>
-          <div className="text-sm font-medium text-gray-900 truncate">
-            {job.sourceUrl || job.sourcePath || '—'}
+          <div className="text-xs text-zinc-400">Sumber Video</div>
+          <div
+            className="text-sm font-medium text-zinc-200 truncate mt-0.5"
+            title={job.sourceUrl || job.sourcePath}
+          >
+            {job.sourceUrl || job.sourcePath || '-'}
           </div>
         </div>
         <div>
-          <div className="text-xs text-gray-500">Clips Generated</div>
-          <div className="text-sm font-bold text-gray-900">{job.clipsCount || jobClips.length}</div>
-        </div>
-        <div>
-          <div className="text-xs text-gray-500">Duration</div>
-          <div className="text-sm text-gray-900">
-            {job.duration ? `${job.duration.toFixed(0)}s` : '—'}
+          <div className="text-xs text-zinc-400">Klip Dihasilkan</div>
+          <div className="text-sm font-bold text-zinc-100 mt-0.5">
+            {job.clipsCount || jobClips.length}
           </div>
         </div>
         <div>
-          <div className="text-xs text-gray-500">Created</div>
-          <div className="text-sm text-gray-900">{formatDate(job.createdAt)}</div>
+          <div className="text-xs text-zinc-400">Durasi Video</div>
+          <div className="text-sm font-medium text-zinc-200 mt-0.5">
+            {job.duration ? `${job.duration.toFixed(0)} dtk` : '-'}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs text-zinc-400">Waktu Dibuat</div>
+          <div className="text-sm text-zinc-300 mt-0.5">{formatDate(job.createdAt)}</div>
         </div>
       </div>
 
       {/* Error message */}
       {job.errorMessage && (
-        <div className="px-6 py-3 bg-red-50 border-t border-red-200">
-          <div className="text-xs text-red-700 font-medium">Error</div>
-          <div className="text-sm text-red-800">{job.errorMessage}</div>
-          {job.errorCode && <div className="text-xs text-red-600 mt-1">Code: {job.errorCode}</div>}
+        <div className="px-6 py-3.5 bg-rose-950/40 border-b border-rose-900/60">
+          <div className="text-xs text-rose-400 font-semibold uppercase tracking-wider">
+            Kesalahan
+          </div>
+          <div className="text-sm text-rose-200 mt-0.5">{job.errorMessage}</div>
+          {job.errorCode && (
+            <div className="text-xs text-rose-400 font-mono mt-1">Kode: {job.errorCode}</div>
+          )}
         </div>
       )}
 
       {/* Footer actions */}
-      <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 flex justify-between items-center flex-wrap gap-2">
-        <button onClick={onClose} className="text-sm text-gray-600 hover:text-gray-900">
-          ← Back to list
+      <div className="px-6 py-4 bg-zinc-950 border-t border-zinc-800 flex justify-between items-center flex-wrap gap-3">
+        <button
+          onClick={onClose}
+          className="inline-flex items-center text-sm font-medium text-zinc-400 hover:text-zinc-200 transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4 mr-1.5" />
+          Kembali ke Daftar
         </button>
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2.5 flex-wrap">
           {!isRunning && (
             <button
               onClick={handleDelete}
-              className="px-3 py-1.5 text-sm font-medium text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
-              title="Remove job from dashboard (media files on disk are kept)"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-rose-400 hover:text-rose-300 bg-rose-950/30 hover:bg-rose-900/40 border border-rose-900/50 rounded-lg transition-colors"
+              title="Hapus job dari dasbor (file media pada disk tetap tersimpan)"
             >
-              🗑 Delete job
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Hapus Job</span>
             </button>
           )}
           {['RUNNING_PHASE1', 'RUNNING_PHASE2'].includes(job.status) && (
             <button
               onClick={handleCancel}
-              className="px-3 py-1.5 text-sm font-medium text-red-700 bg-red-100 hover:bg-red-200 rounded-lg transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-300 bg-rose-950/60 border border-rose-800/80 hover:bg-rose-900/60 rounded-lg transition-colors"
             >
-              Cancel Job
+              <X className="w-3.5 h-3.5" />
+              <span>Batalkan Job</span>
             </button>
           )}
           {job.status === 'PENDING' && (
             <button
               onClick={handleStart}
-              className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-zinc-950 bg-zinc-100 hover:bg-white rounded-lg transition-colors shadow-sm"
             >
-              ▶ Start Job
+              <Play className="w-3.5 h-3.5 fill-current text-zinc-950" />
+              <span>Mulai Job</span>
             </button>
           )}
           {job.status === 'PHASE1_DONE' && (
@@ -469,9 +472,9 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
                 <select
                   value={phase2ConfigId}
                   onChange={(e) => setPhase2ConfigId(e.target.value)}
-                  className="text-sm border border-gray-200 rounded px-2 py-1.5 text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="text-xs bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
                 >
-                  <option value="">Same as Phase 1</option>
+                  <option value="">Sama dengan Phase 1</option>
                   {p2Configs.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
@@ -482,18 +485,20 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
               ) : null}
               <button
                 onClick={handleRunPhase2}
-                className="px-3 py-1.5 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-indigo-200 bg-indigo-950/60 border border-indigo-700/80 hover:bg-indigo-900/60 rounded-lg transition-colors shadow-sm"
               >
-                Run Phase 2 →
+                <Sparkles className="w-3.5 h-3.5 text-indigo-300" />
+                <span>Jalankan Phase 2</span>
               </button>
             </div>
           )}
           {job.status === 'COMPLETED' && job.clipsCount > 0 && (
             <a
               href={`/clips?job=${encodeURIComponent(job.id)}`}
-              className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-emerald-200 bg-emerald-950/60 border border-emerald-700/80 hover:bg-emerald-900/60 rounded-lg transition-colors shadow-sm"
             >
-              View Clips →
+              <Film className="w-3.5 h-3.5 text-emerald-300" />
+              <span>Lihat Klip Video</span>
             </a>
           )}
         </div>

@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import ClipCard from './ClipCard';
 import SubtitleEditorModal from './SubtitleEditorModal';
+import { Film, RefreshCw } from 'lucide-react';
 
 interface Clip {
   id: string;
@@ -68,7 +69,7 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
       });
       setJobs(jobMap);
     } catch (e: any) {
-      setError(e.message || 'Failed to load clips');
+      setError(e.message || 'Gagal memuat klip');
       setClips([]);
     } finally {
       setLoading(false);
@@ -92,8 +93,6 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
 
   const handlePlay = async (clipId: string) => {
     const clip = clips.find((c) => c.id === clipId);
-    // File route falls back exportPath -> editedPath -> cutPath, so preview
-    // works for Phase-1 clips too. Only guard on an id.
     if (!clip) return;
     window.open(`/api/clips/${clipId}/file`, '_blank');
   };
@@ -109,13 +108,13 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
 
   if (loading) {
     return (
-      <div className={`bg-white rounded-xl shadow-sm p-6 ${className}`}>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className={`bg-zinc-900 border border-zinc-800 rounded-xl shadow-sm p-6 ${className}`}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {[...Array(6)].map((_, i) => (
             <div key={i} className="animate-pulse">
-              <div className="aspect-video bg-gray-200 rounded-lg mb-3" />
-              <div className="h-4 bg-gray-200 rounded w-3/4 mb-2" />
-              <div className="h-3 bg-gray-200 rounded w-1/2" />
+              <div className="aspect-[9/16] max-h-[300px] bg-zinc-800/60 rounded-xl mb-3" />
+              <div className="h-4 bg-zinc-800 rounded w-3/4 mb-2" />
+              <div className="h-3 bg-zinc-800 rounded w-1/2" />
             </div>
           ))}
         </div>
@@ -124,39 +123,42 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
   }
 
   return (
-    <div className={`bg-white rounded-xl shadow-sm overflow-hidden ${className}`}>
+    <div
+      className={`bg-zinc-900 border border-zinc-800 rounded-xl shadow-sm overflow-hidden text-zinc-100 ${className}`}
+    >
       {/* Header */}
-      <div className="px-6 py-4 border-b border-gray-200">
+      <div className="px-6 py-4 border-b border-zinc-800">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h2 className="text-xl font-semibold text-gray-900">
-              Clips
-              <span className="ml-2 text-sm font-normal text-gray-500">
-                ({filteredClips.length})
+            <h2 className="text-base font-semibold text-zinc-100">
+              Galeri Klip Video
+              <span className="sr-only">Clips</span>
+              <span className="ml-2 text-xs font-normal text-zinc-400">
+                ({filteredClips.length} klip)
               </span>
             </h2>
           </div>
 
           {/* Filters */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             <select
               value={filter}
               onChange={(e) => setFilter(e.target.value as typeof filter)}
-              className="text-sm border border-gray-300 rounded-lg px-3 py-1.5"
+              className="text-xs bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
             >
-              <option value="all">All Clips</option>
-              <option value="exported">Exported Only</option>
-              <option value="pending">Pending Export</option>
+              <option value="all">Semua Klip (All Clips)</option>
+              <option value="exported">Sudah Diekspor (Exported)</option>
+              <option value="pending">Menunggu Ekspor (Pending)</option>
             </select>
 
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-              className="text-sm border border-gray-300 rounded-lg px-3 py-1.5"
+              className="text-xs bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
             >
-              <option value="newest">Newest First</option>
-              <option value="duration">Longest First</option>
-              <option value="score">Highest Score</option>
+              <option value="newest">Terbaru (Newest)</option>
+              <option value="duration">Durasi Terpanjang</option>
+              <option value="score">Skor Tertinggi</option>
             </select>
           </div>
         </div>
@@ -165,26 +167,29 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
       {/* Content */}
       <div className="p-6">
         {filteredClips.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="text-5xl mb-4">🎬</div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No clips yet</h3>
-            <p className="text-gray-500 text-sm max-w-sm mx-auto">
+          <div className="text-center py-12 flex flex-col items-center justify-center">
+            <div className="w-14 h-14 rounded-full bg-zinc-800 border border-zinc-700/60 flex items-center justify-center text-zinc-400 mb-4 shadow-inner">
+              <Film className="w-7 h-7" />
+            </div>
+            <h3 className="text-base font-semibold text-zinc-200 mb-1">Belum Ada Klip Video</h3>
+            <p className="text-zinc-400 text-xs max-w-sm mx-auto">
               {error ||
                 (jobId
-                  ? 'No clips for this job yet. Clips appear after the cut stage finishes.'
-                  : 'Clips will appear here once jobs complete processing. Create a job to get started.')}
+                  ? 'Belum ada klip untuk job ini. Klip akan muncul setelah tahapan pemotongan selesai.'
+                  : 'Klip akan muncul di sini setelah pipeline selesai memproses video. Buat job baru untuk memulai.')}
             </p>
             <button
               onClick={fetchClips}
-              className="mt-4 px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+              className="mt-4 px-3.5 py-1.5 text-xs font-semibold text-zinc-200 bg-zinc-800 hover:bg-zinc-750 border border-zinc-700 rounded-lg transition-colors inline-flex items-center gap-1.5"
             >
-              ⟳ Refresh
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Muat Ulang</span>
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {filteredClips.map((clip, index) => (
-              <div key={clip.id}>
+              <div key={clip.id} className="flex flex-col">
                 <ClipCard
                   clip={clip}
                   index={index}
@@ -193,9 +198,9 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
                   onEditSubtitle={(id) => setEditingClipId(id)}
                 />
                 {/* Job info */}
-                <div className="mt-2 px-1">
-                  <span className="text-xs text-gray-500">
-                    From: {getJobName(clip).substring(0, 30)}
+                <div className="mt-1.5 px-1">
+                  <span className="text-[11px] text-zinc-500 truncate block">
+                    Dari: {getJobName(clip).substring(0, 30)}
                     {getJobName(clip).length > 30 ? '...' : ''}
                   </span>
                 </div>
@@ -207,16 +212,19 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
 
       {/* Footer stats */}
       {filteredClips.length > 0 && (
-        <div className="px-6 py-3 bg-gray-50 border-t border-gray-200">
-          <div className="flex items-center justify-between text-xs text-gray-500">
-            <span>{filteredClips.filter((c) => c.isExported).length} exported</span>
+        <div className="px-6 py-3 bg-zinc-950 border-t border-zinc-800">
+          <div className="flex items-center justify-between text-xs text-zinc-400">
+            <span>{filteredClips.filter((c) => c.isExported).length} klip terekspor</span>
             <span>
-              Total duration:{' '}
-              {Math.floor(filteredClips.reduce((sum, c) => sum + c.duration, 0) / 60)}m{' '}
-              {Math.floor(filteredClips.reduce((sum, c) => sum + c.duration, 0) % 60)}s
+              Total durasi: {Math.floor(filteredClips.reduce((sum, c) => sum + c.duration, 0) / 60)}
+              m {Math.floor(filteredClips.reduce((sum, c) => sum + c.duration, 0) % 60)}s
             </span>
-            <button onClick={fetchClips} className="text-blue-600 hover:text-blue-800">
-              Refresh
+            <button
+              onClick={fetchClips}
+              className="text-zinc-300 hover:text-white inline-flex items-center gap-1"
+            >
+              <RefreshCw className="w-3 h-3" />
+              <span>Refresh</span>
             </button>
           </div>
         </div>

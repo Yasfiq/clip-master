@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Menu, X, Settings, BarChart, Download } from 'lucide-react';
+import { Menu, X, SlidersHorizontal, LayoutDashboard, Film } from 'lucide-react';
 
 interface NavigationProps {
   activeTab?: 'dashboard' | 'jobs' | 'clips' | 'settings';
@@ -31,9 +31,9 @@ const Navigation: React.FC<NavigationProps> = ({ activeTab: activeTabProp }) => 
     'dashboard';
 
   const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: BarChart },
-    { id: 'clips', label: 'Clips', icon: Download },
-    { id: 'settings', label: 'Settings', icon: Settings },
+    { id: 'dashboard', label: 'Dasbor', icon: LayoutDashboard },
+    { id: 'clips', label: 'Klip Video', icon: Film },
+    { id: 'settings', label: 'Pengaturan', icon: SlidersHorizontal },
   ];
 
   const handleTabClick = (tabId: string) => {
@@ -45,36 +45,40 @@ const Navigation: React.FC<NavigationProps> = ({ activeTab: activeTabProp }) => 
   };
 
   return (
-    <nav className="bg-white border-b border-gray-200">
+    <nav className="bg-zinc-900 border-b border-zinc-800 sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16">
-          {/* Logo */}
-          <div className="flex items-center">
-            <div className="flex items-center">
-              <div className="flex-shrink-0 flex items-center">
-                <div className="h-8 w-8 rounded-md bg-gradient-to-r from-blue-600 to-purple-600 flex items-center justify-center">
-                  <span className="text-white font-bold text-sm">CM</span>
-                </div>
-                <span className="ml-2 text-xl font-bold text-gray-900">Clip Master</span>
-              </div>
+        <div className="flex justify-between h-16 items-center">
+          {/* Logo & Branding */}
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center shadow-inner">
+              <span className="text-zinc-100 font-bold text-xs tracking-wider">CM</span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-base font-semibold text-zinc-100 tracking-tight leading-none">
+                Clip Master
+              </span>
+              <span className="text-[10px] text-zinc-400 tracking-wider uppercase mt-0.5">
+                Studio Kreator
+              </span>
             </div>
           </div>
 
           {/* Desktop navigation */}
-          <div className="hidden sm:flex sm:items-center sm:space-x-4">
+          <div className="hidden sm:flex sm:items-center sm:space-x-1">
             {navItems.map((item) => {
               const Icon = item.icon;
+              const isActive = derivedActive === item.id;
               return (
                 <button
                   key={item.id}
                   onClick={() => handleTabClick(item.id)}
-                  className={`inline-flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-                    derivedActive === item.id
-                      ? 'text-blue-700 bg-blue-50'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  className={`inline-flex items-center min-h-[44px] px-3.5 py-2 text-sm font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-zinc-400 ${
+                    isActive
+                      ? 'text-zinc-100 bg-zinc-800 border border-zinc-700 shadow-sm'
+                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
                   }`}
                 >
-                  <Icon className="mr-2 h-4 w-4" />
+                  <Icon className="mr-2 h-4 w-4 shrink-0" />
                   {item.label}
                 </button>
               );
@@ -85,7 +89,8 @@ const Navigation: React.FC<NavigationProps> = ({ activeTab: activeTabProp }) => 
           <div className="sm:hidden flex items-center">
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
+              aria-label={isMobileMenuOpen ? 'Tutup navigasi' : 'Buka navigasi'}
+              className="inline-flex items-center justify-center p-2.5 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-400"
             >
               {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
             </button>
@@ -93,28 +98,27 @@ const Navigation: React.FC<NavigationProps> = ({ activeTab: activeTabProp }) => 
         </div>
       </div>
 
-      {/* Mobile menu */}
+      {/* Mobile menu dropdown */}
       {isMobileMenuOpen && (
-        <div className="sm:hidden bg-white border-t border-gray-200">
-          <div className="pt-2 pb-3 space-y-1">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => handleTabClick(item.id)}
-                  className={`w-full text-left flex items-center px-4 py-3 text-base font-medium ${
-                    derivedActive === item.id
-                      ? 'text-blue-700 bg-blue-50 border-r-4 border-blue-700'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                  }`}
-                >
-                  <Icon className="mr-3 h-5 w-5" />
-                  {item.label}
-                </button>
-              );
-            })}
-          </div>
+        <div className="sm:hidden bg-zinc-900 border-t border-zinc-800 px-4 pt-2 pb-3 space-y-1">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = derivedActive === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => handleTabClick(item.id)}
+                className={`w-full text-left flex items-center min-h-[44px] px-3.5 py-2.5 text-sm font-medium rounded-lg transition-colors ${
+                  isActive
+                    ? 'text-zinc-100 bg-zinc-800 border border-zinc-700'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-850'
+                }`}
+              >
+                <Icon className="mr-3 h-4 w-4 shrink-0" />
+                {item.label}
+              </button>
+            );
+          })}
         </div>
       )}
     </nav>
