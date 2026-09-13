@@ -125,23 +125,10 @@ export async function reBurnClipSubtitles(
     }
   }
 
-  // Fallback to exportPath if work files were cleaned up
-  if (!videoInputPath && clip.exportPath) {
-    const expCandidate1 = path.isAbsolute(clip.exportPath)
-      ? clip.exportPath
-      : path.join(PATHS.exports, clip.exportPath);
-    if (await fileExists(expCandidate1)) {
-      videoInputPath = expCandidate1;
-    } else {
-      const expCandidate2 = path.join(PATHS.exports, path.basename(clip.exportPath));
-      if (await fileExists(expCandidate2)) {
-        videoInputPath = expCandidate2;
-      }
-    }
-  }
-
   if (!videoInputPath) {
-    throw new Error(`Clip ${clipId} has no valid video file (edited, cut, or exported) to re-burn`);
+    throw new Error(
+      `Clip ${clipId} tidak memiliki berkas video bersih (editedPath atau cutPath) di media/work untuk dirender ulang`,
+    );
   }
 
   let srtPath: string | null = null;
@@ -367,12 +354,22 @@ export async function reBurnClipSubtitles(
         Boolean(finalStudioConfig.hookText?.trim());
 
       if (isConversationalStyle) {
+        const freezeSec = finalStudioConfig.freezeDuration || 0;
+        const shiftedCues =
+          freezeSec > 0
+            ? parsedCues.map((c) => ({
+                ...c,
+                start: Number((c.start + freezeSec).toFixed(3)),
+                end: Number((c.end + freezeSec).toFixed(3)),
+              }))
+            : parsedCues;
+
         const assContent = generateUnifiedAssDocument({
           width: targetW,
           height: targetH,
           hookText: finalStudioConfig.hookText?.trim() || '',
           hookDuration: finalStudioConfig.hookDuration || 3.1,
-          dialogueCues: parsedCues,
+          dialogueCues: shiftedCues,
           fontName: 'Montserrat',
           dialogueFontSize: style.fontSize || 62,
           dialogueOutline: style.outline || 4.5,

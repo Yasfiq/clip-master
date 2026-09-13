@@ -120,13 +120,10 @@ export function wrapDialogueLinesAss(text: string, maxCharsPerLine: number = 28)
     } else {
       lines.push(currentLine);
       currentLine = word;
-      if (lines.length >= 2) {
-        break;
-      }
     }
   }
 
-  if (currentLine && lines.length < 2) {
+  if (currentLine) {
     lines.push(currentLine);
   }
 

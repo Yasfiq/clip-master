@@ -259,19 +259,10 @@ export class EditStage implements PipelineStageHandler {
       inputPath,
       '-i',
       backsoundPath,
+      '-filter_complex',
+      filterComplex,
       ...(useReencode
-        ? [
-            '-filter_complex',
-            filterComplex,
-            '-map',
-            '[graded]',
-            '-c:v',
-            'libx264',
-            '-preset',
-            'medium',
-            '-crf',
-            '23',
-          ]
+        ? ['-map', '[graded]', '-c:v', 'libx264', '-preset', 'medium', '-crf', '23']
         : ['-map', '0:v', '-c:v', 'copy']),
       '-map',
       '[limited]',

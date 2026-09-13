@@ -205,7 +205,7 @@ export function buildStudioFilterGraph(
       );
     } else {
       postFilters.push(
-        `drawtext=expansion=none:text='${escapedHook}':fontcolor=white:fontsize=48:box=1:boxcolor=black@0.7:boxborderw=16:x=(w-text_w)/2:y=140`,
+        `drawtext=expansion=none:text='${escapedHook}':fontcolor=white:fontsize=48:box=1:boxcolor=black@0.7:boxborderw=16:x=(w-text_w)/2:y=140:enable='between(t,0,${hookDuration})'`,
       );
     }
   }

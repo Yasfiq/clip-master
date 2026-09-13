@@ -22,6 +22,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return apiError(ErrorCode.VALIDATION_FAILED, 'Request body must be a JSON object');
     }
 
+    if (
+      body.configId !== undefined &&
+      (typeof body.configId !== 'string' || !body.configId.trim())
+    ) {
+      return apiError(
+        ErrorCode.VALIDATION_FAILED,
+        'Parameter configId harus berupa string non-empty',
+      );
+    }
+
     try {
       const job = await jobService.startPhase2(id, (body as any).configId);
       logger.info('Phase 2 started via API', { jobId: id, configId: body.configId || null });

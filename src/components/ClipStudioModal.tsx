@@ -73,7 +73,7 @@ export default function ClipStudioModal({
 
   // Player & Timeline State
   const [currentTime, setCurrentTime] = useState<number>(0);
-  const [duration, setDuration] = useState<number>(31.2);
+  const [duration, setDuration] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [selectedCueIndex, setSelectedCueIndex] = useState<number | null>(0);
@@ -123,6 +123,9 @@ export default function ClipStudioModal({
         const data = studioPayload.data;
         if (typeof data.isCleanVideo === 'boolean') {
           setIsCleanVideo(data.isCleanVideo);
+        }
+        if (typeof data.clip?.duration === 'number' && data.clip.duration > 0) {
+          setDuration(data.clip.duration);
         }
         if (data.studioConfig) {
           setStudioConfig({
@@ -247,16 +250,36 @@ export default function ClipStudioModal({
   const handleAddCue = (index: number) => {
     setCues((prev) => {
       const current = prev[index];
-      const start = current ? current.end + 0.05 : 0;
-      const end = start + 1.5;
+      const next = prev[index + 1];
+      let start = current ? current.end + 0.05 : 0;
+      let end = start + 1.5;
+
+      if (next) {
+        if (next.start > start + 0.2) {
+          end = Math.min(start + 1.5, next.start - 0.02);
+        } else {
+          start = Number((start + 0.01).toFixed(2));
+          end = Number(Math.max(start + 0.1, next.start - 0.01).toFixed(2));
+        }
+      }
+
       const newCue: SubtitleCue = {
         id: prev.length + 1,
-        start,
-        end: Math.max(start + 0.5, end),
+        start: Number(start.toFixed(2)),
+        end: Number(Math.max(start + 0.2, end).toFixed(2)),
         text: 'Teks subtitle baru',
       };
 
       const updated = [...prev.slice(0, index + 1), newCue, ...prev.slice(index + 1)];
+      // Ensure strictly monotonically increasing start times
+      for (let i = 1; i < updated.length; i++) {
+        if (updated[i].start <= updated[i - 1].start) {
+          updated[i].start = Number((updated[i - 1].start + 0.05).toFixed(2));
+          if (updated[i].end <= updated[i].start) {
+            updated[i].end = Number((updated[i].start + 0.5).toFixed(2));
+          }
+        }
+      }
       return updated.map((c, i) => ({ ...c, id: i + 1 }));
     });
   };
@@ -477,7 +500,8 @@ export default function ClipStudioModal({
           <button
             type="button"
             onClick={onClose}
-            className="text-zinc-400 hover:text-zinc-200 p-1.5 min-h-[38px] min-w-[38px] rounded hover:bg-zinc-800 transition-colors ml-1 cursor-pointer flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            disabled={saving || reBurning}
+            className="text-zinc-400 hover:text-zinc-200 p-1.5 min-h-[38px] min-w-[38px] rounded hover:bg-zinc-800 transition-colors ml-1 cursor-pointer flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
             title="Batal / Tutup"
           >
             <X className="w-4 h-4" />
