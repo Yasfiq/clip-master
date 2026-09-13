@@ -312,19 +312,29 @@ export default function ClipStudioModal({
 
               {/* Live Mockup Overlay: Hook Headline */}
               {studioConfig.hookText && (
-                <div className="absolute top-4 inset-x-3 pointer-events-none z-20 text-center animate-fade-in">
-                  <div className="bg-amber-400 text-zinc-950 font-black text-xs uppercase px-2 py-1 rounded shadow-lg tracking-wide border border-amber-300">
+                <div
+                  className={`absolute inset-x-3 pointer-events-none z-20 text-center animate-fade-in ${
+                    studioConfig.hookPosition === 'center' ? 'top-1/2 -translate-y-1/2' : 'top-4'
+                  }`}
+                >
+                  <div
+                    className={`inline-block font-black uppercase tracking-wide rounded shadow-xl ${
+                      studioConfig.hookPosition === 'center'
+                        ? 'bg-[#FFE600] text-zinc-950 text-xs px-3 py-1.5 border-2 border-zinc-950 shadow-black/80'
+                        : 'bg-amber-400 text-zinc-950 text-xs px-2 py-1 border border-amber-300'
+                    }`}
+                  >
                     {studioConfig.hookText}
                   </div>
                 </div>
               )}
 
-              {/* Live Mockup Overlay: Channel Logo */}
+              {/* Live Mockup Overlay: Channel Logo & Header */}
               {studioConfig.logoEnabled && logoExists && (
                 <div
-                  className={`absolute z-20 pointer-events-none ${
+                  className={`absolute z-20 pointer-events-none flex items-center gap-1.5 ${
                     studioConfig.logoPosition === 'top-left'
-                      ? 'top-3 left-3'
+                      ? 'top-2.5 left-2.5'
                       : studioConfig.logoPosition === 'bottom-left'
                         ? 'bottom-16 left-3'
                         : studioConfig.logoPosition === 'bottom-right'
@@ -336,21 +346,30 @@ export default function ClipStudioModal({
                   <img
                     src={`/api/settings/logo/file?t=${videoTimestampKey}`}
                     alt="Logo"
-                    className="w-9 h-9 object-contain drop-shadow-md rounded"
+                    className="w-8 h-8 object-contain drop-shadow-md rounded shrink-0"
                   />
+                  {studioConfig.logoPosition === 'top-left' &&
+                    studioConfig.sourceEnabled &&
+                    studioConfig.sourceText && (
+                      <div className="text-[9px] font-bold text-zinc-900 bg-white/85 px-2 py-0.5 rounded shadow backdrop-blur-xs whitespace-nowrap">
+                        {studioConfig.sourceText}
+                      </div>
+                    )}
                 </div>
               )}
 
-              {/* Live Mockup Overlay: Source Attribution */}
-              {studioConfig.sourceEnabled && studioConfig.sourceText && (
-                <div className="absolute bottom-4 left-3 pointer-events-none z-10 text-[9px] text-zinc-200 font-medium bg-black/60 px-1.5 py-0.5 rounded border border-zinc-700/50 backdrop-blur-xs">
-                  {studioConfig.sourceText}
-                </div>
-              )}
+              {/* Fallback bottom source attribution if logo is not top-left */}
+              {studioConfig.sourceEnabled &&
+                studioConfig.sourceText &&
+                studioConfig.logoPosition !== 'top-left' && (
+                  <div className="absolute bottom-4 left-3 pointer-events-none z-10 text-[9px] text-zinc-200 font-medium bg-black/60 px-1.5 py-0.5 rounded border border-zinc-700/50 backdrop-blur-xs">
+                    {studioConfig.sourceText}
+                  </div>
+                )}
 
               {/* Freeze frame pill badge */}
               {studioConfig.freezeDuration > 0 && (
-                <div className="absolute top-2 left-2 text-[9px] font-mono bg-zinc-900/85 text-zinc-300 border border-zinc-700/60 px-1.5 py-0.5 rounded pointer-events-none z-10 flex items-center gap-1">
+                <div className="absolute bottom-2 left-2 text-[9px] font-mono bg-zinc-900/85 text-zinc-300 border border-zinc-700/60 px-1.5 py-0.5 rounded pointer-events-none z-10 flex items-center gap-1">
                   <Clock className="w-2.5 h-2.5 text-amber-400" />
                   <span>Freeze: {studioConfig.freezeDuration}s</span>
                 </div>
@@ -436,7 +455,7 @@ export default function ClipStudioModal({
                           htmlFor="hook-input"
                           className="block text-xs font-semibold text-zinc-200 mb-1.5"
                         >
-                          Teks Headline Hook (Atas)
+                          Teks Headline Hook
                         </label>
                         <input
                           id="hook-input"
@@ -445,19 +464,135 @@ export default function ClipStudioModal({
                           onChange={(e) =>
                             setStudioConfig({ ...studioConfig, hookText: e.target.value })
                           }
-                          placeholder="Contoh: RAHASIA SUKSES DI USIA MUDA"
+                          placeholder="Contoh: KEBEBASAN ADALAH SEGALANYA"
                           className="w-full text-xs bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-100 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium placeholder:text-zinc-500"
                         />
                         <p className="text-[11px] text-zinc-400 mt-1.5">
                           Teks banner huruf kapital 3-5 kata untuk merebut perhatian audiens di 3
-                          detik awal video.
+                          detik awal video dan thumbnail otomatis.
                         </p>
+                      </div>
+
+                      {/* Hook Position: Center vs Top */}
+                      <div>
+                        <label className="block text-xs font-semibold text-zinc-200 mb-2">
+                          Posisi Teks Hook
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setStudioConfig({ ...studioConfig, hookPosition: 'center' })
+                            }
+                            className={`px-3 py-2 text-xs font-semibold rounded-lg border transition-all cursor-pointer text-center ${
+                              studioConfig.hookPosition === 'center'
+                                ? 'bg-amber-400 text-zinc-950 border-amber-300 shadow-sm'
+                                : 'bg-zinc-900 text-zinc-300 border-zinc-700 hover:bg-zinc-800'
+                            }`}
+                          >
+                            Tengah Layar (Cover Baku)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setStudioConfig({ ...studioConfig, hookPosition: 'top' })
+                            }
+                            className={`px-3 py-2 text-xs font-semibold rounded-lg border transition-all cursor-pointer text-center ${
+                              studioConfig.hookPosition === 'top'
+                                ? 'bg-amber-400 text-zinc-950 border-amber-300 shadow-sm'
+                                : 'bg-zinc-900 text-zinc-300 border-zinc-700 hover:bg-zinc-800'
+                            }`}
+                          >
+                            Atas Layar
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Hook Voiceover (TTS) Section */}
+                      <div className="bg-zinc-950/60 border border-zinc-800 rounded-lg p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h3 className="text-xs font-semibold text-zinc-200">
+                              Voiceover Narator AI (Edge-TTS)
+                            </h3>
+                            <p className="text-[11px] text-zinc-400">
+                              Narator membaca judul hook dengan audio ducking otomatis pada podcast.
+                            </p>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={studioConfig.hookTtsEnabled !== false}
+                              onChange={(e) =>
+                                setStudioConfig({
+                                  ...studioConfig,
+                                  hookTtsEnabled: e.target.checked,
+                                })
+                              }
+                              className="sr-only peer"
+                            />
+                            <div className="w-9 h-5 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                          </label>
+                        </div>
+
+                        {studioConfig.hookTtsEnabled !== false && (
+                          <div className="pt-2 border-t border-zinc-800/80 grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[11px] font-medium text-zinc-300 mb-1">
+                                Pilihan Suara
+                              </label>
+                              <select
+                                value={studioConfig.hookTtsVoice || 'id-ID-GadisNeural'}
+                                onChange={(e) =>
+                                  setStudioConfig({
+                                    ...studioConfig,
+                                    hookTtsVoice: e.target.value,
+                                  })
+                                }
+                                className="w-full text-xs bg-zinc-900 border border-zinc-700 rounded px-2.5 py-1.5 text-zinc-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              >
+                                <option value="id-ID-GadisNeural">
+                                  Suara Wanita (GadisNeural - CapCut Style)
+                                </option>
+                                <option value="id-ID-ArdiNeural">Suara Pria (ArdiNeural)</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="block text-[11px] font-medium text-zinc-300 mb-1">
+                                Durasi Tampil Hook ({studioConfig.hookDuration || 2.2}s)
+                              </label>
+                              <div className="flex gap-1">
+                                {[1.8, 2.0, 2.2, 2.5, 3.0].map((dur) => (
+                                  <button
+                                    key={dur}
+                                    type="button"
+                                    onClick={() =>
+                                      setStudioConfig({
+                                        ...studioConfig,
+                                        hookDuration: dur,
+                                        subtitleDelay: dur,
+                                      })
+                                    }
+                                    className={`flex-1 py-1 text-[11px] font-mono rounded border transition-colors cursor-pointer ${
+                                      (studioConfig.hookDuration || 2.2) === dur
+                                        ? 'bg-indigo-600 text-white border-indigo-500'
+                                        : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:bg-zinc-800'
+                                    }`}
+                                  >
+                                    {dur}s
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       {/* Freeze frame duration */}
                       <div>
                         <label className="block text-xs font-semibold text-zinc-200 mb-2">
-                          Durasi Freeze Frame Awal
+                          Durasi Freeze Frame Awal (Opsional)
                         </label>
                         <div className="flex flex-wrap gap-2">
                           {FREEZE_OPTIONS.map((sec) => (
@@ -476,28 +611,6 @@ export default function ClipStudioModal({
                               {sec === 0 ? '0s (Tanpa Freeze)' : `${sec.toFixed(1)}s`}
                             </button>
                           ))}
-                        </div>
-                        <p className="text-[11px] text-zinc-400 mt-1.5">
-                          Menahan frame awal video selama beberapa detik agar audiens sempat membaca
-                          headline hook sebelum suara dimulai.
-                        </p>
-                      </div>
-
-                      {/* Live preview banner card mockup */}
-                      <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-4">
-                        <span className="text-[11px] text-zinc-400 uppercase tracking-wider block mb-2 font-medium">
-                          Simulasi Banner Hook
-                        </span>
-                        <div className="bg-zinc-900 p-4 rounded border border-zinc-800 text-center">
-                          {studioConfig.hookText ? (
-                            <div className="inline-block bg-amber-400 text-zinc-950 font-black text-sm uppercase px-3 py-1.5 rounded shadow border border-amber-300">
-                              {studioConfig.hookText}
-                            </div>
-                          ) : (
-                            <span className="text-xs text-zinc-500 italic">
-                              Masukkan teks hook di atas untuk melihat preview banner
-                            </span>
-                          )}
                         </div>
                       </div>
                     </div>
@@ -696,6 +809,9 @@ export default function ClipStudioModal({
                           }
                           className="text-xs bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                         >
+                          <option value="clipajaib">
+                            Clip Ajaib (CapCut Kuning + Garis Hitam Tebal - Standar Baku)
+                          </option>
                           <option value="tiktok">TikTok (Bold Putih, Outline Hitam)</option>
                           <option value="sule">Sule (Bold Kuning, Outline Hitam Tebal)</option>
                           <option value="kamal">Kamal (Garis Tepi, Bayangan Merah)</option>

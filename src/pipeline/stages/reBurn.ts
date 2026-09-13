@@ -22,6 +22,8 @@ import {
 } from '../logic/subtitleStyle';
 import { StudioConfig, DEFAULT_STUDIO_CONFIG } from '../../types/clipStudio';
 import { buildStudioFilterGraph } from '../logic/studioFilterGraph';
+import { generateHookTtsAudio } from '../logic/ttsVoiceover';
+import { parseSrt, serializeSrt, delaySubtitleCues } from '../logic/srtParser';
 
 async function fileExists(filePath: string): Promise<boolean> {
   try {
@@ -285,15 +287,70 @@ export async function reBurnClipSubtitles(
 
   const forceStyle = buildForceStyle(style);
 
-  const { filterComplex, hasLogoInput, effectiveDuration } = buildStudioFilterGraph({
+  // 1. Generate hook TTS voiceover if enabled and hook text exists
+  let ttsAudioPath: string | undefined;
+  let ttsAudioDuration: number | undefined;
+
+  if (finalStudioConfig.hookTtsEnabled !== false && finalStudioConfig.hookText?.trim()) {
+    try {
+      const ttsDestPath = path.join(PATHS.work, clip.jobId, 'tts', `${clip.id}_hook.mp3`);
+      const voice = finalStudioConfig.hookTtsVoice || 'id-ID-GadisNeural';
+      const ttsResult = await generateHookTtsAudio({
+        text: finalStudioConfig.hookText.trim(),
+        outputPath: ttsDestPath,
+        voice,
+        rate: '+20%',
+      });
+      ttsAudioPath = ttsResult.audioPath;
+      ttsAudioDuration = ttsResult.duration;
+
+      if (!finalStudioConfig.hookDuration || finalStudioConfig.hookDuration <= 0) {
+        finalStudioConfig.hookDuration = Number(Math.max(2.0, ttsResult.duration).toFixed(2));
+      }
+    } catch (ttsErr) {
+      logger.warn(
+        `Failed to generate TTS hook audio for clip ${clip.id}: ${ttsErr instanceof Error ? ttsErr.message : String(ttsErr)}`,
+      );
+    }
+  }
+
+  // 2. Synchronize subtitles with hook delay if requested
+  let activeSrtPath = srtPath;
+  const subDelay =
+    typeof finalStudioConfig.subtitleDelay === 'number'
+      ? finalStudioConfig.subtitleDelay
+      : finalStudioConfig.hookDuration || 2.2;
+
+  if (subDelay > 0 && srtPath) {
+    try {
+      const rawSrt = await fs.readFile(srtPath, 'utf8');
+      const parsedCues = parseSrt(rawSrt);
+      const delayedCues = delaySubtitleCues(parsedCues, subDelay);
+      const delayedSrtPath = path.join(
+        PATHS.work,
+        clip.jobId,
+        'subtitles',
+        `${clip.id}_delayed.srt`,
+      );
+      await fs.mkdir(path.dirname(delayedSrtPath), { recursive: true });
+      await fs.writeFile(delayedSrtPath, serializeSrt(delayedCues), 'utf8');
+      activeSrtPath = delayedSrtPath;
+    } catch (delayErr) {
+      logger.warn(`Failed to delay subtitle cues for clip ${clip.id}: ${delayErr}`);
+    }
+  }
+
+  const { filterComplex, hasLogoInput, hasTtsInput, effectiveDuration } = buildStudioFilterGraph({
     inputVideoDuration: duration,
     width: targetW,
     height: targetH,
     config: finalStudioConfig,
-    subtitlePath: srtPath,
+    subtitlePath: activeSrtPath,
     logoResolvedPath,
     subtitleForceStyle: forceStyle,
     baseVideoFilter: baseFilter,
+    ttsAudioPath,
+    ttsAudioDuration,
   });
 
   let finalExportPath: string;
@@ -312,6 +369,7 @@ export async function reBurnClipSubtitles(
     '-i',
     videoInputPath,
     ...(hasLogoInput && logoResolvedPath ? ['-i', logoResolvedPath] : []),
+    ...(hasTtsInput && ttsAudioPath ? ['-i', ttsAudioPath] : []),
     '-filter_complex',
     filterComplex,
     '-map',
@@ -323,7 +381,7 @@ export async function reBurnClipSubtitles(
     '-preset',
     'medium',
     '-crf',
-    '21',
+    '20',
     '-g',
     '48',
     '-c:a',

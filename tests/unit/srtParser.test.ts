@@ -4,6 +4,7 @@ import {
   serializeSrt,
   validateCues,
   formatSrtTimestamp,
+  delaySubtitleCues,
   SubtitleCue,
 } from '../../src/pipeline/logic/srtParser';
 
@@ -91,5 +92,29 @@ bisnis kopi kekinian.
       { id: 2, start: 2, end: 3, text: 'Satu' },
     ];
     expect(validateCues(nonChronological)).toContain('chronological order');
+  });
+
+  it('delays subtitle cues after hook duration and omits earlier cues', () => {
+    const inputCues: SubtitleCue[] = [
+      { id: 1, start: 0.5, end: 1.8, text: 'Cue during hook' },
+      { id: 2, start: 1.5, end: 3.5, text: 'Cue overlapping hook' },
+      { id: 3, start: 2.5, end: 4.5, text: 'Cue after hook' },
+    ];
+
+    const delayed = delaySubtitleCues(inputCues, 2.2);
+    expect(delayed).toHaveLength(2);
+
+    // First cue (ended at 1.8 <= 2.2) is filtered out
+    // Second cue (started at 1.5, ended at 3.5) has its start clamped to 2.2
+    expect(delayed[0].id).toBe(1);
+    expect(delayed[0].start).toBe(2.2);
+    expect(delayed[0].end).toBe(3.5);
+    expect(delayed[0].text).toBe('Cue overlapping hook');
+
+    // Third cue remains intact with renumbered id
+    expect(delayed[1].id).toBe(2);
+    expect(delayed[1].start).toBe(2.5);
+    expect(delayed[1].end).toBe(4.5);
+    expect(delayed[1].text).toBe('Cue after hook');
   });
 });

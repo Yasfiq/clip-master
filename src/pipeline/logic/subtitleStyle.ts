@@ -27,6 +27,21 @@ export interface SubtitleStyle {
   fontSize: number;
 }
 
+export const CLIPAJAIB_STYLE: SubtitleStyle = {
+  id: 'clipajaib',
+  label: 'Clip Ajaib (CapCut Yellow + Bold Black Outline)',
+  primaryColour: '&H0000EEFF', // Bright yellow #FFEE00
+  outlineColour: '&H00000000', // Deep black outline
+  backColour: '&H00000000',
+  outline: 3.5,
+  shadow: 0,
+  bold: -1,
+  italic: 0,
+  marginV: 300,
+  alignment: 2,
+  fontSize: 52,
+};
+
 export const SULE_STYLE: SubtitleStyle = {
   id: 'sule',
   label: 'SULE (yellow + thick black outline)',
@@ -72,6 +87,9 @@ export const KAMAL_STYLE: SubtitleStyle = {
   fontSize: 52,
 };
 
+/** All available subtitle styles. */
+export const ALL_STYLES: SubtitleStyle[] = [CLIPAJAIB_STYLE, SULE_STYLE, TIKTOK_STYLE, KAMAL_STYLE];
+
 /** Ordered list of styles for the 3 produced clips. */
 export const CLIP_STYLE_POOL: SubtitleStyle[] = [SULE_STYLE, TIKTOK_STYLE, KAMAL_STYLE];
 
@@ -88,7 +106,7 @@ export function pickStyle(clipIndex: number): SubtitleStyle {
 
 export function getStyleById(styleId: string): SubtitleStyle | undefined {
   if (!styleId) return undefined;
-  return CLIP_STYLE_POOL.find((s) => s.id.toLowerCase() === styleId.toLowerCase());
+  return ALL_STYLES.find((s) => s.id.toLowerCase() === styleId.toLowerCase());
 }
 
 /**

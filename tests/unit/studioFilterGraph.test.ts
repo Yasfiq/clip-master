@@ -233,5 +233,51 @@ describe('studioFilterGraph', () => {
         '[0:v]scale=-1:1920,crop=1080:1920:(iw-1080)/2:0[v_out]',
       );
     });
+
+    it('generates center frame hook and TTS audio ducking amix chain', () => {
+      const config: StudioConfig = {
+        ...DEFAULT_STUDIO_CONFIG,
+        hookText: 'KEBEBASAN ADALAH SEGALANYA',
+        hookPosition: 'center',
+        hookDuration: 2.2,
+        hookTtsEnabled: true,
+        sourceText: 'Raditya Dika',
+        logoEnabled: true,
+        logoPosition: 'top-left',
+        fadeInDuration: 0.4,
+        fadeOutDuration: 1.0,
+      };
+
+      const result = buildStudioFilterGraph({
+        inputVideoDuration: 30.0,
+        config,
+        logoResolvedPath: '/app/media/assets/logo.png',
+        ttsAudioPath: '/app/media/work/job1/tts/clip_001_hook.mp3',
+        ttsAudioDuration: 2.2,
+      });
+
+      expect(result.hasLogoInput).toBe(true);
+      expect(result.hasTtsInput).toBe(true);
+
+      // Center Hook drawtext
+      expect(result.filterComplex).toContain("drawtext=text='KEBEBASAN ADALAH SEGALANYA'");
+      expect(result.filterComplex).toContain('x=(w-text_w)/2:y=(h-text_h)/2');
+      expect(result.filterComplex).toContain("enable='between(t,0,2.2)'");
+      expect(result.filterComplex).toContain("fontcolor='#FFE600'");
+
+      // Source pill next to top-left logo
+      expect(result.filterComplex).toContain("drawtext=text='Raditya Dika'");
+      expect(result.filterComplex).toContain('x=145:y=48');
+
+      // Audio ducking & amix
+      expect(result.filterComplex).toContain("volume=enable='between(t,0,2.2)':volume=0.2");
+      expect(result.filterComplex).toContain("volume=enable='gte(t,2.2)':volume=1.0");
+      expect(result.filterComplex).toContain(
+        '[2:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=1.0[a_tts]',
+      );
+      expect(result.filterComplex).toContain(
+        '[a_bg][a_tts]amix=inputs=2:duration=first:dropout_transition=2[a_out]',
+      );
+    });
   });
 });
