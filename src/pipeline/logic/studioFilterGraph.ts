@@ -84,19 +84,19 @@ export function getLogoOverlayCoordinates(
  * Get safe-zone coordinates for source pill SVG overlay based on position name.
  */
 export function getPillOverlayCoordinates(
-  position: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' | string,
+  position?: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' | string,
 ): string {
   switch (position) {
     case 'top-left':
       // Placed directly to the right of the logo badge at x=142, y=50
       return '142:50';
     case 'bottom-right':
-      return 'W-w-160:H-h-135';
+      return 'W-w-40:H-h-135';
     case 'bottom-left':
-      return '142:H-h-135';
+      return '40:H-h-135';
     case 'top-right':
     default:
-      return 'W-w-160:50';
+      return 'W-w-40:50';
   }
 }
 
@@ -209,13 +209,18 @@ export function buildStudioFilterGraph(
   // Source Credit via drawtext (only as fallback when SVG pill is not used)
   if (!hasPillInput && config.sourceEnabled && config.sourceText && config.sourceText.trim()) {
     const escapedSource = escapeDrawText(config.sourceText.trim());
-    if (config.logoPosition === 'top-left') {
+    if (config.sourcePosition === 'bottom') {
+      postFilters.push(
+        `drawtext=text='${escapedSource}':fontfile=${SYSTEM_BOLD_FONT}:fontsize=22:fontcolor=white@0.8:x=(w-text_w)/2:y=h-140`,
+      );
+    } else if (config.sourcePosition === 'top-left') {
       postFilters.push(
         `drawtext=text='${escapedSource}':fontfile=${SYSTEM_BOLD_FONT}:fontsize=24:fontcolor='#222222':box=1:boxcolor='white@0.85':boxborderw=10:x=145:y=48`,
       );
     } else {
+      // Default top-right safe zone
       postFilters.push(
-        `drawtext=text='${escapedSource}':fontfile=${SYSTEM_BOLD_FONT}:fontsize=22:fontcolor=white@0.8:x=(w-text_w)/2:y=h-140`,
+        `drawtext=text='${escapedSource}':fontfile=${SYSTEM_BOLD_FONT}:fontsize=24:fontcolor='#222222':box=1:boxcolor='white@0.85':boxborderw=10:x=w-text_w-40:y=50`,
       );
     }
   }
@@ -259,9 +264,9 @@ export function buildStudioFilterGraph(
       currentVideoLabel = 'v_logo';
     }
 
-    // Overlay source pill
+    // Overlay source pill (Default position: top-right)
     if (hasPillInput) {
-      const pillCoords = getPillOverlayCoordinates(config.logoPosition);
+      const pillCoords = getPillOverlayCoordinates(config.sourcePosition || 'top-right');
       chains.push(`[${pillInputIdx}:v]format=rgba[pill]`);
       chains.push(`[${currentVideoLabel}][pill]overlay=${pillCoords}:format=auto[v_pill]`);
       currentVideoLabel = 'v_pill';
@@ -287,10 +292,18 @@ export function buildStudioFilterGraph(
   const fadeOutAudioPart =
     fadeOutDuration > 0 ? `,afade=t=out:st=${fadeOutStart}:d=${fadeOutDuration}` : '';
 
+  // If freezeDuration > 0, the video was extended at start by freezeDuration (tpad).
+  // Delay the audio stream by the exact same duration in ms to keep video and audio in perfect lip-sync.
+  const freezeAudioFilter =
+    freezeDuration > 0
+      ? `adelay=${Math.round(freezeDuration * 1000)}|${Math.round(freezeDuration * 1000)}`
+      : '';
+
   if (hasTtsInput) {
     // Duck background podcast audio to 0.2 during intro hook, then restore to 1.0
+    const delayPrefix = freezeAudioFilter ? `${freezeAudioFilter},` : '';
     chains.push(
-      `[0:a]volume=enable='between(t,0,${hookDuration})':volume=0.2,volume=enable='gte(t,${hookDuration})':volume=1.0${fadeOutAudioPart}[a_bg]`,
+      `[0:a]${delayPrefix}volume=enable='between(t,0,${hookDuration})':volume=0.2,volume=enable='gte(t,${hookDuration})':volume=1.0${fadeOutAudioPart}[a_bg]`,
     );
     chains.push(
       `[${ttsInputIdx}:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=1.0[a_tts]`,
@@ -298,6 +311,10 @@ export function buildStudioFilterGraph(
     chains.push(`[a_bg][a_tts]amix=inputs=2:duration=first:dropout_transition=2[a_out]`);
   } else {
     const audioFilters: string[] = [];
+
+    if (freezeAudioFilter) {
+      audioFilters.push(freezeAudioFilter);
+    }
 
     if (fadeInDuration > 0) {
       audioFilters.push(`afade=t=in:st=0:d=${fadeInDuration}`);

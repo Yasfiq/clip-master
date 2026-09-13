@@ -122,18 +122,18 @@ describe('studioFilterGraph', () => {
       expect(result.filterComplex).toContain('x=(w-text_w)/2:y=140');
       expect(result.filterComplex).toContain('box=1:boxcolor=black@0.7:boxborderw=16');
 
-      // Source credit with safe escaping
+      // Source credit with safe escaping (top-right safe zone)
       expect(result.filterComplex).toContain("drawtext=text='Sumber\\: Raditya Dika\\'s Channel'");
-      expect(result.filterComplex).toContain('x=(w-text_w)/2:y=h-140');
+      expect(result.filterComplex).toContain('x=w-text_w-40:y=50');
 
       // Subtitles filter
       expect(result.filterComplex).toContain(
         "subtitles='/app/media/work/job1/subtitles/clip_001.srt':force_style='FontName=Montserrat,FontSize=18'",
       );
 
-      // Audio fades
+      // Audio delay matching freeze frame and fades
       expect(result.filterComplex).toContain(
-        '[0:a]afade=t=in:st=0:d=0.4,afade=t=out:st=30.6:d=0.6[a_out]',
+        '[0:a]adelay=1200|1200,afade=t=in:st=0:d=0.4,afade=t=out:st=30.6:d=0.6[a_out]',
       );
 
       // Final output mapping targets
@@ -244,6 +244,7 @@ describe('studioFilterGraph', () => {
         sourceText: 'Raditya Dika',
         logoEnabled: true,
         logoPosition: 'top-left',
+        sourcePosition: 'top-left',
         fadeInDuration: 0.4,
         fadeOutDuration: 1.0,
       };
@@ -299,7 +300,7 @@ describe('studioFilterGraph', () => {
       expect(result.hasLogoInput).toBe(true);
       expect(result.hasPillInput).toBe(true);
       expect(result.filterComplex).toContain('[2:v]format=rgba[pill]');
-      expect(result.filterComplex).toContain('[v_logo][pill]overlay=142:50:format=auto[v_pill]');
+      expect(result.filterComplex).toContain('[v_logo][pill]overlay=W-w-40:50:format=auto[v_pill]');
       // When pill is overlaid, fallback drawtext for source is omitted
       expect(result.filterComplex).not.toContain("drawtext=text='Source\\: Raditya Dika'");
     });

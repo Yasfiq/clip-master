@@ -11,28 +11,30 @@ export interface StudioConfig {
   logoOpacity: number; // 0.1 - 1.0
   sourceText: string;
   sourceEnabled: boolean;
+  sourcePosition?: 'top-right' | 'top-left' | 'bottom';
   subtitleStyleId: string;
-  subtitleDelay?: number; // delay in seconds before dialog subtitles appear (default 2.2s)
-  fadeInDuration: number; // seconds, e.g. 0.4
-  fadeOutDuration: number; // seconds, e.g. 1.0
+  subtitleDelay?: number; // delay in seconds before dialog subtitles appear (default 0s for perfect sync)
+  fadeInDuration: number; // seconds, e.g. 0.3
+  fadeOutDuration: number; // seconds, e.g. 0.5
   filmBurnIntro?: boolean; // CapCut-style warm light leak intro
 }
 
 export const DEFAULT_STUDIO_CONFIG: StudioConfig = {
   hookText: '',
-  hookPosition: 'center',
-  hookDuration: 2.2,
-  hookTtsEnabled: true,
+  hookPosition: 'top',
+  hookDuration: 0,
+  hookTtsEnabled: false,
   hookTtsVoice: 'id-ID-GadisNeural',
-  freezeDuration: 1.2,
+  freezeDuration: 0,
   logoEnabled: true,
   logoPath: 'media/assets/logo.png',
   logoPosition: 'top-left',
   logoOpacity: 1.0,
   sourceText: '',
   sourceEnabled: true,
+  sourcePosition: 'top-right',
   subtitleStyleId: 'clipajaib',
-  subtitleDelay: 2.2,
-  fadeInDuration: 0.4,
-  fadeOutDuration: 0.6,
+  subtitleDelay: 0,
+  fadeInDuration: 0.3,
+  fadeOutDuration: 0.5,
 };

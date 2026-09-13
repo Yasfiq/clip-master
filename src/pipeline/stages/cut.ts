@@ -132,120 +132,34 @@ export class CutStage implements PipelineStageHandler {
     const cutPath = path.join(cutDir, `${clipId}_raw.mp4`);
     const duration = rangeEnd - rangeStart;
 
-    const copyArgs = [
-      '-i',
-      ctx.sourcePath!,
+    // Cut segment with frame-accurate input seeking (-ss before -i) and ultrafast H.264 + AAC encode.
+    // Input-seeking before -i ensures exact frame decoding at rangeStart,
+    // guaranteeing sample-perfect audio-video synchronization (start_time=0.000000 on both streams)
+    // and exact alignment with Whisper subtitle timestamps.
+    const cutArgs = [
       '-ss',
       rangeStart.toString(),
+      '-i',
+      ctx.sourcePath!,
       '-t',
       duration.toString(),
       '-c:v',
-      'copy',
+      'libx264',
+      '-preset',
+      'ultrafast',
+      '-crf',
+      '18',
       '-c:a',
-      'copy',
+      'aac',
+      '-b:a',
+      '192k',
       '-avoid_negative_ts',
       'make_zero',
       '-y',
       cutPath,
     ];
 
-    let needsReencode = false;
-
-    try {
-      await runBinaryChecked('ffmpeg', copyArgs, { timeoutMs: 1800000 });
-      // Inspect the cut file with ffprobe to verify video start time
-      const probeRes = await runBinary('ffprobe', [
-        '-v',
-        'error',
-        '-select_streams',
-        'v:0',
-        '-show_entries',
-        'stream=start_time',
-        '-of',
-        'default=noprint_wrappers=1:nokey=1',
-        cutPath,
-      ]);
-
-      if (probeRes.code !== 0) {
-        logger.warn(`ffprobe start_time probe failed for ${clipId}, triggering re-encode fallback`);
-        needsReencode = true;
-      } else {
-        const rawStartTime = probeRes.stdout.trim();
-        const startTimeSec = parseFloat(rawStartTime);
-        if (isNaN(startTimeSec) || startTimeSec > 0.2) {
-          logger.warn(
-            `Cut video start_time delayed (${rawStartTime}s > 0.2s) for ${clipId}, triggering re-encode fallback`,
-          );
-          needsReencode = true;
-        }
-      }
-    } catch (err: any) {
-      logger.warn(
-        `Stream copy failed for ${clipId} (${err.message}), triggering re-encode fallback`,
-      );
-      needsReencode = true;
-    }
-
-    if (needsReencode) {
-      logger.info(`Re-cutting ${clipId} with fast H.264 re-encode`);
-      const reencodeArgs = [
-        '-ss',
-        rangeStart.toString(),
-        '-i',
-        ctx.sourcePath!,
-        '-t',
-        duration.toString(),
-        '-c:v',
-        'libx264',
-        '-preset',
-        'ultrafast',
-        '-crf',
-        '18',
-        '-c:a',
-        'copy',
-        '-avoid_negative_ts',
-        'make_zero',
-        '-y',
-        cutPath,
-      ];
-      try {
-        await runBinaryChecked('ffmpeg', reencodeArgs, { timeoutMs: 1800000 });
-      } catch (reencodeErr: any) {
-        if (reencodeErr.message.includes('copy') || reencodeErr.message.includes('codec')) {
-          logger.warn(
-            `Fast re-encode with audio copy failed for ${clipId}, retrying with aac audio: ${reencodeErr.message}`,
-          );
-          await runBinaryChecked(
-            'ffmpeg',
-            [
-              '-ss',
-              rangeStart.toString(),
-              '-i',
-              ctx.sourcePath!,
-              '-t',
-              duration.toString(),
-              '-c:v',
-              'libx264',
-              '-preset',
-              'ultrafast',
-              '-crf',
-              '18',
-              '-c:a',
-              'aac',
-              '-b:a',
-              '128k',
-              '-avoid_negative_ts',
-              'make_zero',
-              '-y',
-              cutPath,
-            ],
-            { timeoutMs: 1800000 },
-          );
-        } else {
-          throw reencodeErr;
-        }
-      }
-    }
+    await runBinaryChecked('ffmpeg', cutArgs, { timeoutMs: 1800000 });
 
     const stat = await fs.stat(cutPath);
     if (stat.size < 1024) {

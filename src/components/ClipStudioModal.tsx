@@ -1031,9 +1031,10 @@ export default function ClipStudioModal({
               />
 
               {/* Overlaid Mockup Layers (Matches Actual Render) */}
-              {/* Layer 1: Watermark Logo & Source Pill */}
+              {/* Layer 1: Watermark Logo (top-left) & Source Pill (top-right) */}
               <div className="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none z-20">
-                <div className="flex items-center gap-1.5">
+                {/* Top-left: Logo */}
+                <div>
                   {studioConfig.logoEnabled && logoExists && (
                     <div
                       className="w-7 h-7 rounded shadow-md overflow-hidden"
@@ -1047,8 +1048,12 @@ export default function ClipStudioModal({
                       />
                     </div>
                   )}
+                </div>
+
+                {/* Top-right: Source Attribution Pill */}
+                <div>
                   {studioConfig.sourceEnabled && studioConfig.sourceText && (
-                    <div className="bg-white/85 text-zinc-900 text-[9px] font-bold px-2 py-0.5 rounded-full shadow-sm">
+                    <div className="bg-white/90 text-zinc-900 text-[9px] font-bold px-2.5 py-1 rounded-full shadow-sm">
                       {studioConfig.sourceText}
                     </div>
                   )}

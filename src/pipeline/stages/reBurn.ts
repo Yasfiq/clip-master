@@ -226,6 +226,7 @@ export async function reBurnClipSubtitles(
   const probe = await probeMedia(videoInputPath);
   const srcW = probe.width ?? 1280;
   const srcH = probe.height ?? 720;
+  const srcFps = probe.fps || 30;
   const duration = probe.durationSec || clip.duration || 60;
 
   let baseFilter = `scale=-1:${targetH}`;
@@ -277,7 +278,7 @@ export async function reBurnClipSubtitles(
       duration: duration,
       zoomStart: 1.0,
       zoomEnd: 1.12,
-      fps: 30,
+      fps: srcFps,
     };
     const kbErr = validateKenBurnsConfig(kbConfig);
     if (!kbErr) {
@@ -402,9 +403,7 @@ export async function reBurnClipSubtitles(
   // Fallback: Synchronize subtitles with hook delay if using standard SRT
   if (!isAssSubtitle && srtPath) {
     const subDelay =
-      typeof finalStudioConfig.subtitleDelay === 'number'
-        ? finalStudioConfig.subtitleDelay
-        : finalStudioConfig.hookDuration || 2.2;
+      typeof finalStudioConfig.subtitleDelay === 'number' ? finalStudioConfig.subtitleDelay : 0;
 
     if (subDelay > 0) {
       try {
@@ -467,6 +466,8 @@ export async function reBurnClipSubtitles(
     '[v_out]',
     '-map',
     '[a_out]',
+    '-r',
+    String(srcFps),
     '-c:v',
     'libx264',
     '-preset',

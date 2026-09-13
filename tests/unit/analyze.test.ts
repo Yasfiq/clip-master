@@ -245,9 +245,10 @@ describe('analyze', () => {
       expect(config.hookText).toBe('GAK NAIK KELAS BISA JADI');
       expect(config.sourceText).toBe('Sumber: Raditya Dika');
       expect(config.sourceEnabled).toBe(true);
-      expect(config.freezeDuration).toBe(1.2);
-      expect(config.fadeInDuration).toBe(0.4);
-      expect(config.fadeOutDuration).toBe(0.6);
+      expect(config.freezeDuration).toBe(0);
+      expect(config.sourcePosition).toBe('top-right');
+      expect(config.fadeInDuration).toBe(0.3);
+      expect(config.fadeOutDuration).toBe(0.5);
     });
 
     it('handles empty source channel', () => {

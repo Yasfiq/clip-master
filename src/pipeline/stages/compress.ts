@@ -1,6 +1,7 @@
 import { PipelineStage } from '@prisma/client';
 import { PipelineStageHandler, StageContext } from '../runner-types';
 import { runBinaryChecked } from '../binaries/spawn';
+import { probeMedia } from '../binaries/ffprobe';
 import { db } from '../../server/db';
 import { logger } from '../../server/logger';
 import { PATHS } from '../../server/paths';
@@ -130,6 +131,8 @@ export class CompressStage implements PipelineStageHandler {
     const targetH = parseInt(targetRes.split('x')[1], 10) || 1920;
 
     const portrait = targetH > targetW;
+    const probe = await probeMedia(inputPath).catch(() => null);
+    const srcFps = probe?.fps || ctx.metadata?.fps || 30;
 
     // Base video scaling: height = targetH, width auto (maintains source aspect)
     let baseVideoFilter = 'scale=-1:' + targetH;
@@ -194,7 +197,7 @@ export class CompressStage implements PipelineStageHandler {
         duration: clip?.duration ?? 10,
         zoomStart: 1.0,
         zoomEnd: 1.12,
-        fps: 30,
+        fps: srcFps,
       };
       const kbErr = validateKenBurnsConfig(kbConfig);
       if (!kbErr) {
@@ -317,6 +320,8 @@ export class CompressStage implements PipelineStageHandler {
         '[v_out]',
         '-map',
         '[a_out]',
+        '-r',
+        String(srcFps),
         '-c:v',
         'libx264',
         '-preset',
