@@ -60,7 +60,10 @@ export default function ClipStudioModal({
     'hook' | 'branding' | 'subtitle' | 'transition' | 'audio'
   >(initialTab);
   const [cues, setCues] = useState<SubtitleCue[]>([]);
-  const [studioConfig, setStudioConfig] = useState<StudioConfig>(DEFAULT_STUDIO_CONFIG);
+  const [studioConfig, setStudioConfig] = useState<StudioConfig>({
+    ...DEFAULT_STUDIO_CONFIG,
+    sourcePosition: DEFAULT_STUDIO_CONFIG.sourcePosition || 'top-right',
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [reBurning, setReBurning] = useState(false);
@@ -103,7 +106,11 @@ export default function ClipStudioModal({
 
       const data = studioPayload.data;
       if (data.studioConfig) {
-        setStudioConfig(data.studioConfig);
+        setStudioConfig({
+          ...DEFAULT_STUDIO_CONFIG,
+          ...data.studioConfig,
+          sourcePosition: data.studioConfig.sourcePosition || 'top-right',
+        });
       }
       if (Array.isArray(data.cues)) {
         setCues(data.cues);
@@ -883,15 +890,54 @@ export default function ClipStudioModal({
                       </div>
 
                       {studioConfig.sourceEnabled && (
-                        <input
-                          type="text"
-                          value={studioConfig.sourceText || ''}
-                          onChange={(e) =>
-                            setStudioConfig((prev) => ({ ...prev, sourceText: e.target.value }))
-                          }
-                          placeholder="Contoh: Source: Raditya Dika"
-                          className="w-full text-xs bg-zinc-950 border border-zinc-800 text-zinc-100 rounded px-2.5 py-1.5 focus:border-blue-500 focus:outline-none font-medium mt-1"
-                        />
+                        <>
+                          <input
+                            type="text"
+                            value={studioConfig.sourceText || ''}
+                            onChange={(e) =>
+                              setStudioConfig((prev) => ({ ...prev, sourceText: e.target.value }))
+                            }
+                            placeholder="Contoh: Source: Raditya Dika"
+                            className="w-full text-xs bg-zinc-950 border border-zinc-800 text-zinc-100 rounded px-2.5 py-1.5 focus:border-blue-500 focus:outline-none font-medium mt-1"
+                          />
+
+                          <div className="pt-2 border-t border-zinc-800/80">
+                            <label className="text-[11px] text-zinc-400 block mb-1.5 font-medium">
+                              Posisi Atribusi Sumber
+                            </label>
+                            <div className="grid grid-cols-1 gap-1.5">
+                              {(
+                                [
+                                  { pos: 'top-right', label: 'Pojok Kanan Atas - Rekomendasi' },
+                                  { pos: 'top-left', label: 'Pojok Kiri Atas' },
+                                  { pos: 'bottom', label: 'Bawah Tengah' },
+                                ] as const
+                              ).map(({ pos, label }) => {
+                                const isSelected =
+                                  (studioConfig.sourcePosition || 'top-right') === pos;
+                                return (
+                                  <button
+                                    key={pos}
+                                    type="button"
+                                    onClick={() =>
+                                      setStudioConfig((prev) => ({ ...prev, sourcePosition: pos }))
+                                    }
+                                    className={`py-1.5 px-2.5 text-[11px] rounded border transition-all cursor-pointer text-left flex items-center justify-between ${
+                                      isSelected
+                                        ? 'bg-blue-600/30 text-blue-300 border-blue-500 font-semibold'
+                                        : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-zinc-200'
+                                    }`}
+                                  >
+                                    <span>{label}</span>
+                                    {isSelected && (
+                                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </>
                       )}
                     </div>
                   </div>
@@ -1031,34 +1077,61 @@ export default function ClipStudioModal({
               />
 
               {/* Overlaid Mockup Layers (Matches Actual Render) */}
-              {/* Layer 1: Watermark Logo (top-left) & Source Pill (top-right) */}
-              <div className="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none z-20">
-                {/* Top-left: Logo */}
-                <div>
-                  {studioConfig.logoEnabled && logoExists && (
-                    <div
-                      className="w-7 h-7 rounded shadow-md overflow-hidden"
-                      style={{ opacity: studioConfig.logoOpacity }}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={`/api/settings/logo/file?t=${videoTimestampKey}`}
-                        alt="Logo"
-                        className="w-full h-full object-contain"
-                      />
-                    </div>
-                  )}
+              {/* Layer 1A: Watermark Logo */}
+              {studioConfig.logoEnabled && logoExists && (
+                <div
+                  className={`pointer-events-none z-20 ${
+                    (studioConfig.logoPosition || 'top-left') === 'top-left'
+                      ? 'absolute top-4 left-4'
+                      : (studioConfig.logoPosition || 'top-left') === 'top-right'
+                        ? 'absolute top-4 right-4'
+                        : (studioConfig.logoPosition || 'top-left') === 'bottom-left'
+                          ? 'absolute bottom-6 left-4'
+                          : 'absolute bottom-6 right-4'
+                  }`}
+                >
+                  <div
+                    className="w-7 h-7 rounded shadow-md overflow-hidden"
+                    style={{ opacity: studioConfig.logoOpacity }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`/api/settings/logo/file?t=${videoTimestampKey}`}
+                      alt="Logo"
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
                 </div>
+              )}
 
-                {/* Top-right: Source Attribution Pill */}
-                <div>
-                  {studioConfig.sourceEnabled && studioConfig.sourceText && (
-                    <div className="bg-white/90 text-zinc-900 text-[9px] font-bold px-2.5 py-1 rounded-full shadow-sm">
-                      {studioConfig.sourceText}
+              {/* Layer 1B: Source Attribution Pill */}
+              {studioConfig.sourceEnabled &&
+                studioConfig.sourceText &&
+                (() => {
+                  const isLogoVisible = studioConfig.logoEnabled && logoExists;
+                  const logoPos = studioConfig.logoPosition || 'top-left';
+                  const sourcePos = studioConfig.sourcePosition || 'top-right';
+
+                  let pillPlacement = 'absolute pointer-events-none z-20 ';
+                  if (sourcePos === 'bottom') {
+                    pillPlacement += 'bottom-16 left-1/2 -translate-x-1/2';
+                  } else if (sourcePos === 'top-left') {
+                    pillPlacement +=
+                      isLogoVisible && logoPos === 'top-left' ? 'top-4 left-14' : 'top-4 left-4';
+                  } else {
+                    // top-right
+                    pillPlacement +=
+                      isLogoVisible && logoPos === 'top-right' ? 'top-4 right-14' : 'top-4 right-4';
+                  }
+
+                  return (
+                    <div className={pillPlacement}>
+                      <div className="bg-white/90 text-zinc-900 text-[9px] font-bold px-2.5 py-1 rounded-full shadow-sm whitespace-nowrap">
+                        {studioConfig.sourceText}
+                      </div>
                     </div>
-                  )}
-                </div>
-              </div>
+                  );
+                })()}
 
               {/* Layer 2: Hook Headline Banner (Shows in first 3.1s) */}
               {currentTime <= 3.1 && studioConfig.hookText && (

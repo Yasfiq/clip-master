@@ -4,6 +4,7 @@ import {
   escapeDrawText,
   escapeSubtitlesPath,
   getLogoOverlayCoordinates,
+  getPillOverlayCoordinates,
 } from '@/pipeline/logic/studioFilterGraph';
 import { StudioConfig, DEFAULT_STUDIO_CONFIG } from '@/types/clipStudio';
 
@@ -35,6 +36,18 @@ describe('studioFilterGraph', () => {
       expect(getLogoOverlayCoordinates('bottom-right')).toBe('W-w-40:H-h-140');
       expect(getLogoOverlayCoordinates('bottom-left')).toBe('40:H-h-140');
       expect(getLogoOverlayCoordinates('unknown')).toBe('W-w-40:50');
+    });
+  });
+
+  describe('pill coordinates', () => {
+    it('returns correct safe zone coordinates for each source position', () => {
+      expect(getPillOverlayCoordinates('top-right')).toBe('W-w-40:50');
+      expect(getPillOverlayCoordinates('top-left')).toBe('40:50');
+      expect(getPillOverlayCoordinates('bottom')).toBe('(W-w)/2:H-h-120');
+      expect(getPillOverlayCoordinates('bottom-right')).toBe('W-w-40:H-h-135');
+      expect(getPillOverlayCoordinates('bottom-left')).toBe('40:H-h-135');
+      expect(getPillOverlayCoordinates()).toBe('W-w-40:50');
+      expect(getPillOverlayCoordinates('unknown')).toBe('W-w-40:50');
     });
   });
 

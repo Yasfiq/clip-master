@@ -8,7 +8,12 @@ import {
   CONFIDENCE_MEDIUM,
   type SegmentFeatures,
 } from '@/pipeline/logic/analyze';
-import { generateHookHeadline, createDefaultStudioConfig } from '@/pipeline/stages/analyze';
+import {
+  generateHookHeadline,
+  createDefaultStudioConfig,
+  selectViralMoments,
+  overlap,
+} from '@/pipeline/stages/analyze';
 
 describe('analyze', () => {
   describe('scoreSegment', () => {
@@ -254,6 +259,118 @@ describe('analyze', () => {
     it('handles empty source channel', () => {
       const config = createDefaultStudioConfig('MOMEN VIRAL PILIHAN', null);
       expect(config.sourceText).toBe('');
+    });
+  });
+
+  describe('overlap', () => {
+    it('detects overlapping intervals', () => {
+      expect(overlap(0, 60, 30, 90)).toBe(true);
+      expect(overlap(20, 80, 0, 60)).toBe(true);
+      expect(overlap(0, 100, 20, 40)).toBe(true);
+    });
+
+    it('returns false for disjoint or touching intervals', () => {
+      expect(overlap(0, 60, 60, 120)).toBe(false);
+      expect(overlap(60, 120, 0, 60)).toBe(false);
+      expect(overlap(0, 30, 60, 90)).toBe(false);
+    });
+  });
+
+  describe('selectViralMoments', () => {
+    function makeWindow(start: number, end: number, score: number) {
+      return {
+        startTime: start,
+        endTime: end,
+        viralPotential: score,
+        transcriptHook: score,
+        audioInterest: 0.5,
+        visualInterest: 0.5,
+        reasons: ['test'],
+        confidence: 'MEDIUM' as const,
+        hasKineticTrigger: false,
+      };
+    }
+
+    it('filters candidate windows using default minViralScore of 0.50', () => {
+      const ranked = [
+        makeWindow(0, 60, 0.85),
+        makeWindow(60, 120, 0.65),
+        makeWindow(120, 180, 0.49),
+        makeWindow(180, 240, 0.3),
+      ];
+      const result = selectViralMoments(ranked);
+      expect(result.minViralScore).toBe(0.5);
+      expect(result.qualifying).toHaveLength(2);
+      expect(result.selected).toHaveLength(2);
+      expect(result.selected.map((w) => w.startTime)).toEqual([0, 60]);
+    });
+
+    it('respects custom minViralScore threshold', () => {
+      const ranked = [
+        makeWindow(0, 60, 0.85),
+        makeWindow(60, 120, 0.72),
+        makeWindow(120, 180, 0.65),
+      ];
+      const result = selectViralMoments(ranked, { minViralScore: 0.7 });
+      expect(result.qualifying).toHaveLength(2);
+      expect(result.selected).toHaveLength(2);
+    });
+
+    it('deduplicates overlapping windows favoring higher scoring moment', () => {
+      // Window 0-60 (0.9) overlaps with 30-90 (0.75)
+      const ranked = [makeWindow(0, 60, 0.9), makeWindow(30, 90, 0.75), makeWindow(90, 150, 0.8)];
+      const result = selectViralMoments(ranked);
+      expect(result.qualifying).toHaveLength(3);
+      expect(result.selected).toHaveLength(2);
+      expect(result.selected.map((w) => w.startTime)).toEqual([0, 90]);
+    });
+
+    it('caps output at maxClips (default 15, max 50)', () => {
+      const ranked: ReturnType<typeof makeWindow>[] = [];
+      for (let i = 0; i < 20; i++) {
+        ranked.push(makeWindow(i * 60, (i + 1) * 60, 0.9 - i * 0.01));
+      }
+      const resultDefault = selectViralMoments(ranked);
+      expect(resultDefault.maxClips).toBe(15);
+      expect(resultDefault.selected).toHaveLength(15);
+
+      const resultCustom = selectViralMoments(ranked, { maxClips: 8 });
+      expect(resultCustom.selected).toHaveLength(8);
+
+      const resultMax50 = selectViralMoments(ranked, { maxClips: 50 });
+      expect(resultMax50.selected).toHaveLength(20);
+    });
+
+    it('falls back to taking top scoring windows (minimum 3 if available) when qualifying is empty', () => {
+      // All windows below 0.50
+      const ranked = [
+        makeWindow(0, 60, 0.45),
+        makeWindow(60, 120, 0.42),
+        makeWindow(120, 180, 0.4),
+        makeWindow(180, 240, 0.35),
+        makeWindow(240, 300, 0.3),
+      ];
+      const result = selectViralMoments(ranked, { minViralScore: 0.5 });
+      expect(result.qualifying).toHaveLength(0);
+      expect(result.selected).toHaveLength(3);
+      expect(result.selected.map((w) => w.startTime)).toEqual([0, 60, 120]);
+    });
+
+    it('falls back to all available non-overlapping windows when fewer than 3 exist', () => {
+      const ranked = [makeWindow(0, 60, 0.45), makeWindow(60, 120, 0.4)];
+      const result = selectViralMoments(ranked, { minViralScore: 0.5 });
+      expect(result.qualifying).toHaveLength(0);
+      expect(result.selected).toHaveLength(2);
+    });
+
+    it('sorts selected clips in timeline order (startTime ascending)', () => {
+      const ranked = [
+        makeWindow(120, 180, 0.95),
+        makeWindow(0, 60, 0.85),
+        makeWindow(60, 120, 0.75),
+      ];
+      const result = selectViralMoments(ranked);
+      expect(result.selected.map((w) => w.startTime)).toEqual([0, 60, 120]);
     });
   });
 });

@@ -43,7 +43,7 @@ const DEFAULT_VALUES: PipelineConfigValues = {
   adScoreThreshold: 0.75,
   minSegmentDuration: 120,
   targetDuration: 60,
-  maxClips: 5,
+  maxClips: 10,
   colorGrading: 'natural',
   backsoundEnabled: true,
   subtitleEnabled: true,

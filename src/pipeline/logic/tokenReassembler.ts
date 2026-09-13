@@ -116,3 +116,65 @@ export function reassembleWhisperTokens(tokens: RawWhisperToken[]): WordTiming[]
 
   return words;
 }
+
+export interface ParsedTranscriptData {
+  segments: Array<{
+    start: number;
+    end: number;
+    text: string;
+    words?: WordTiming[];
+  }>;
+  language: string | null;
+  text: string;
+}
+
+/**
+ * Parses raw Whisper JSON or pre-normalized transcript JSON into
+ * a normalized transcript structure with segments and word timings.
+ */
+export function parseWhisperTranscriptJson(raw: any): ParsedTranscriptData {
+  if (!raw) {
+    return { segments: [], language: null, text: '' };
+  }
+
+  // Already normalized transcript structure
+  if (Array.isArray(raw.segments) && raw.segments.length > 0) {
+    return {
+      segments: raw.segments,
+      language: raw.language ?? null,
+      text: raw.text ?? raw.segments.map((s: any) => s.text).join(' '),
+    };
+  }
+
+  const list = raw.transcription;
+  if (!Array.isArray(list) || list.length === 0) {
+    return { segments: [], language: raw.result?.language ?? null, text: raw.text ?? '' };
+  }
+
+  const out: Array<{
+    start: number;
+    end: number;
+    text: string;
+    words?: WordTiming[];
+  }> = [];
+
+  for (const seg of list) {
+    const fromMs = seg.offsets?.from ?? 0;
+    const toMs = seg.offsets?.to ?? fromMs;
+    const text = (seg.text ?? '').trim();
+    if (!text) continue;
+
+    out.push({
+      start: fromMs / 1000,
+      end: toMs / 1000,
+      text,
+      words: reassembleWhisperTokens(seg.tokens ?? []),
+    });
+  }
+
+  return {
+    segments: out,
+    language: raw.result?.language ?? null,
+    text: out.map((s) => s.text).join(' '),
+  };
+}

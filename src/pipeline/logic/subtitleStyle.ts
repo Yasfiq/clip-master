@@ -33,13 +33,13 @@ export const CLIPAJAIB_STYLE: SubtitleStyle = {
   primaryColour: '&H0000EEFF', // Bright yellow #FFEE00
   outlineColour: '&H00000000', // Deep black outline
   backColour: '&H00000000',
-  outline: 3.5,
+  outline: 6,
   shadow: 0,
   bold: -1,
   italic: 0,
-  marginV: 300,
+  marginV: 420,
   alignment: 2,
-  fontSize: 52,
+  fontSize: 84,
 };
 
 export const SULE_STYLE: SubtitleStyle = {
@@ -48,13 +48,13 @@ export const SULE_STYLE: SubtitleStyle = {
   primaryColour: '&H0000FFFF',
   outlineColour: '&H00000000',
   backColour: '&H00000000',
-  outline: 3,
+  outline: 6,
   shadow: 0,
   bold: -1,
   italic: 0,
-  marginV: 450,
+  marginV: 420,
   alignment: 2,
-  fontSize: 52,
+  fontSize: 84,
 };
 
 export const TIKTOK_STYLE: SubtitleStyle = {
@@ -63,13 +63,13 @@ export const TIKTOK_STYLE: SubtitleStyle = {
   primaryColour: '&H00FFFFFF',
   outlineColour: '&H00000000',
   backColour: '&H00000000',
-  outline: 2,
+  outline: 5.5,
   shadow: 0,
   bold: -1,
   italic: 0,
-  marginV: 250,
+  marginV: 420,
   alignment: 2,
-  fontSize: 52,
+  fontSize: 84,
 };
 
 export const KAMAL_STYLE: SubtitleStyle = {
@@ -78,13 +78,13 @@ export const KAMAL_STYLE: SubtitleStyle = {
   primaryColour: '&H0000FFFF',
   outlineColour: '&H00000000',
   backColour: '&H000000FF',
-  outline: 2,
+  outline: 5.5,
   shadow: 2,
   bold: -1,
   italic: 0,
-  marginV: 250,
+  marginV: 420,
   alignment: 2,
-  fontSize: 52,
+  fontSize: 84,
 };
 
 /** All available subtitle styles. */

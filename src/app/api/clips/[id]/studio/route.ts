@@ -74,6 +74,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       hookText: clip.hookHeadline || DEFAULT_STUDIO_CONFIG.hookText,
       sourceText: defaultSourceText || DEFAULT_STUDIO_CONFIG.sourceText,
       ...rawConfig,
+      sourcePosition:
+        rawConfig.sourcePosition || DEFAULT_STUDIO_CONFIG.sourcePosition || 'top-right',
     };
 
     const srtReadPath = await resolveSrtReadPath(clip);
@@ -117,12 +119,27 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const incomingStudioConfig =
       body.studioConfig && typeof body.studioConfig === 'object' ? body.studioConfig : {};
 
+    if (incomingStudioConfig.sourcePosition) {
+      const allowedPositions = ['top-right', 'top-left', 'bottom'];
+      if (!allowedPositions.includes(incomingStudioConfig.sourcePosition)) {
+        return apiError(
+          ErrorCode.VALIDATION_FAILED,
+          `Invalid sourcePosition: ${incomingStudioConfig.sourcePosition}. Expected 'top-right', 'top-left', or 'bottom'.`,
+        );
+      }
+    }
+
     const mergedConfig: StudioConfig = {
       ...DEFAULT_STUDIO_CONFIG,
       hookText: clip.hookHeadline || '',
       sourceText: clip.job?.sourceChannel ? `Sumber: ${clip.job.sourceChannel}` : '',
       ...rawConfig,
       ...incomingStudioConfig,
+      sourcePosition:
+        incomingStudioConfig.sourcePosition ||
+        rawConfig.sourcePosition ||
+        DEFAULT_STUDIO_CONFIG.sourcePosition ||
+        'top-right',
     };
 
     const workPath = path.join(PATHS.work, clip.jobId, 'subtitles', `${clip.id}.srt`);

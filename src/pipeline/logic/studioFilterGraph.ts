@@ -84,12 +84,13 @@ export function getLogoOverlayCoordinates(
  * Get safe-zone coordinates for source pill SVG overlay based on position name.
  */
 export function getPillOverlayCoordinates(
-  position?: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' | string,
+  position?: 'top-right' | 'top-left' | 'bottom' | 'bottom-right' | 'bottom-left' | string,
 ): string {
   switch (position) {
     case 'top-left':
-      // Placed directly to the right of the logo badge at x=142, y=50
-      return '142:50';
+      return '40:50';
+    case 'bottom':
+      return '(W-w)/2:H-h-120';
     case 'bottom-right':
       return 'W-w-40:H-h-135';
     case 'bottom-left':
