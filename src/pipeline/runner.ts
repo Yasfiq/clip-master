@@ -181,12 +181,6 @@ export async function runPhase2(config: RunnerConfig): Promise<void> {
               }
             }
           }
-          if (!foundTranscriptFile) {
-            const first = files.find((f) => f.endsWith('.transcript.json'));
-            if (first) {
-              foundTranscriptFile = path.join(PATHS.sources, first);
-            }
-          }
         } catch {}
       }
 

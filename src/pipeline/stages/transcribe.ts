@@ -87,17 +87,23 @@ export class TranscribeStage implements PipelineStageHandler {
     } catch {}
 
     if (!cached) {
-      // Check if a pre-computed transcript exists in media/sources/
+      // Check if a matching pre-computed transcript exists for THIS SPECIFIC source in media/sources/
       try {
-        const sourceFiles = await fs.readdir(PATHS.sources);
-        for (const file of sourceFiles) {
-          if (file.endsWith('.transcript.json')) {
-            const preComputed = path.join(PATHS.sources, file);
-            await fs.copyFile(preComputed, jsonPath);
+        const sourceBase = path.parse(ctx.sourcePath).name;
+        // Also strip UUID prefix if present (e.g. "a117096c-904b-459d-aade-718770e26550_VideoName" -> "VideoName")
+        const cleanBase = sourceBase.replace(/^[0-9a-fA-F-]{36}_/, '');
+        const candidateNames = [`${sourceBase}.transcript.json`, `${cleanBase}.transcript.json`];
+        for (const name of candidateNames) {
+          const candidatePath = path.join(PATHS.sources, name);
+          try {
+            await fs.access(candidatePath);
+            await fs.copyFile(candidatePath, jsonPath);
             cached = true;
-            logger.info(`Loaded pre-computed transcript from media/sources cache: ${preComputed}`);
+            logger.info(
+              `Loaded matching pre-computed transcript from media/sources: ${candidatePath}`,
+            );
             break;
-          }
+          } catch {}
         }
       } catch {}
     }
