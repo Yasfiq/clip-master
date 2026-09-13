@@ -18,6 +18,7 @@ export async function GET(req: NextRequest) {
         headers: {
           'Content-Type': 'image/png',
           'Cache-Control': 'no-cache, must-revalidate',
+          'X-Content-Type-Options': 'nosniff',
         },
       });
     } catch {

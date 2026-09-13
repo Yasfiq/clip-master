@@ -4,7 +4,7 @@ import { apiError, catchApiErrors, ErrorCode } from '@/server/api-utils';
 import { PATHS } from '@/server/paths';
 import path from 'path';
 import fs from 'fs';
-import { stat } from 'fs/promises';
+import fsPromises, { stat } from 'fs/promises';
 
 /**
  * GET /api/clips/[id]/file
@@ -47,8 +47,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
           : PATHS.work;
     let absolute = path.resolve(base, rel);
     // Guard: resolved path must stay inside the base directory.
-    if (!absolute.startsWith(base + path.sep)) {
-      return apiError(ErrorCode.INTERNAL, 'Refusing to serve path outside media directory');
+    // Resolve real paths to prevent symlink traversal
+    try {
+      const realBase = await fsPromises.realpath(base);
+      const realAbsolute = await fsPromises.realpath(absolute);
+      if (!realAbsolute.startsWith(realBase + path.sep) && realAbsolute !== realBase) {
+        return apiError(ErrorCode.INTERNAL, 'Refusing to serve path outside media directory');
+      }
+    } catch {
+      // If file doesn't exist yet, it will be handled by stat below
     }
 
     let size: number;
@@ -88,19 +95,26 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       'Cache-Control': 'no-cache, must-revalidate',
       'x-clean-video': isCleanServed ? '1' : '0',
     };
+
+    if (searchParams.get('download') === 'true' || searchParams.get('download') === '1') {
+      const filename = path.basename(rel);
+      headers['Content-Disposition'] = `attachment; filename="${filename}"`;
+    }
+
     const rangeHeader = req.headers.get('range');
 
     if (rangeHeader) {
-      const m = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader);
+      const m = /^bytes=(?:(\d+)-(\d*)|-(\d+))$/.exec(rangeHeader);
       if (m) {
         // bytes=START-END | bytes=START- | bytes=-SUFFIX
         const rawStart = m[1];
         const rawEnd = m[2];
+        const rawSuffix = m[3];
         let start: number;
         let end: number;
-        if (rawStart === '') {
+        if (rawSuffix !== undefined) {
           // Suffix byte range: "bytes=-N" means the LAST N bytes.
-          const suffix = rawEnd ? parseInt(rawEnd, 10) : 0;
+          const suffix = parseInt(rawSuffix, 10) || 0;
           start = Math.max(0, size - suffix);
           end = size - 1;
         } else {
@@ -116,11 +130,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         headers['Content-Range'] = `bytes ${start}-${end}/${size}`;
         headers['Content-Length'] = String(end - start + 1);
         const stream = fs.createReadStream(absolute, { start, end });
+        req.signal.addEventListener('abort', () => stream.destroy());
         return new NextResponse(stream as any, { status: 206, headers });
       }
     }
 
     const full = fs.createReadStream(absolute);
+    req.signal.addEventListener('abort', () => full.destroy());
     return new NextResponse(full as any, { status: 200, headers });
   }, req);
 }

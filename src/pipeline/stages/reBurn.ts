@@ -177,10 +177,6 @@ export async function reBurnClipSubtitles(
     }
   }
 
-  if (!srtPath) {
-    throw new Error(`Subtitle file not found for clip ${clipId}`);
-  }
-
   let style: SubtitleStyle | undefined;
   if (finalStudioConfig.subtitleStyleId) {
     style = getStyleById(finalStudioConfig.subtitleStyleId);
@@ -202,14 +198,18 @@ export async function reBurnClipSubtitles(
   }
 
   let logoResolvedPath: string | undefined;
-  if (finalStudioConfig.logoEnabled && finalStudioConfig.logoPath) {
-    const candidatePath = path.isAbsolute(finalStudioConfig.logoPath)
-      ? finalStudioConfig.logoPath
-      : path.join(PATHS.root, finalStudioConfig.logoPath);
-    if (await fileExists(candidatePath)) {
-      logoResolvedPath = candidatePath;
-    } else {
-      logger.warn(`Logo path not found at ${candidatePath}, omitting logo layer`);
+  if (finalStudioConfig.logoEnabled) {
+    // Prevent path traversal: only resolve strictly within PATHS.assets
+    const defaultAssetLogo = path.join(PATHS.assets, 'logo.png');
+    if (await fileExists(defaultAssetLogo)) {
+      logoResolvedPath = defaultAssetLogo;
+    } else if (finalStudioConfig.logoPath) {
+      const safeAssetPath = path.join(PATHS.assets, path.basename(finalStudioConfig.logoPath));
+      if (await fileExists(safeAssetPath)) {
+        logoResolvedPath = safeAssetPath;
+      } else {
+        logger.warn(`Logo path not found at ${safeAssetPath}, omitting logo layer`);
+      }
     }
   }
 
@@ -290,6 +290,7 @@ export async function reBurnClipSubtitles(
   }
 
   const forceStyle = buildForceStyle(style);
+  const renderTag = `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
   // 1. Generate hook TTS voiceover if enabled and hook text exists
   let ttsAudioPath: string | undefined;
@@ -297,7 +298,12 @@ export async function reBurnClipSubtitles(
 
   if (finalStudioConfig.hookTtsEnabled !== false && finalStudioConfig.hookText?.trim()) {
     try {
-      const ttsDestPath = path.join(PATHS.work, clip.jobId, 'tts', `${clip.id}_hook.mp3`);
+      const ttsDestPath = path.join(
+        PATHS.work,
+        clip.jobId,
+        'tts',
+        `${clip.id}_${renderTag}_hook.mp3`,
+      );
       const voice = finalStudioConfig.hookTtsVoice || 'id-ID-GadisNeural';
       const ttsResult = await generateHookTtsAudio({
         text: finalStudioConfig.hookText.trim(),
@@ -322,7 +328,12 @@ export async function reBurnClipSubtitles(
   let pillResolvedPath: string | undefined;
   if (finalStudioConfig.sourceEnabled && finalStudioConfig.sourceText?.trim()) {
     try {
-      const pillDestPath = path.join(PATHS.work, clip.jobId, 'branding', `${clip.id}_pill.svg`);
+      const pillDestPath = path.join(
+        PATHS.work,
+        clip.jobId,
+        'branding',
+        `${clip.id}_${renderTag}_pill.svg`,
+      );
       await writeSourcePillSvg(pillDestPath, {
         sourceText: finalStudioConfig.sourceText.trim(),
         fontSize: portrait ? 20 : 18,
@@ -370,7 +381,12 @@ export async function reBurnClipSubtitles(
           outlineColorHex: style.outlineColour,
         });
 
-        const assDestPath = path.join(PATHS.work, clip.jobId, 'subtitles', `${clip.id}_studio.ass`);
+        const assDestPath = path.join(
+          PATHS.work,
+          clip.jobId,
+          'subtitles',
+          `${clip.id}_${renderTag}_studio.ass`,
+        );
         await fs.mkdir(path.dirname(assDestPath), { recursive: true });
         await fs.writeFile(assDestPath, assContent, 'utf8');
         activeSubtitlePath = assDestPath;
@@ -395,7 +411,7 @@ export async function reBurnClipSubtitles(
           PATHS.work,
           clip.jobId,
           'subtitles',
-          `${clip.id}_delayed.srt`,
+          `${clip.id}_${renderTag}_delayed.srt`,
         );
         await fs.mkdir(path.dirname(delayedSrtPath), { recursive: true });
         await fs.writeFile(delayedSrtPath, serializeSrt(delayedCues), 'utf8');
@@ -412,7 +428,7 @@ export async function reBurnClipSubtitles(
       width: targetW,
       height: targetH,
       config: finalStudioConfig,
-      subtitlePath: activeSubtitlePath,
+      subtitlePath: activeSubtitlePath || undefined,
       logoResolvedPath,
       pillResolvedPath,
       isAssSubtitle,
@@ -421,6 +437,7 @@ export async function reBurnClipSubtitles(
       baseVideoFilter: baseFilter,
       ttsAudioPath,
       ttsAudioDuration,
+      hasAudio: probe.hasAudio ?? true,
     });
 
   let finalExportPath: string;

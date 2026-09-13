@@ -307,6 +307,7 @@ export class CompressStage implements PipelineStageHandler {
         filmBurnIntro: Boolean(studioConfig.filmBurnIntro),
         subtitleForceStyle,
         baseVideoFilter,
+        hasAudio: ctx.metadata?.hasAudio ?? true,
       });
 
       const args: string[] = [

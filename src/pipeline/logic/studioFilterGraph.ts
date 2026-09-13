@@ -28,6 +28,7 @@ export interface BuildStudioFilterGraphOptions {
   baseVideoFilter?: string;
   ttsAudioPath?: string;
   ttsAudioDuration?: number;
+  hasAudio?: boolean;
 }
 
 export interface StudioFilterGraphResult {
@@ -51,6 +52,7 @@ export function escapeDrawText(text: string): string {
     .replace(/\\/g, '\\\\')
     .replace(/'/g, "\\'")
     .replace(/:/g, '\\:')
+    .replace(/%/g, '\\%')
     .replace(/\r?\n/g, ' ');
 }
 
@@ -58,7 +60,7 @@ export function escapeDrawText(text: string): string {
  * Escape file path for FFmpeg subtitles filter.
  */
 export function escapeSubtitlesPath(pathStr: string): string {
-  return pathStr.replace(/\\/g, '/').replace(/'/g, "'\\\\''").replace(/:/g, '\\:');
+  return pathStr.replace(/\\/g, '/').replace(/'/g, "\\'").replace(/:/g, '\\:');
 }
 
 /**
@@ -176,9 +178,9 @@ export function buildStudioFilterGraph(
   const targetH = options.height || 1920;
 
   if (useFilmBurn && fadeInDuration > 0) {
-    // Cinematic warm red-to-gold light leak intro
-    chains.push(`color=c='#B41400':s=${targetW}x${targetH}:d=0.25[burn_red]`);
-    chains.push(`color=c='#FFE580':s=${targetW}x${targetH}:d=0.35[burn_yel]`);
+    // Cinematic warm red-to-gold light leak intro with explicit RGBA format for alpha fade
+    chains.push(`color=c='#B41400':s=${targetW}x${targetH}:d=0.25:format=rgba[burn_red]`);
+    chains.push(`color=c='#FFE580':s=${targetW}x${targetH}:d=0.35:format=rgba[burn_yel]`);
     chains.push(`[burn_red][burn_yel]xfade=transition=fade:duration=0.12:offset=0.15[burn_seq]`);
     chains.push(`[burn_seq]fade=t=out:st=0.30:d=0.25:alpha=1[burn_alpha]`);
   } else if (fadeInDuration > 0) {
@@ -199,11 +201,11 @@ export function buildStudioFilterGraph(
 
     if (isCenter) {
       postFilters.push(
-        `drawtext=text='${escapedHook}':fontfile=${SYSTEM_BOLD_FONT}:fontsize=56:fontcolor='#FFE600':box=1:boxcolor=black@0.75:boxborderw=18:bordercolor=black:borderw=4:x=(w-text_w)/2:y=(h-text_h)/2:enable='between(t,0,${hookDuration})'`,
+        `drawtext=expansion=none:text='${escapedHook}':fontfile=${SYSTEM_BOLD_FONT}:fontsize=56:fontcolor='#FFE600':box=1:boxcolor=black@0.75:boxborderw=18:bordercolor=black:borderw=4:x=(w-text_w)/2:y=(h-text_h)/2:enable='between(t,0,${hookDuration})'`,
       );
     } else {
       postFilters.push(
-        `drawtext=text='${escapedHook}':fontcolor=white:fontsize=48:box=1:boxcolor=black@0.7:boxborderw=16:x=(w-text_w)/2:y=140`,
+        `drawtext=expansion=none:text='${escapedHook}':fontcolor=white:fontsize=48:box=1:boxcolor=black@0.7:boxborderw=16:x=(w-text_w)/2:y=140`,
       );
     }
   }
@@ -213,16 +215,16 @@ export function buildStudioFilterGraph(
     const escapedSource = escapeDrawText(config.sourceText.trim());
     if (config.sourcePosition === 'bottom') {
       postFilters.push(
-        `drawtext=text='${escapedSource}':fontfile=${SYSTEM_BOLD_FONT}:fontsize=22:fontcolor=white@0.8:x=(w-text_w)/2:y=h-140`,
+        `drawtext=expansion=none:text='${escapedSource}':fontfile=${SYSTEM_BOLD_FONT}:fontsize=22:fontcolor=white@0.8:x=(w-text_w)/2:y=h-140`,
       );
     } else if (config.sourcePosition === 'top-left') {
       postFilters.push(
-        `drawtext=text='${escapedSource}':fontfile=${SYSTEM_BOLD_FONT}:fontsize=24:fontcolor='#222222':box=1:boxcolor='white@0.85':boxborderw=10:x=145:y=48`,
+        `drawtext=expansion=none:text='${escapedSource}':fontfile=${SYSTEM_BOLD_FONT}:fontsize=24:fontcolor='#222222':box=1:boxcolor='white@0.85':boxborderw=10:x=145:y=48`,
       );
     } else {
       // Default top-right safe zone
       postFilters.push(
-        `drawtext=text='${escapedSource}':fontfile=${SYSTEM_BOLD_FONT}:fontsize=24:fontcolor='#222222':box=1:boxcolor='white@0.85':boxborderw=10:x=w-text_w-40:y=50`,
+        `drawtext=expansion=none:text='${escapedSource}':fontfile=${SYSTEM_BOLD_FONT}:fontsize=24:fontcolor='#222222':box=1:boxcolor='white@0.85':boxborderw=10:x=w-text_w-40:y=50`,
       );
     }
   }
@@ -307,7 +309,10 @@ export function buildStudioFilterGraph(
       ? `adelay=${Math.round(freezeDuration * 1000)}|${Math.round(freezeDuration * 1000)}`
       : '';
 
-  if (hasTtsInput) {
+  if (options.hasAudio === false) {
+    // Media has no audio stream — generate silent audio track to guarantee filtergraph output map
+    chains.push(`anullsrc=channel_layout=stereo:sample_rate=48000:d=${effectiveDuration}[a_out]`);
+  } else if (hasTtsInput) {
     // Duck background podcast audio to 0.2 during intro hook, then restore to 1.0
     const delayPrefix = freezeAudioFilter ? `${freezeAudioFilter},` : '';
     chains.push(
@@ -316,7 +321,10 @@ export function buildStudioFilterGraph(
     chains.push(
       `[${ttsInputIdx}:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=1.0[a_tts]`,
     );
-    chains.push(`[a_bg][a_tts]amix=inputs=2:duration=first:dropout_transition=2[a_out]`);
+    // amix with normalize=0 to preserve calibrated volume levels without sudden surges
+    chains.push(
+      `[a_bg][a_tts]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a_out]`,
+    );
   } else {
     const audioFilters: string[] = [];
 

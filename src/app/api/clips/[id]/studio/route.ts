@@ -137,6 +137,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const incomingStudioConfig =
       body.studioConfig && typeof body.studioConfig === 'object' ? body.studioConfig : {};
 
+    // Strip client-supplied logoPath to prevent arbitrary path traversal
+    delete incomingStudioConfig.logoPath;
+
     if (incomingStudioConfig.sourcePosition) {
       const allowedPositions = ['top-right', 'top-left', 'bottom'];
       if (!allowedPositions.includes(incomingStudioConfig.sourcePosition)) {
@@ -147,14 +150,76 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       }
     }
 
+    const sanitizedIncoming: Partial<StudioConfig> = {};
+    if (typeof incomingStudioConfig.hookText === 'string') {
+      sanitizedIncoming.hookText = incomingStudioConfig.hookText.slice(0, 150);
+    }
+    if (typeof incomingStudioConfig.sourceText === 'string') {
+      sanitizedIncoming.sourceText = incomingStudioConfig.sourceText.slice(0, 80);
+    }
+    if (typeof incomingStudioConfig.freezeDuration === 'number') {
+      sanitizedIncoming.freezeDuration = Math.max(
+        0,
+        Math.min(10, incomingStudioConfig.freezeDuration),
+      );
+    }
+    if (typeof incomingStudioConfig.fadeInDuration === 'number') {
+      sanitizedIncoming.fadeInDuration = Math.max(
+        0,
+        Math.min(5, incomingStudioConfig.fadeInDuration),
+      );
+    }
+    if (typeof incomingStudioConfig.fadeOutDuration === 'number') {
+      sanitizedIncoming.fadeOutDuration = Math.max(
+        0,
+        Math.min(5, incomingStudioConfig.fadeOutDuration),
+      );
+    }
+    if (typeof incomingStudioConfig.logoOpacity === 'number') {
+      sanitizedIncoming.logoOpacity = Math.max(
+        0.1,
+        Math.min(1.0, incomingStudioConfig.logoOpacity),
+      );
+    }
+    if (typeof incomingStudioConfig.logoEnabled === 'boolean') {
+      sanitizedIncoming.logoEnabled = incomingStudioConfig.logoEnabled;
+    }
+    if (typeof incomingStudioConfig.logoPosition === 'string') {
+      sanitizedIncoming.logoPosition = incomingStudioConfig.logoPosition;
+    }
+    if (typeof incomingStudioConfig.sourceEnabled === 'boolean') {
+      sanitizedIncoming.sourceEnabled = incomingStudioConfig.sourceEnabled;
+    }
+    if (typeof incomingStudioConfig.sourcePosition === 'string') {
+      sanitizedIncoming.sourcePosition = incomingStudioConfig.sourcePosition;
+    }
+    if (typeof incomingStudioConfig.subtitleStyleId === 'string') {
+      sanitizedIncoming.subtitleStyleId = incomingStudioConfig.subtitleStyleId;
+    }
+    if (typeof incomingStudioConfig.hookPosition === 'string') {
+      sanitizedIncoming.hookPosition = incomingStudioConfig.hookPosition;
+    }
+    if (typeof incomingStudioConfig.hookDuration === 'number') {
+      sanitizedIncoming.hookDuration = Math.max(0, Math.min(30, incomingStudioConfig.hookDuration));
+    }
+    if (typeof incomingStudioConfig.hookTtsEnabled === 'boolean') {
+      sanitizedIncoming.hookTtsEnabled = incomingStudioConfig.hookTtsEnabled;
+    }
+    if (typeof incomingStudioConfig.hookTtsVoice === 'string') {
+      sanitizedIncoming.hookTtsVoice = incomingStudioConfig.hookTtsVoice;
+    }
+    if (typeof incomingStudioConfig.filmBurnIntro === 'boolean') {
+      sanitizedIncoming.filmBurnIntro = incomingStudioConfig.filmBurnIntro;
+    }
+
     const mergedConfig: StudioConfig = {
       ...DEFAULT_STUDIO_CONFIG,
       hookText: clip.hookHeadline || '',
       sourceText: clip.job?.sourceChannel ? `Sumber: ${clip.job.sourceChannel}` : '',
       ...rawConfig,
-      ...incomingStudioConfig,
+      ...sanitizedIncoming,
       sourcePosition:
-        incomingStudioConfig.sourcePosition ||
+        sanitizedIncoming.sourcePosition ||
         rawConfig.sourcePosition ||
         DEFAULT_STUDIO_CONFIG.sourcePosition ||
         'top-right',
@@ -188,7 +253,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       where: { id },
       data: {
         studioConfig: mergedConfig as any,
-        hookHeadline: mergedConfig.hookText || clip.hookHeadline,
+        hookHeadline:
+          typeof mergedConfig.hookText === 'string' ? mergedConfig.hookText : clip.hookHeadline,
         ...(relativeWorkPath ? { subtitlePath: relativeWorkPath } : {}),
       },
     });

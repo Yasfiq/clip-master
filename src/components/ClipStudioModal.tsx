@@ -90,54 +90,77 @@ export default function ClipStudioModal({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
 
-  const fetchStudioData = useCallback(async () => {
-    if (!clipId) return;
-    setLoading(true);
-    setError(null);
-    setStatusMessage(null);
-    try {
-      const [studioRes, logoRes] = await Promise.all([
-        fetch(`/api/clips/${clipId}/studio`),
-        fetch('/api/settings/logo'),
-      ]);
+  const togglePlay = useCallback(() => {
+    if (!videoRef.current) return;
+    if (videoRef.current.paused) {
+      videoRef.current.play().catch(() => {});
+    } else {
+      videoRef.current.pause();
+    }
+  }, []);
 
-      const studioPayload = await studioRes.json();
-      if (!studioRes.ok || !studioPayload.success) {
-        throw new Error(studioPayload?.error?.message || 'Gagal memuat konfigurasi studio klip');
-      }
+  const fetchStudioData = useCallback(
+    async (signal?: AbortSignal) => {
+      if (!clipId) return;
+      setLoading(true);
+      setError(null);
+      setStatusMessage(null);
+      try {
+        const [studioRes, logoRes] = await Promise.all([
+          fetch(`/api/clips/${clipId}/studio`, { signal }),
+          fetch('/api/settings/logo', { signal }),
+        ]);
 
-      const data = studioPayload.data;
-      if (typeof data.isCleanVideo === 'boolean') {
-        setIsCleanVideo(data.isCleanVideo);
-      }
-      if (data.studioConfig) {
-        setStudioConfig({
-          ...DEFAULT_STUDIO_CONFIG,
-          ...data.studioConfig,
-          sourcePosition: data.studioConfig.sourcePosition || 'top-right',
-        });
-      }
-      if (Array.isArray(data.cues)) {
-        setCues(data.cues);
-      }
+        if (signal?.aborted) return;
 
-      if (logoRes.ok) {
-        const logoPayload = await logoRes.json();
-        if (logoPayload.success) {
-          setLogoExists(!!logoPayload.data?.exists);
+        const studioPayload = await studioRes.json();
+        if (!studioRes.ok || !studioPayload.success) {
+          throw new Error(studioPayload?.error?.message || 'Gagal memuat konfigurasi studio klip');
+        }
+
+        if (signal?.aborted) return;
+
+        const data = studioPayload.data;
+        if (typeof data.isCleanVideo === 'boolean') {
+          setIsCleanVideo(data.isCleanVideo);
+        }
+        if (data.studioConfig) {
+          setStudioConfig({
+            ...DEFAULT_STUDIO_CONFIG,
+            ...data.studioConfig,
+            sourcePosition: data.studioConfig.sourcePosition || 'top-right',
+          });
+        }
+        if (Array.isArray(data.cues)) {
+          setCues(data.cues);
+        }
+
+        if (logoRes.ok) {
+          const logoPayload = await logoRes.json();
+          if (logoPayload.success && !signal?.aborted) {
+            setLogoExists(!!logoPayload.data?.exists);
+          }
+        }
+      } catch (err: any) {
+        if (err.name === 'AbortError' || signal?.aborted) return;
+        setError(err.message || 'Terjadi kesalahan saat memuat data studio');
+      } finally {
+        if (!signal?.aborted) {
+          setLoading(false);
         }
       }
-    } catch (err: any) {
-      setError(err.message || 'Terjadi kesalahan saat memuat data studio');
-    } finally {
-      setLoading(false);
-    }
-  }, [clipId]);
+    },
+    [clipId],
+  );
 
   useEffect(() => {
     if (isOpen) {
       setActiveTab(initialTab);
-      fetchStudioData();
+      const controller = new AbortController();
+      fetchStudioData(controller.signal);
+      return () => {
+        controller.abort();
+      };
     }
   }, [isOpen, initialTab, fetchStudioData]);
 
@@ -145,25 +168,23 @@ export default function ClipStudioModal({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      const isInput =
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.tagName === 'SELECT' ||
+      const isInteractive =
+        target.closest('button, input, textarea, select, [role="button"], [role="tab"]') !== null ||
         target.isContentEditable;
 
       if (e.key === 'Escape' && isOpen && !saving && !reBurning) {
         onClose();
-      } else if (e.code === 'Space' && isOpen && !isInput) {
+      } else if (e.code === 'Space' && isOpen && !isInteractive) {
         e.preventDefault();
         togglePlay();
-      } else if (e.key === 'ArrowLeft' && isOpen && !isInput) {
+      } else if (e.key === 'ArrowLeft' && isOpen && !isInteractive) {
         e.preventDefault();
         if (videoRef.current) {
           const targetSec = Math.max(0, videoRef.current.currentTime - 1.0);
           videoRef.current.currentTime = targetSec;
           setCurrentTime(targetSec);
         }
-      } else if (e.key === 'ArrowRight' && isOpen && !isInput) {
+      } else if (e.key === 'ArrowRight' && isOpen && !isInteractive) {
         e.preventDefault();
         if (videoRef.current) {
           const maxSec = duration || videoRef.current.duration || 60;
@@ -175,16 +196,7 @@ export default function ClipStudioModal({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, saving, reBurning, isPlaying, duration, onClose]);
-
-  const togglePlay = () => {
-    if (!videoRef.current) return;
-    if (isPlaying) {
-      videoRef.current.pause();
-    } else {
-      videoRef.current.play().catch(() => {});
-    }
-  };
+  }, [isOpen, saving, reBurning, duration, onClose, togglePlay]);
 
   const handleSeek = (seconds: number) => {
     if (videoRef.current) {

@@ -10,10 +10,10 @@ import { StudioConfig, DEFAULT_STUDIO_CONFIG } from '@/types/clipStudio';
 
 describe('studioFilterGraph', () => {
   describe('character escaping', () => {
-    it('escapes single quotes, colons, and backslashes in drawtext', () => {
+    it('escapes single quotes, colons, percent, and backslashes in drawtext', () => {
       const input = "IT'S A TEST: 100% VALUE \\ SPECIAL";
       const escaped = escapeDrawText(input);
-      expect(escaped).toBe("IT\\'S A TEST\\: 100% VALUE \\\\ SPECIAL");
+      expect(escaped).toBe("IT\\'S A TEST\\: 100\\% VALUE \\\\ SPECIAL");
     });
 
     it('normalizes newlines to spaces in drawtext', () => {
@@ -137,12 +137,16 @@ describe('studioFilterGraph', () => {
       );
 
       // Headline hook with safe escaping
-      expect(result.filterComplex).toContain("drawtext=text='GAK NAIK KELAS\\: BISA JADI BOS'");
+      expect(result.filterComplex).toContain(
+        "drawtext=expansion=none:text='GAK NAIK KELAS\\: BISA JADI BOS'",
+      );
       expect(result.filterComplex).toContain('x=(w-text_w)/2:y=140');
       expect(result.filterComplex).toContain('box=1:boxcolor=black@0.7:boxborderw=16');
 
       // Source credit with safe escaping (top-right safe zone)
-      expect(result.filterComplex).toContain("drawtext=text='Sumber\\: Raditya Dika\\'s Channel'");
+      expect(result.filterComplex).toContain(
+        "drawtext=expansion=none:text='Sumber\\: Raditya Dika\\'s Channel'",
+      );
       expect(result.filterComplex).toContain('x=w-text_w-40:y=50');
 
       // Subtitles filter
@@ -280,13 +284,15 @@ describe('studioFilterGraph', () => {
       expect(result.hasTtsInput).toBe(true);
 
       // Center Hook drawtext
-      expect(result.filterComplex).toContain("drawtext=text='KEBEBASAN ADALAH SEGALANYA'");
+      expect(result.filterComplex).toContain(
+        "drawtext=expansion=none:text='KEBEBASAN ADALAH SEGALANYA'",
+      );
       expect(result.filterComplex).toContain('x=(w-text_w)/2:y=(h-text_h)/2');
       expect(result.filterComplex).toContain("enable='between(t,0,2.2)'");
       expect(result.filterComplex).toContain("fontcolor='#FFE600'");
 
       // Source pill next to top-left logo
-      expect(result.filterComplex).toContain("drawtext=text='Raditya Dika'");
+      expect(result.filterComplex).toContain("drawtext=expansion=none:text='Raditya Dika'");
       expect(result.filterComplex).toContain('x=145:y=48');
 
       // Audio ducking & amix
@@ -296,8 +302,25 @@ describe('studioFilterGraph', () => {
         '[2:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=1.0[a_tts]',
       );
       expect(result.filterComplex).toContain(
-        '[a_bg][a_tts]amix=inputs=2:duration=first:dropout_transition=2[a_out]',
+        '[a_bg][a_tts]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a_out]',
       );
+    });
+
+    it('generates silent anullsrc audio track when hasAudio is false', () => {
+      const config: StudioConfig = {
+        ...DEFAULT_STUDIO_CONFIG,
+      };
+
+      const result = buildStudioFilterGraph({
+        inputVideoDuration: 10.0,
+        config,
+        hasAudio: false,
+      });
+
+      expect(result.filterComplex).toContain(
+        'anullsrc=channel_layout=stereo:sample_rate=48000:d=10[a_out]',
+      );
+      expect(result.filterComplex).not.toContain('[0:a]');
     });
 
     it('overlays SVG rounded pill when pillResolvedPath is provided', () => {

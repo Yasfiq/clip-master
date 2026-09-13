@@ -46,9 +46,7 @@ export class DiscoverStage implements PipelineStageHandler {
         try {
           const sourceFiles = await fs.readdir(PATHS.sources);
           for (const file of sourceFiles) {
-            const isMatch =
-              (videoId && file.includes(videoId)) ||
-              (job.sourceUrl.includes('sD5TqyFOt0Y') && file.includes('raditya_dika'));
+            const isMatch = Boolean(videoId && file.includes(videoId));
             if (isMatch) {
               if (file.endsWith('.mp4') || file.endsWith('.mkv')) {
                 cachedVideoPath = path.join(PATHS.sources, file);
