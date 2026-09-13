@@ -24,6 +24,12 @@ import { StudioConfig, DEFAULT_STUDIO_CONFIG } from '../../types/clipStudio';
 import { buildStudioFilterGraph } from '../logic/studioFilterGraph';
 import { generateHookTtsAudio } from '../logic/ttsVoiceover';
 import { parseSrt, serializeSrt, delaySubtitleCues } from '../logic/srtParser';
+import { writeSourcePillSvg } from '../logic/brandingPill';
+import { WordTiming, SrtCueInput } from '../logic/wordChunker';
+import {
+  generateUnifiedAssDocument,
+  chunkConversationalWords,
+} from '../logic/conversationalCaptions';
 
 async function fileExists(filePath: string): Promise<boolean> {
   try {
@@ -314,44 +320,128 @@ export async function reBurnClipSubtitles(
     }
   }
 
-  // 2. Synchronize subtitles with hook delay if requested
-  let activeSrtPath = srtPath;
-  const subDelay =
-    typeof finalStudioConfig.subtitleDelay === 'number'
-      ? finalStudioConfig.subtitleDelay
-      : finalStudioConfig.hookDuration || 2.2;
-
-  if (subDelay > 0 && srtPath) {
+  // 2. Generate vector SVG source pill if source attribution is enabled
+  let pillResolvedPath: string | undefined;
+  if (finalStudioConfig.sourceEnabled && finalStudioConfig.sourceText?.trim()) {
     try {
-      const rawSrt = await fs.readFile(srtPath, 'utf8');
-      const parsedCues = parseSrt(rawSrt);
-      const delayedCues = delaySubtitleCues(parsedCues, subDelay);
-      const delayedSrtPath = path.join(
-        PATHS.work,
-        clip.jobId,
-        'subtitles',
-        `${clip.id}_delayed.srt`,
-      );
-      await fs.mkdir(path.dirname(delayedSrtPath), { recursive: true });
-      await fs.writeFile(delayedSrtPath, serializeSrt(delayedCues), 'utf8');
-      activeSrtPath = delayedSrtPath;
-    } catch (delayErr) {
-      logger.warn(`Failed to delay subtitle cues for clip ${clip.id}: ${delayErr}`);
+      const pillDestPath = path.join(PATHS.work, clip.jobId, 'branding', `${clip.id}_pill.svg`);
+      await writeSourcePillSvg(pillDestPath, {
+        sourceText: finalStudioConfig.sourceText.trim(),
+        fontSize: portrait ? 20 : 18,
+        height: 50,
+        fillColor: 'white',
+        fillOpacity: 0.88,
+        textColor: '#1a1a1a',
+        fontFamily: 'Montserrat, DejaVu Sans, sans-serif',
+      });
+      pillResolvedPath = pillDestPath;
+    } catch (pillErr) {
+      logger.warn(`Failed to generate SVG pill for clip ${clip.id}: ${pillErr}`);
     }
   }
 
-  const { filterComplex, hasLogoInput, hasTtsInput, effectiveDuration } = buildStudioFilterGraph({
-    inputVideoDuration: duration,
-    width: targetW,
-    height: targetH,
-    config: finalStudioConfig,
-    subtitlePath: activeSrtPath,
-    logoResolvedPath,
-    subtitleForceStyle: forceStyle,
-    baseVideoFilter: baseFilter,
-    ttsAudioPath,
-    ttsAudioDuration,
-  });
+  // 3. Generate unified ASS subtitle file (Floating Typography Hook + Conversational Subtitles)
+  let activeSubtitlePath = srtPath;
+  let isAssSubtitle = false;
+
+  if (srtPath) {
+    try {
+      const rawSrt = await fs.readFile(srtPath, 'utf8');
+      const parsedCues = parseSrt(rawSrt);
+
+      const isConversationalStyle =
+        !finalStudioConfig.subtitleStyleId ||
+        finalStudioConfig.subtitleStyleId === 'clipajaib' ||
+        finalStudioConfig.subtitleStyleId === 'tiktok';
+
+      if (isConversationalStyle) {
+        // Re-chunk into natural conversational dialogue clauses
+        let conversationalCues: SrtCueInput[] = parsedCues;
+        if (parsedCues.length > 0) {
+          const words: WordTiming[] = [];
+          for (const c of parsedCues) {
+            const tokens = c.text.trim().split(/\s+/).filter(Boolean);
+            const dur = (c.end - c.start) / Math.max(1, tokens.length);
+            tokens.forEach((t, i) => {
+              words.push({
+                text: t,
+                start: c.start + i * dur,
+                end: c.start + (i + 1) * dur,
+              });
+            });
+          }
+          conversationalCues = chunkConversationalWords(words, {
+            minWordsPerChunk: 5,
+            maxWordsPerChunk: 10,
+            addDialogueIndicator: true,
+          });
+        }
+
+        const assContent = generateUnifiedAssDocument({
+          width: targetW,
+          height: targetH,
+          hookText: finalStudioConfig.hookText?.trim() || '',
+          hookDuration: finalStudioConfig.hookDuration || 3.1,
+          dialogueCues: conversationalCues,
+          fontName: 'Montserrat',
+          primaryColorHex: '&H0000E6FF', // Bright CapCut yellow #FFE600
+          outlineColorHex: '&H00000000',
+        });
+
+        const assDestPath = path.join(PATHS.work, clip.jobId, 'subtitles', `${clip.id}_studio.ass`);
+        await fs.mkdir(path.dirname(assDestPath), { recursive: true });
+        await fs.writeFile(assDestPath, assContent, 'utf8');
+        activeSubtitlePath = assDestPath;
+        isAssSubtitle = true;
+      }
+    } catch (assErr) {
+      logger.warn(`Failed to generate unified ASS for clip ${clip.id}: ${assErr}`);
+    }
+  }
+
+  // Fallback: Synchronize subtitles with hook delay if using standard SRT
+  if (!isAssSubtitle && srtPath) {
+    const subDelay =
+      typeof finalStudioConfig.subtitleDelay === 'number'
+        ? finalStudioConfig.subtitleDelay
+        : finalStudioConfig.hookDuration || 2.2;
+
+    if (subDelay > 0) {
+      try {
+        const rawSrt = await fs.readFile(srtPath, 'utf8');
+        const parsedCues = parseSrt(rawSrt);
+        const delayedCues = delaySubtitleCues(parsedCues, subDelay);
+        const delayedSrtPath = path.join(
+          PATHS.work,
+          clip.jobId,
+          'subtitles',
+          `${clip.id}_delayed.srt`,
+        );
+        await fs.mkdir(path.dirname(delayedSrtPath), { recursive: true });
+        await fs.writeFile(delayedSrtPath, serializeSrt(delayedCues), 'utf8');
+        activeSubtitlePath = delayedSrtPath;
+      } catch (delayErr) {
+        logger.warn(`Failed to delay subtitle cues for clip ${clip.id}: ${delayErr}`);
+      }
+    }
+  }
+
+  const { filterComplex, hasLogoInput, hasPillInput, hasTtsInput, effectiveDuration } =
+    buildStudioFilterGraph({
+      inputVideoDuration: duration,
+      width: targetW,
+      height: targetH,
+      config: finalStudioConfig,
+      subtitlePath: activeSubtitlePath,
+      logoResolvedPath,
+      pillResolvedPath,
+      isAssSubtitle,
+      filmBurnIntro: finalStudioConfig.filmBurnIntro !== false,
+      subtitleForceStyle: isAssSubtitle ? undefined : forceStyle,
+      baseVideoFilter: baseFilter,
+      ttsAudioPath,
+      ttsAudioDuration,
+    });
 
   let finalExportPath: string;
   if (clip.exportPath) {
@@ -369,6 +459,7 @@ export async function reBurnClipSubtitles(
     '-i',
     videoInputPath,
     ...(hasLogoInput && logoResolvedPath ? ['-i', logoResolvedPath] : []),
+    ...(hasPillInput && pillResolvedPath ? ['-i', pillResolvedPath] : []),
     ...(hasTtsInput && ttsAudioPath ? ['-i', ttsAudioPath] : []),
     '-filter_complex',
     filterComplex,

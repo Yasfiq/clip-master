@@ -2,11 +2,11 @@
  * Pure multi-layer filter graph generator for Clip Master Studio.
  *
  * Implements the "Formula Standar Baku Produksi Clip Ajaib":
- * - Layer 0: Warm flash fade-in at t=0-0.4s
- * - Layer 1: Audio ducking on background podcast during hook TTS voiceover (t=0-2.2s)
- * - Layer 2: Center Headline Hook Banner (CapCut bold yellow #FFE600 with black border)
- * - Layer 3: Persistent Header Kiri Atas: Logo badge @ClipAjaib (x=32, y=34) + Source Pill (x=145, y=48)
- * - Layer 4: Subtitle Dialog Kuning CapCut (synchronized after hook)
+ * - Layer 0: Film burn warm light leak transition (or smooth fade-in) at t=0-0.55s
+ * - Layer 1: Audio ducking on background podcast during hook TTS voiceover (t=0-hookDuration)
+ * - Layer 2: Center Headline Hook Banner (CapCut bold yellow #FFE600 floating typography via ASS or drawtext)
+ * - Layer 3: Persistent Header Kiri Atas: Logo circular badge @ClipAjaib (x=32, y=34) + Rounded Pill (x=142, y=50)
+ * - Layer 4: Subtitle Dialog Kuning CapCut (conversational phrases with dialogue indicator)
  * - Layer 5: Smooth video & audio fade-out outro in final 1.0s
  */
 
@@ -21,6 +21,9 @@ export interface BuildStudioFilterGraphOptions {
   config: StudioConfig;
   subtitlePath?: string;
   logoResolvedPath?: string;
+  pillResolvedPath?: string;
+  isAssSubtitle?: boolean;
+  filmBurnIntro?: boolean;
   subtitleForceStyle?: string;
   baseVideoFilter?: string;
   ttsAudioPath?: string;
@@ -30,6 +33,7 @@ export interface BuildStudioFilterGraphOptions {
 export interface StudioFilterGraphResult {
   filterComplex: string;
   hasLogoInput: boolean;
+  hasPillInput: boolean;
   hasTtsInput: boolean;
   effectiveDuration: number;
 }
@@ -77,6 +81,26 @@ export function getLogoOverlayCoordinates(
 }
 
 /**
+ * Get safe-zone coordinates for source pill SVG overlay based on position name.
+ */
+export function getPillOverlayCoordinates(
+  position: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' | string,
+): string {
+  switch (position) {
+    case 'top-left':
+      // Placed directly to the right of the logo badge at x=142, y=50
+      return '142:50';
+    case 'bottom-right':
+      return 'W-w-160:H-h-135';
+    case 'bottom-left':
+      return '142:H-h-135';
+    case 'top-right':
+    default:
+      return 'W-w-160:50';
+  }
+}
+
+/**
  * Build a pure single-pass FFmpeg filter complex string from studio configuration.
  */
 export function buildStudioFilterGraph(
@@ -87,6 +111,9 @@ export function buildStudioFilterGraph(
     config,
     subtitlePath,
     logoResolvedPath,
+    pillResolvedPath,
+    isAssSubtitle = false,
+    filmBurnIntro = false,
     subtitleForceStyle,
     baseVideoFilter,
     ttsAudioPath,
@@ -121,105 +148,134 @@ export function buildStudioFilterGraph(
         : 2.2;
 
   const hasLogoInput = Boolean(config.logoEnabled && logoResolvedPath);
+  const hasPillInput = Boolean(config.sourceEnabled && pillResolvedPath);
   const hasTtsInput = Boolean(config.hookTtsEnabled && ttsAudioPath);
 
+  let nextInputIdx = 1;
+  const logoInputIdx = hasLogoInput ? nextInputIdx++ : 0;
+  const pillInputIdx = hasPillInput ? nextInputIdx++ : 0;
+  const ttsInputIdx = hasTtsInput ? nextInputIdx++ : 0;
+
+  const chains: string[] = [];
+
   // 1. Initial video transformations: base filter, freeze frame, video fades
-  const preLogoFilters: string[] = [];
+  const preFilters: string[] = [];
 
   if (baseVideoFilter && baseVideoFilter.trim()) {
-    preLogoFilters.push(baseVideoFilter.trim());
+    preFilters.push(baseVideoFilter.trim());
   }
 
   if (freezeDuration > 0) {
-    preLogoFilters.push(`tpad=start_mode=clone:start_duration=${freezeDuration}`);
+    preFilters.push(`tpad=start_mode=clone:start_duration=${freezeDuration}`);
   }
 
-  // Layer 0: Warm flash fade-in
-  if (fadeInDuration > 0) {
-    preLogoFilters.push(`fade=t=in:st=0:d=${fadeInDuration}`);
+  const useFilmBurn = Boolean(filmBurnIntro || config.filmBurnIntro);
+  const targetW = options.width || 1080;
+  const targetH = options.height || 1920;
+
+  if (useFilmBurn && fadeInDuration > 0) {
+    // Cinematic warm red-to-gold light leak intro
+    chains.push(`color=c='#B41400':s=${targetW}x${targetH}:d=0.25[burn_red]`);
+    chains.push(`color=c='#FFE580':s=${targetW}x${targetH}:d=0.35[burn_yel]`);
+    chains.push(`[burn_red][burn_yel]xfade=transition=fade:duration=0.12:offset=0.15[burn_seq]`);
+    chains.push(`[burn_seq]fade=t=out:st=0.30:d=0.25:alpha=1[burn_alpha]`);
+  } else if (fadeInDuration > 0) {
+    preFilters.push(`fade=t=in:st=0:d=${fadeInDuration}`);
   }
 
-  // Layer 5: Video outro fade-out
   if (fadeOutDuration > 0) {
-    preLogoFilters.push(`fade=t=out:st=${fadeOutStart}:d=${fadeOutDuration}`);
+    preFilters.push(`fade=t=out:st=${fadeOutStart}:d=${fadeOutDuration}`);
   }
 
-  // 2. Post-logo transformations: hook text, source credit, subtitles
-  const postLogoFilters: string[] = [];
+  // 2. Post-overlay filters: drawtext hook (if not ASS), drawtext source (if not SVG pill), subtitles
+  const postFilters: string[] = [];
 
-  // Layer 2: Headline Hook Banner
-  if (config.hookText && config.hookText.trim()) {
+  // Headline Hook via drawtext (only if NOT using ASS subtitles, where hook is already inside ASS)
+  if (!isAssSubtitle && config.hookText && config.hookText.trim()) {
     const escapedHook = escapeDrawText(config.hookText.trim());
     const isCenter = config.hookPosition === 'center';
 
     if (isCenter) {
-      // Formula Standard: Bold Yellow (#FFE600), thick black outline & box centered in 9:16 frame
-      postLogoFilters.push(
+      postFilters.push(
         `drawtext=text='${escapedHook}':fontfile=${SYSTEM_BOLD_FONT}:fontsize=56:fontcolor='#FFE600':box=1:boxcolor=black@0.75:boxborderw=18:bordercolor=black:borderw=4:x=(w-text_w)/2:y=(h-text_h)/2:enable='between(t,0,${hookDuration})'`,
       );
     } else {
-      // Top position default/fallback
-      postLogoFilters.push(
+      postFilters.push(
         `drawtext=text='${escapedHook}':fontcolor=white:fontsize=48:box=1:boxcolor=black@0.7:boxborderw=16:x=(w-text_w)/2:y=140`,
       );
     }
   }
 
-  // Layer 3: Source Credit Badge / Pill
-  if (config.sourceEnabled && config.sourceText && config.sourceText.trim()) {
+  // Source Credit via drawtext (only as fallback when SVG pill is not used)
+  if (!hasPillInput && config.sourceEnabled && config.sourceText && config.sourceText.trim()) {
     const escapedSource = escapeDrawText(config.sourceText.trim());
     if (config.logoPosition === 'top-left') {
-      // Positioned immediately next to the 98x98 logo badge at x=145, y=48
-      postLogoFilters.push(
+      postFilters.push(
         `drawtext=text='${escapedSource}':fontfile=${SYSTEM_BOLD_FONT}:fontsize=24:fontcolor='#222222':box=1:boxcolor='white@0.85':boxborderw=10:x=145:y=48`,
       );
     } else {
-      postLogoFilters.push(
+      postFilters.push(
         `drawtext=text='${escapedSource}':fontfile=${SYSTEM_BOLD_FONT}:fontsize=22:fontcolor=white@0.8:x=(w-text_w)/2:y=h-140`,
       );
     }
   }
 
-  // Layer 4: Subtitles
+  // Subtitles filter
   if (subtitlePath) {
     const escSub = escapeSubtitlesPath(subtitlePath);
     const styleParam = subtitleForceStyle ? `:force_style='${subtitleForceStyle}'` : '';
-    postLogoFilters.push(`subtitles='${escSub}'${styleParam}`);
+    postFilters.push(`subtitles='${escSub}'${styleParam}`);
   }
 
   // 3. Assemble video filter chain(s)
-  const chains: string[] = [];
+  const hasOverlays = hasLogoInput || hasPillInput || (useFilmBurn && fadeInDuration > 0);
 
-  if (hasLogoInput) {
-    const opacity =
-      typeof config.logoOpacity === 'number'
-        ? Math.max(0.1, Math.min(1.0, config.logoOpacity))
-        : 1.0;
-
-    const overlayCoords = getLogoOverlayCoordinates(config.logoPosition);
-
-    // Format logo stream [1:v] with opacity
-    chains.push(`[1:v]format=rgba,colorchannelmixer=aa=${opacity}[logo]`);
-
-    // Prepare video stream before overlay
-    if (preLogoFilters.length > 0) {
-      chains.push(`[0:v]${preLogoFilters.join(',')}[v_faded]`);
+  if (hasOverlays) {
+    let currentVideoLabel = 'v_faded';
+    if (preFilters.length > 0) {
+      chains.push(`[0:v]${preFilters.join(',')}[${currentVideoLabel}]`);
     } else {
-      chains.push(`[0:v]null[v_faded]`);
+      chains.push(`[0:v]null[${currentVideoLabel}]`);
+    }
+
+    // Film burn overlay
+    if (useFilmBurn && fadeInDuration > 0) {
+      chains.push(
+        `[${currentVideoLabel}][burn_alpha]overlay=0:0:enable='between(t,0,0.55)'[v_burned]`,
+      );
+      currentVideoLabel = 'v_burned';
     }
 
     // Overlay logo
-    chains.push(`[v_faded][logo]overlay=${overlayCoords}:format=auto[v_logo]`);
+    if (hasLogoInput) {
+      const opacity =
+        typeof config.logoOpacity === 'number'
+          ? Math.max(0.1, Math.min(1.0, config.logoOpacity))
+          : 1.0;
+      const overlayCoords = getLogoOverlayCoordinates(config.logoPosition);
 
-    // Post-logo filters
-    if (postLogoFilters.length > 0) {
-      chains.push(`[v_logo]${postLogoFilters.join(',')}[v_out]`);
+      chains.push(`[${logoInputIdx}:v]format=rgba,colorchannelmixer=aa=${opacity}[logo]`);
+      chains.push(`[${currentVideoLabel}][logo]overlay=${overlayCoords}:format=auto[v_logo]`);
+      currentVideoLabel = 'v_logo';
+    }
+
+    // Overlay source pill
+    if (hasPillInput) {
+      const pillCoords = getPillOverlayCoordinates(config.logoPosition);
+      chains.push(`[${pillInputIdx}:v]format=rgba[pill]`);
+      chains.push(`[${currentVideoLabel}][pill]overlay=${pillCoords}:format=auto[v_pill]`);
+      currentVideoLabel = 'v_pill';
+    }
+
+    // Post-overlay filters
+    if (postFilters.length > 0) {
+      chains.push(`[${currentVideoLabel}]${postFilters.join(',')}[v_out]`);
     } else {
-      chains.push(`[v_logo]null[v_out]`);
+      chains.push(`[${currentVideoLabel}]null[v_out]`);
     }
   } else {
     // Single linear video filter chain
-    const allVideoFilters = [...preLogoFilters, ...postLogoFilters];
+    const allVideoFilters = [...preFilters, ...postFilters];
     if (allVideoFilters.length > 0) {
       chains.push(`[0:v]${allVideoFilters.join(',')}[v_out]`);
     } else {
@@ -232,7 +288,6 @@ export function buildStudioFilterGraph(
     fadeOutDuration > 0 ? `,afade=t=out:st=${fadeOutStart}:d=${fadeOutDuration}` : '';
 
   if (hasTtsInput) {
-    const ttsInputIdx = hasLogoInput ? 2 : 1;
     // Duck background podcast audio to 0.2 during intro hook, then restore to 1.0
     chains.push(
       `[0:a]volume=enable='between(t,0,${hookDuration})':volume=0.2,volume=enable='gte(t,${hookDuration})':volume=1.0${fadeOutAudioPart}[a_bg]`,
@@ -264,6 +319,7 @@ export function buildStudioFilterGraph(
   return {
     filterComplex,
     hasLogoInput,
+    hasPillInput,
     hasTtsInput,
     effectiveDuration,
   };

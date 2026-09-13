@@ -15,6 +15,7 @@ export interface StudioConfig {
   subtitleDelay?: number; // delay in seconds before dialog subtitles appear (default 2.2s)
   fadeInDuration: number; // seconds, e.g. 0.4
   fadeOutDuration: number; // seconds, e.g. 1.0
+  filmBurnIntro?: boolean; // CapCut-style warm light leak intro
 }
 
 export const DEFAULT_STUDIO_CONFIG: StudioConfig = {

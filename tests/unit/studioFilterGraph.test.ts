@@ -279,5 +279,66 @@ describe('studioFilterGraph', () => {
         '[a_bg][a_tts]amix=inputs=2:duration=first:dropout_transition=2[a_out]',
       );
     });
+
+    it('overlays SVG rounded pill when pillResolvedPath is provided', () => {
+      const config: StudioConfig = {
+        ...DEFAULT_STUDIO_CONFIG,
+        sourceText: 'Source: Raditya Dika',
+        sourceEnabled: true,
+        logoEnabled: true,
+        logoPosition: 'top-left',
+      };
+
+      const result = buildStudioFilterGraph({
+        inputVideoDuration: 20.0,
+        config,
+        logoResolvedPath: '/app/media/assets/logo.png',
+        pillResolvedPath: '/app/media/work/job1/source_pill.svg',
+      });
+
+      expect(result.hasLogoInput).toBe(true);
+      expect(result.hasPillInput).toBe(true);
+      expect(result.filterComplex).toContain('[2:v]format=rgba[pill]');
+      expect(result.filterComplex).toContain('[v_logo][pill]overlay=142:50:format=auto[v_pill]');
+      // When pill is overlaid, fallback drawtext for source is omitted
+      expect(result.filterComplex).not.toContain("drawtext=text='Source\\: Raditya Dika'");
+    });
+
+    it('skips drawtext hook when isAssSubtitle is true', () => {
+      const config: StudioConfig = {
+        ...DEFAULT_STUDIO_CONFIG,
+        hookText: 'KEBEBASAN ADALAH SEGALANYA',
+        hookPosition: 'center',
+      };
+
+      const result = buildStudioFilterGraph({
+        inputVideoDuration: 20.0,
+        config,
+        subtitlePath: '/app/media/work/sub.ass',
+        isAssSubtitle: true,
+      });
+
+      expect(result.filterComplex).toContain("subtitles='/app/media/work/sub.ass'");
+      // Hook drawtext is omitted because it is baked into the ASS subtitle file
+      expect(result.filterComplex).not.toContain("drawtext=text='KEBEBASAN ADALAH SEGALANYA'");
+    });
+
+    it('inserts warm light leak film burn intro when filmBurnIntro is true', () => {
+      const config: StudioConfig = {
+        ...DEFAULT_STUDIO_CONFIG,
+        fadeInDuration: 0.4,
+        filmBurnIntro: true,
+      };
+
+      const result = buildStudioFilterGraph({
+        inputVideoDuration: 20.0,
+        config,
+        filmBurnIntro: true,
+      });
+
+      expect(result.filterComplex).toContain("color=c='#B41400'");
+      expect(result.filterComplex).toContain("color=c='#FFE580'");
+      expect(result.filterComplex).toContain("overlay=0:0:enable='between(t,0,0.55)'[v_burned]");
+    });
   });
 });
