@@ -49,6 +49,12 @@ describe('studioFilterGraph', () => {
       expect(getPillOverlayCoordinates()).toBe('W-w-40:50');
       expect(getPillOverlayCoordinates('unknown')).toBe('W-w-40:50');
     });
+
+    it('offsets pill coordinates when logo is in the same corner', () => {
+      expect(getPillOverlayCoordinates('top-right', true)).toBe('W-w-140:50');
+      expect(getPillOverlayCoordinates('top-left', true)).toBe('140:50');
+      expect(getPillOverlayCoordinates('top-right', false)).toBe('W-w-40:50');
+    });
   });
 
   describe('duration math', () => {

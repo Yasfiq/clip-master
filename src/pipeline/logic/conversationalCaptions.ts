@@ -31,7 +31,9 @@ export interface UnifiedAssOptions {
   fontName?: string;
   hookFontSize?: number;
   dialogueFontSize?: number;
-  primaryColorHex?: string; // ASS hex e.g. &H0000E6FF
+  dialogueOutline?: number;
+  dialogueMarginV?: number;
+  primaryColorHex?: string; // ASS hex e.g. &H0000EEFF
   outlineColorHex?: string; // ASS hex e.g. &H00000000
 }
 
@@ -249,16 +251,16 @@ export function generateUnifiedAssDocument(options: UnifiedAssOptions): string {
     hookDuration = 3.1,
     dialogueCues = [],
     fontName = 'Montserrat',
-    primaryColorHex = '&H0000E6FF', // CapCut yellow #FFE600 in ASS &HAABBGGRR
+    primaryColorHex = '&H0000EEFF', // CapCut yellow #FFEE00 in ASS &HAABBGGRR (CLIPAJAIB_STYLE)
     outlineColorHex = '&H00000000', // Solid black
   } = options;
 
   const is1080p = width >= 1000;
   const hookFontSize = options.hookFontSize ?? (is1080p ? 72 : 48);
-  const dialogueFontSize = options.dialogueFontSize ?? (is1080p ? 50 : 34);
+  const dialogueFontSize = options.dialogueFontSize ?? 84;
   const hookOutline = is1080p ? 6 : 4;
-  const dialogueOutline = is1080p ? 4.5 : 3.2;
-  const dialogueMarginV = is1080p ? 615 : 410;
+  const dialogueOutline = options.dialogueOutline ?? 6.0;
+  const dialogueMarginV = options.dialogueMarginV ?? 420;
 
   const events: string[] = [];
 
@@ -271,20 +273,10 @@ export function generateUnifiedAssDocument(options: UnifiedAssOptions): string {
   }
 
   // 2. Dialogue Events (Alignment=2 Bottom Center)
+  // Do NOT drop cues during the hook: spoken speech during the hook must remain visible
   for (const cue of dialogueCues) {
-    // If hook text is present, drop cues that finish before or during the hook
-    if (hookText && hookText.trim()) {
-      if (cue.end <= hookDuration) {
-        continue;
-      }
-    }
-
-    // If dialogue cue begins during the hook, ensure it starts after hook to avoid visual clash
-    let startSec = cue.start;
-    if (hookText && hookText.trim() && startSec < hookDuration) {
-      startSec = hookDuration + 0.05;
-    }
-    const endSec = Math.max(startSec + 0.6, cue.end);
+    const startSec = cue.start;
+    const endSec = Math.max(startSec + 0.5, cue.end);
 
     if (endSec <= startSec) continue;
 

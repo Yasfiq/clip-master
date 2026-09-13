@@ -141,7 +141,10 @@ export default function ClipStudioModal({
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       const isInput =
-        target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable;
 
       if (e.key === 'Escape' && isOpen && !saving && !reBurning) {
         onClose();
@@ -451,6 +454,20 @@ export default function ClipStudioModal({
         </div>
       </header>
 
+      {/* Error Banner */}
+      {error && (
+        <div className="bg-red-950/80 border-b border-red-800 text-red-200 px-4 py-2 text-xs flex items-center justify-between z-30">
+          <span>{error}</span>
+          <button
+            type="button"
+            onClick={() => setError(null)}
+            className="text-red-400 hover:text-red-200 ml-2 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* ========================================================================= */}
       {/* 2. MAIN UPPER WORKSPACE: Tool Sidebar | Asset Drawer | Canvas | Inspector */}
       {/* ========================================================================= */}
@@ -578,15 +595,16 @@ export default function ClipStudioModal({
                         Gaya Subtitle (CapCut Preset)
                       </label>
                       <select
-                        value={studioConfig.subtitleStyleId || 'tiktok'}
+                        value={studioConfig.subtitleStyleId || 'clipajaib'}
                         onChange={(e) =>
                           setStudioConfig((prev) => ({ ...prev, subtitleStyleId: e.target.value }))
                         }
                         className="w-full text-xs bg-zinc-900 border border-zinc-750 text-zinc-100 rounded-md px-2.5 py-1.5 focus:border-blue-500 focus:outline-none"
                       >
-                        <option value="tiktok">
-                          Clip Ajaib (CapCut Kuning + Garis Hitam Tebal - Standar Baku)
+                        <option value="clipajaib">
+                          Clip Ajaib (CapCut Kuning + Outline Hitam - Standar Baku)
                         </option>
+                        <option value="tiktok">TikTok Style (Putih Bersih + Outline Hitam)</option>
                         <option value="sule">Sule Style (Bold Putih Elegan)</option>
                         <option value="kamal">Kamal Style (Outline Tegas)</option>
                       </select>
@@ -1114,7 +1132,7 @@ export default function ClipStudioModal({
 
                   let pillPlacement = 'absolute pointer-events-none z-20 ';
                   if (sourcePos === 'bottom') {
-                    pillPlacement += 'bottom-16 left-1/2 -translate-x-1/2';
+                    pillPlacement += 'bottom-28 left-1/2 -translate-x-1/2';
                   } else if (sourcePos === 'top-left') {
                     pillPlacement +=
                       isLogoVisible && logoPos === 'top-left' ? 'top-4 left-14' : 'top-4 left-4';

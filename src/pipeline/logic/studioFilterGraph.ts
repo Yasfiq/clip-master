@@ -85,10 +85,11 @@ export function getLogoOverlayCoordinates(
  */
 export function getPillOverlayCoordinates(
   position?: 'top-right' | 'top-left' | 'bottom' | 'bottom-right' | 'bottom-left' | string,
+  hasLogoInSameCorner?: boolean,
 ): string {
   switch (position) {
     case 'top-left':
-      return '40:50';
+      return hasLogoInSameCorner ? '140:50' : '40:50';
     case 'bottom':
       return '(W-w)/2:H-h-120';
     case 'bottom-right':
@@ -97,7 +98,7 @@ export function getPillOverlayCoordinates(
       return '40:H-h-135';
     case 'top-right':
     default:
-      return 'W-w-40:50';
+      return hasLogoInSameCorner ? 'W-w-140:50' : 'W-w-40:50';
   }
 }
 
@@ -267,7 +268,13 @@ export function buildStudioFilterGraph(
 
     // Overlay source pill (Default position: top-right)
     if (hasPillInput) {
-      const pillCoords = getPillOverlayCoordinates(config.sourcePosition || 'top-right');
+      const sameCorner =
+        hasLogoInput &&
+        (config.logoPosition || 'top-left') === (config.sourcePosition || 'top-right');
+      const pillCoords = getPillOverlayCoordinates(
+        config.sourcePosition || 'top-right',
+        sameCorner,
+      );
       chains.push(`[${pillInputIdx}:v]format=rgba[pill]`);
       chains.push(`[${currentVideoLabel}][pill]overlay=${pillCoords}:format=auto[v_pill]`);
       currentVideoLabel = 'v_pill';

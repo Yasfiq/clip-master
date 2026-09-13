@@ -100,13 +100,34 @@ describe('conversationalCaptions', () => {
       expect(ass).toContain('Style: DialogueStyle');
       expect(ass).toContain('Alignment, MarginL, MarginR, MarginV');
       // HookStyle alignment is 5 (middle center)
-      expect(ass).toMatch(/Style: HookStyle,Montserrat,72,&H0000E6FF.*,5,/);
-      // DialogueStyle alignment is 2 (bottom center) with MarginV 615
-      expect(ass).toMatch(/Style: DialogueStyle,Montserrat,50,&H0000E6FF.*,2,40,40,615/);
+      expect(ass).toMatch(/Style: HookStyle,Montserrat,72,&H0000EEFF.*,5,/);
+      // DialogueStyle alignment is 2 (bottom center) with MarginV 420 and FontSize 84
+      expect(ass).toMatch(/Style: DialogueStyle,Montserrat,84,&H0000EEFF.*,2,40,40,420/);
       expect(ass).toContain(
         'Dialogue: 0,0:00:00.00,0:00:03.10,HookStyle,,0,0,0,,Kebebasan Adalah\\NSegalanya',
       );
       expect(ass).toContain('Dialogue: 0,0:00:03.18,0:00:05.20,DialogueStyle');
+    });
+
+    it('does NOT drop dialogue cues that end during or before the hook duration', () => {
+      const ass = generateUnifiedAssDocument({
+        width: 1080,
+        height: 1920,
+        hookText: 'KEBEBASAN ADALAH SEGALANYA',
+        hookDuration: 3.1,
+        dialogueCues: [
+          {
+            start: 0.5,
+            end: 2.5,
+            text: 'Halo teman-teman',
+          },
+        ],
+      });
+
+      // Spoken speech during the hook must remain visible
+      expect(ass).toContain(
+        'Dialogue: 0,0:00:00.50,0:00:02.50,DialogueStyle,,0,0,0,,Halo teman-teman',
+      );
     });
   });
 });

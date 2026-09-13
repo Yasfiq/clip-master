@@ -26,10 +26,7 @@ import { generateHookTtsAudio } from '../logic/ttsVoiceover';
 import { parseSrt, serializeSrt, delaySubtitleCues } from '../logic/srtParser';
 import { writeSourcePillSvg } from '../logic/brandingPill';
 import { WordTiming, SrtCueInput } from '../logic/wordChunker';
-import {
-  generateUnifiedAssDocument,
-  chunkConversationalWords,
-} from '../logic/conversationalCaptions';
+import { generateUnifiedAssDocument } from '../logic/conversationalCaptions';
 
 async function fileExists(filePath: string): Promise<boolean> {
   try {
@@ -353,40 +350,24 @@ export async function reBurnClipSubtitles(
       const isConversationalStyle =
         !finalStudioConfig.subtitleStyleId ||
         finalStudioConfig.subtitleStyleId === 'clipajaib' ||
-        finalStudioConfig.subtitleStyleId === 'tiktok';
+        finalStudioConfig.subtitleStyleId === 'tiktok' ||
+        finalStudioConfig.subtitleStyleId === 'sule' ||
+        finalStudioConfig.subtitleStyleId === 'kamal' ||
+        Boolean(finalStudioConfig.hookText?.trim());
 
       if (isConversationalStyle) {
-        // Re-chunk into natural conversational dialogue clauses
-        let conversationalCues: SrtCueInput[] = parsedCues;
-        if (parsedCues.length > 0) {
-          const words: WordTiming[] = [];
-          for (const c of parsedCues) {
-            const tokens = c.text.trim().split(/\s+/).filter(Boolean);
-            const dur = (c.end - c.start) / Math.max(1, tokens.length);
-            tokens.forEach((t, i) => {
-              words.push({
-                text: t,
-                start: c.start + i * dur,
-                end: c.start + (i + 1) * dur,
-              });
-            });
-          }
-          conversationalCues = chunkConversationalWords(words, {
-            minWordsPerChunk: 5,
-            maxWordsPerChunk: 10,
-            addDialogueIndicator: true,
-          });
-        }
-
         const assContent = generateUnifiedAssDocument({
           width: targetW,
           height: targetH,
           hookText: finalStudioConfig.hookText?.trim() || '',
           hookDuration: finalStudioConfig.hookDuration || 3.1,
-          dialogueCues: conversationalCues,
+          dialogueCues: parsedCues,
           fontName: 'Montserrat',
-          primaryColorHex: '&H0000E6FF', // Bright CapCut yellow #FFE600
-          outlineColorHex: '&H00000000',
+          dialogueFontSize: style.fontSize || 84,
+          dialogueOutline: style.outline || 6.0,
+          dialogueMarginV: style.marginV || 420,
+          primaryColorHex: style.primaryColour,
+          outlineColorHex: style.outlineColour,
         });
 
         const assDestPath = path.join(PATHS.work, clip.jobId, 'subtitles', `${clip.id}_studio.ass`);

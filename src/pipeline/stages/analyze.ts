@@ -89,7 +89,7 @@ export class AnalyzeStage implements PipelineStageHandler {
     );
 
     const minViralScore =
-      typeof ctx.config?.minViralScore === 'number' ? ctx.config.minViralScore : 0.5;
+      typeof ctx.config?.minViralScore === 'number' ? ctx.config.minViralScore : 0.38;
 
     const { qualifying, selected } = selectViralMoments(ranked, {
       minViralScore,
@@ -242,7 +242,7 @@ export function selectViralMoments(
   ranked: AIScoredWindow[],
   options?: SelectViralMomentsOptions,
 ): SelectViralMomentsResult {
-  const minViralScore = typeof options?.minViralScore === 'number' ? options.minViralScore : 0.5;
+  const minViralScore = typeof options?.minViralScore === 'number' ? options.minViralScore : 0.38;
   const maxClips = Math.min(options?.maxClips || 15, 50);
 
   const qualifying = ranked.filter((w) => w.viralPotential >= minViralScore);

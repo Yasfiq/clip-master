@@ -39,12 +39,6 @@ export class CutStage implements PipelineStageHandler {
     const cutDir = path.join(ctx.workDir, 'cuts');
     await fs.mkdir(cutDir, { recursive: true });
 
-    // Sample hybrid audio + visual features across the source to detect
-    // "table only" / "no subject" empty ranges. Used downstream to trim
-    // dead time out of each selected segment.
-    await onProgress(0.02, 'Sampling audio + visual features for empty-frame filter');
-    const features = await this.sampleHybridFeatures(ctx.sourcePath!);
-
     ctx.stageData.clips = [];
 
     const totalSegments = segments.length;
@@ -56,10 +50,12 @@ export class CutStage implements PipelineStageHandler {
         `Cutting segment ${idx + 1}/${totalSegments} (${seg.startTime.toFixed(1)}s–${seg.endTime.toFixed(1)}s)`,
       );
 
-      // Subtract empty ranges from the segment window. If everything is
-      // empty, skip; if partially empty, the segment becomes multiple
-      // sub-clips (suffixed _a, _b, …).
-      const segFeatures = features.filter((f) => f.t >= seg.startTime && f.t <= seg.endTime);
+      // Sample hybrid audio + visual features for THIS segment (fast seek)
+      const segFeatures = await this.sampleSegmentFeatures(
+        ctx.sourcePath!,
+        seg.startTime,
+        seg.endTime,
+      );
       const empty = detectEmptyRanges(segFeatures);
       const keptRanges = dropTooShort(subtractEmpty(seg.startTime, seg.endTime, empty));
       if (keptRanges.length === 0) {
@@ -208,16 +204,15 @@ export class CutStage implements PipelineStageHandler {
   }
 
   /**
-   * Sample hybrid audio + visual features for empty-frame detection.
-   * Two-pass approach for clean timestamp alignment:
-   *   Pass 1: signalstats YDIF per frame (visual motion)
-   *   Pass 2: astats RMS per frame (audio energy)
-   * Both at 5 fps (0.2s intervals).
+   * Sample hybrid audio + visual features for empty-frame detection on a specific segment.
+   * Uses input seeking to only decode the segment's duration at 5 fps (~0.2s intervals),
+   * completing in ~0.5s instead of scanning the entire source video.
    */
-  private async sampleHybridFeatures(sourcePath: string): Promise<FrameFeature[]> {
-    // Single FFmpeg pass. Both filter chains dump per-frame metadata to
-    // stdout via metadata=print:file=-. Aggregated directly into 0.2s windows
-    // without buffering full stdout into memory (prevents OOM on long streams).
+  private async sampleSegmentFeatures(
+    sourcePath: string,
+    segmentStart: number,
+    segmentEnd: number,
+  ): Promise<FrameFeature[]> {
     const out: FrameFeature[] = [];
     interface WindowBucket {
       visualSum: number;
@@ -226,7 +221,7 @@ export class CutStage implements PipelineStageHandler {
       audioCount: number;
     }
     const windowMap = new Map<number, WindowBucket>();
-    let currentPts = 0;
+    let currentRelPts = 0;
     let maxVisualWinIdx = -1;
     let totalVisualSamples = 0;
     let totalAudioSamples = 0;
@@ -244,11 +239,17 @@ export class CutStage implements PipelineStageHandler {
       return bucket;
     };
 
+    const duration = Math.max(1, segmentEnd - segmentStart);
+
     await runBinaryChecked(
       'ffmpeg',
       [
+        '-ss',
+        String(segmentStart),
         '-i',
         sourcePath,
+        '-t',
+        String(duration),
         '-vf',
         'fps=5,signalstats=stat=tout,metadata=print:file=-',
         '-af',
@@ -258,19 +259,19 @@ export class CutStage implements PipelineStageHandler {
         '-',
       ],
       {
-        timeoutMs: 1800000,
+        timeoutMs: 60000,
         bufferStdout: false,
         onStdoutLine: (line) => {
           const f = mFrame.exec(line);
           if (f) {
-            currentPts = parseFloat(f[1]!);
+            currentRelPts = parseFloat(f[1]!);
             return;
           }
           const yd = mYdif.exec(line);
           if (yd) {
             const v = parseFloat(yd[1]!);
             if (isFinite(v)) {
-              const winIdx = Math.round(currentPts / 0.2);
+              const winIdx = Math.round(currentRelPts / 0.2);
               const bucket = getOrCreateBucket(winIdx);
               bucket.visualSum += v;
               bucket.visualCount += 1;
@@ -285,7 +286,7 @@ export class CutStage implements PipelineStageHandler {
           if (rms) {
             const v = parseFloat(rms[1]!);
             if (isFinite(v)) {
-              const winIdx = Math.floor((currentPts + 0.0001) / 0.2);
+              const winIdx = Math.floor((currentRelPts + 0.0001) / 0.2);
               const bucket = getOrCreateBucket(winIdx);
               bucket.audioSum += Math.max(0, (v + 60) / 60);
               bucket.audioCount += 1;
@@ -295,32 +296,29 @@ export class CutStage implements PipelineStageHandler {
         },
       },
     ).catch((err: any) => {
-      logger.warn(`Hybrid feature sampling failed; empty-frame filter disabled: ${err.message}`);
+      logger.warn(
+        `Segment feature sampling failed for [${segmentStart}-${segmentEnd}]; skipping empty-frame filter: ${err.message}`,
+      );
     });
 
     if (totalVisualSamples === 0 || maxVisualWinIdx < 0) {
-      logger.warn('No visual features sampled; empty-frame filter disabled');
       return out;
     }
 
-    const maxT = maxVisualWinIdx * 0.2;
     for (let i = 0; i <= maxVisualWinIdx; i++) {
-      const t = i * 0.2;
+      const absT = segmentStart + i * 0.2;
       const bucket = windowMap.get(i);
       const avgVisual =
         bucket && bucket.visualCount > 0 ? bucket.visualSum / bucket.visualCount : 0;
       const avgAudio = bucket && bucket.audioCount > 0 ? bucket.audioSum / bucket.audioCount : 0;
 
       out.push({
-        t: Number(t.toFixed(3)),
+        t: Number(absT.toFixed(3)),
         audioEnergy: Math.min(1, Math.max(0, avgAudio)),
         visualMotion: avgVisual < 0.01 ? 0 : Math.min(1, avgVisual / 10),
       });
     }
 
-    logger.info(
-      `Sampled ${out.length} hybrid frames (${totalVisualSamples} visual, ${totalAudioSamples} audio) up to ${maxT.toFixed(1)}s for empty-frame filter`,
-    );
     return out;
   }
 }

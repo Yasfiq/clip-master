@@ -291,7 +291,7 @@ describe('analyze', () => {
       };
     }
 
-    it('filters candidate windows using default minViralScore of 0.50', () => {
+    it('filters candidate windows using default minViralScore of 0.38', () => {
       const ranked = [
         makeWindow(0, 60, 0.85),
         makeWindow(60, 120, 0.65),
@@ -299,10 +299,10 @@ describe('analyze', () => {
         makeWindow(180, 240, 0.3),
       ];
       const result = selectViralMoments(ranked);
-      expect(result.minViralScore).toBe(0.5);
-      expect(result.qualifying).toHaveLength(2);
-      expect(result.selected).toHaveLength(2);
-      expect(result.selected.map((w) => w.startTime)).toEqual([0, 60]);
+      expect(result.minViralScore).toBe(0.38);
+      expect(result.qualifying).toHaveLength(3);
+      expect(result.selected).toHaveLength(3);
+      expect(result.selected.map((w) => w.startTime)).toEqual([0, 60, 120]);
     });
 
     it('respects custom minViralScore threshold', () => {

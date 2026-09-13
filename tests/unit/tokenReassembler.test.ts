@@ -97,6 +97,27 @@ describe('tokenReassembler', () => {
     expect(cues[3]!.text).toBe('Beneran.');
   });
 
+  it('preserves hyphens in Indonesian reduplication words (e.g. "jalan-jalan", "anak-anak")', () => {
+    const tokens: RawWhisperToken[] = [
+      { text: ' Kita', offsets: { from: 100, to: 300 } },
+      { text: ' jalan', offsets: { from: 300, to: 600 } },
+      { text: '-', offsets: { from: 600, to: 650 } },
+      { text: 'jalan', offsets: { from: 650, to: 950 } },
+      { text: ' bersama', offsets: { from: 950, to: 1200 } },
+      { text: ' anak', offsets: { from: 1200, to: 1400 } },
+      { text: '-', offsets: { from: 1400, to: 1450 } },
+      { text: ' anak', offsets: { from: 1450, to: 1700 } },
+    ];
+
+    const words = reassembleWhisperTokens(tokens);
+    expect(words).toHaveLength(4);
+    expect(words.map((w) => w.text)).toEqual(['Kita', 'jalan-jalan', 'bersama', 'anak-anak']);
+    expect(words[1]!.start).toBeCloseTo(0.3);
+    expect(words[1]!.end).toBeCloseTo(0.95);
+    expect(words[3]!.start).toBeCloseTo(1.2);
+    expect(words[3]!.end).toBeCloseTo(1.7);
+  });
+
   it('handles first token without leading space properly', () => {
     const tokens: RawWhisperToken[] = [
       { text: 'Halo', offsets: { from: 0, to: 500 } },
