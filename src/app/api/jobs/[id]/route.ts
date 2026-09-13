@@ -71,7 +71,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         if (msg.includes('not in RUNNING')) {
           return apiError(
             ErrorCode.JOB_NOT_READY,
-            `Job ${id} is not running — only active phase runs can be cancelled`,
+            `Job ${id} is not running: only active phase runs can be cancelled`,
           );
         }
         logger.error('Failed to cancel job', { jobId: id, error: msg });
@@ -105,10 +105,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
         return apiError(ErrorCode.JOB_NOT_FOUND, `Job ${id} not found`);
       }
       if (msg.includes('is running')) {
-        return apiError(
-          ErrorCode.JOB_NOT_READY,
-          `Job ${id} is running — cancel it before deleting`,
-        );
+        return apiError(ErrorCode.JOB_NOT_READY, `Job ${id} is running: cancel it before deleting`);
       }
       logger.error('Failed to delete job', { jobId: id, error: msg });
       return apiError(ErrorCode.INTERNAL, msg);

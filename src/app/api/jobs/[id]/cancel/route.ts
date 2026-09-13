@@ -21,7 +21,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     if (msg.includes('not in RUNNING')) {
       return apiError(
         ErrorCode.JOB_NOT_READY,
-        `Job ${id} is not running — only active phase runs can be cancelled`,
+        `Job ${id} is not running: only active phase runs can be cancelled`,
       );
     }
     logger.error('Failed to cancel job', { jobId: id, error: msg });

@@ -6,7 +6,6 @@ import { StudioConfig, DEFAULT_STUDIO_CONFIG } from '@/types/clipStudio';
 import {
   X,
   Loader2,
-  Sparkles,
   Type,
   Image as ImageIcon,
   MessageSquare,
@@ -130,7 +129,7 @@ export default function ClipStudioModal({
     }
   }, [isOpen, initialTab, fetchStudioData]);
 
-  // Keyboard accessibility: Close on Escape, Play/Pause on Space
+  // Keyboard accessibility: Close on Escape, Play/Pause on Space, ArrowLeft/ArrowRight to seek ±1s
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -142,11 +141,26 @@ export default function ClipStudioModal({
       } else if (e.code === 'Space' && isOpen && !isInput) {
         e.preventDefault();
         togglePlay();
+      } else if (e.key === 'ArrowLeft' && isOpen && !isInput) {
+        e.preventDefault();
+        if (videoRef.current) {
+          const targetSec = Math.max(0, videoRef.current.currentTime - 1.0);
+          videoRef.current.currentTime = targetSec;
+          setCurrentTime(targetSec);
+        }
+      } else if (e.key === 'ArrowRight' && isOpen && !isInput) {
+        e.preventDefault();
+        if (videoRef.current) {
+          const maxSec = duration || videoRef.current.duration || 60;
+          const targetSec = Math.min(maxSec, videoRef.current.currentTime + 1.0);
+          videoRef.current.currentTime = targetSec;
+          setCurrentTime(targetSec);
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, saving, reBurning, isPlaying, onClose]);
+  }, [isOpen, saving, reBurning, isPlaying, duration, onClose]);
 
   const togglePlay = () => {
     if (!videoRef.current) return;
@@ -376,7 +390,7 @@ export default function ClipStudioModal({
         <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded bg-zinc-900/90 border border-zinc-800 text-xs font-mono text-zinc-300">
           <Clock className="w-3.5 h-3.5 text-blue-400" />
           <span className="text-zinc-100 font-semibold">{formatTimecode(currentTime)}</span>
-          <span className="text-zinc-600">/</span>
+          <span className="text-zinc-400">/</span>
           <span className="text-zinc-400">{formatTimecode(duration)}</span>
         </div>
 
@@ -393,7 +407,7 @@ export default function ClipStudioModal({
             type="button"
             onClick={() => handleSaveDraft(true)}
             disabled={saving || reBurning || loading}
-            className="px-3 py-1.5 text-xs font-semibold text-zinc-200 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md transition-colors cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5 shadow-sm"
+            className="px-3 py-1.5 min-h-[38px] text-xs font-semibold text-zinc-200 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md transition-colors cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           >
             {saving && <Loader2 className="w-3 h-3 animate-spin text-blue-400" />}
             <span>Simpan Draf</span>
@@ -404,7 +418,7 @@ export default function ClipStudioModal({
             type="button"
             onClick={handleRenderStudio}
             disabled={saving || reBurning || loading}
-            className="px-4 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-md transition-all shadow-md shadow-blue-600/20 cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5"
+            className="px-4 py-1.5 min-h-[38px] text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-md transition-all shadow-md shadow-blue-600/20 cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           >
             {reBurning ? (
               <>
@@ -413,7 +427,7 @@ export default function ClipStudioModal({
               </>
             ) : (
               <>
-                <Sparkles className="w-3.5 h-3.5" />
+                <Film className="w-3.5 h-3.5" />
                 <span>🎬 Render Video Studio</span>
               </>
             )}
@@ -422,7 +436,7 @@ export default function ClipStudioModal({
           <button
             type="button"
             onClick={onClose}
-            className="text-zinc-400 hover:text-zinc-200 p-1.5 rounded hover:bg-zinc-800 transition-colors ml-1 cursor-pointer"
+            className="text-zinc-400 hover:text-zinc-200 p-1.5 min-h-[38px] min-w-[38px] rounded hover:bg-zinc-800 transition-colors ml-1 cursor-pointer flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             title="Batal / Tutup"
           >
             <X className="w-4 h-4" />
@@ -439,7 +453,7 @@ export default function ClipStudioModal({
           <button
             type="button"
             onClick={() => setActiveTab('subtitle')}
-            className={`w-12 h-12 rounded-lg flex flex-col items-center justify-center gap-1 text-[10px] transition-all cursor-pointer ${
+            className={`w-12 h-12 rounded-lg flex flex-col items-center justify-center gap-1 text-[10px] transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
               activeTab === 'subtitle'
                 ? 'bg-blue-600/20 text-blue-400 font-semibold border border-blue-500/40 shadow-inner'
                 : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
@@ -453,7 +467,7 @@ export default function ClipStudioModal({
           <button
             type="button"
             onClick={() => setActiveTab('hook')}
-            className={`w-12 h-12 rounded-lg flex flex-col items-center justify-center gap-1 text-[10px] transition-all cursor-pointer ${
+            className={`w-12 h-12 rounded-lg flex flex-col items-center justify-center gap-1 text-[10px] transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
               activeTab === 'hook'
                 ? 'bg-blue-600/20 text-blue-400 font-semibold border border-blue-500/40 shadow-inner'
                 : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
@@ -467,7 +481,7 @@ export default function ClipStudioModal({
           <button
             type="button"
             onClick={() => setActiveTab('branding')}
-            className={`w-12 h-12 rounded-lg flex flex-col items-center justify-center gap-1 text-[10px] transition-all cursor-pointer ${
+            className={`w-12 h-12 rounded-lg flex flex-col items-center justify-center gap-1 text-[10px] transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
               activeTab === 'branding'
                 ? 'bg-blue-600/20 text-blue-400 font-semibold border border-blue-500/40 shadow-inner'
                 : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
@@ -481,7 +495,7 @@ export default function ClipStudioModal({
           <button
             type="button"
             onClick={() => setActiveTab('transition')}
-            className={`w-12 h-12 rounded-lg flex flex-col items-center justify-center gap-1 text-[10px] transition-all cursor-pointer ${
+            className={`w-12 h-12 rounded-lg flex flex-col items-center justify-center gap-1 text-[10px] transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
               activeTab === 'transition'
                 ? 'bg-blue-600/20 text-blue-400 font-semibold border border-blue-500/40 shadow-inner'
                 : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
@@ -495,7 +509,7 @@ export default function ClipStudioModal({
           <button
             type="button"
             onClick={() => setActiveTab('audio')}
-            className={`w-12 h-12 rounded-lg flex flex-col items-center justify-center gap-1 text-[10px] transition-all cursor-pointer ${
+            className={`w-12 h-12 rounded-lg flex flex-col items-center justify-center gap-1 text-[10px] transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
               activeTab === 'audio'
                 ? 'bg-blue-600/20 text-blue-400 font-semibold border border-blue-500/40 shadow-inner'
                 : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
@@ -651,7 +665,7 @@ export default function ClipStudioModal({
                         placeholder="Contoh: KEBEBASAN ADALAH SEGALANYA..."
                         className="w-full text-xs bg-zinc-900 border border-zinc-750 text-zinc-100 rounded-md px-3 py-2 focus:border-blue-500 focus:outline-none font-semibold"
                       />
-                      <p className="text-[10px] text-zinc-500 mt-1">
+                      <p className="text-[10px] text-zinc-400 mt-1">
                         Teks banner huruf kapital 3-5 kata untuk merebut perhatian audiens di 3
                         detik awal.
                       </p>
@@ -908,7 +922,7 @@ export default function ClipStudioModal({
                           }
                           className="w-full accent-blue-500 cursor-pointer"
                         />
-                        <p className="text-[10px] text-zinc-500 mt-1">
+                        <p className="text-[10px] text-zinc-400 mt-1">
                           Efek transisi video memudar masuk dari warna hitam di detik awal.
                         </p>
                       </div>
@@ -934,7 +948,7 @@ export default function ClipStudioModal({
                           }
                           className="w-full accent-blue-500 cursor-pointer"
                         />
-                        <p className="text-[10px] text-zinc-500 mt-1">
+                        <p className="text-[10px] text-zinc-400 mt-1">
                           Efek transisi video memudar keluar ke warna hitam sebelum video selesai.
                         </p>
                       </div>
@@ -1204,7 +1218,7 @@ export default function ClipStudioModal({
               </div>
             </div>
           ) : (
-            <div className="text-zinc-500 text-[11px] py-4 text-center">
+            <div className="text-zinc-400 text-[11px] py-4 text-center">
               Klik balok subtitle di timeline untuk mengedit properti cue.
             </div>
           )}
@@ -1216,19 +1230,19 @@ export default function ClipStudioModal({
             </span>
             <div className="bg-zinc-900/60 p-2.5 rounded border border-zinc-800 space-y-1 text-[11px] font-mono">
               <div className="flex justify-between">
-                <span className="text-zinc-500">Resolusi:</span>
+                <span className="text-zinc-400">Resolusi:</span>
                 <span className="text-zinc-300">1080 x 1920 (9:16)</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-zinc-500">Frame Rate:</span>
+                <span className="text-zinc-400">Frame Rate:</span>
                 <span className="text-zinc-300">30 fps</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-zinc-500">Durasi:</span>
+                <span className="text-zinc-400">Durasi:</span>
                 <span className="text-zinc-300">{duration.toFixed(1)}s</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-zinc-500">Active Speaker:</span>
+                <span className="text-zinc-400">Active Speaker:</span>
                 <span className="text-emerald-400">Dynamic Face Crop</span>
               </div>
             </div>
@@ -1252,7 +1266,7 @@ export default function ClipStudioModal({
               Playhead: <strong className="text-blue-400">{formatTimecode(currentTime)}</strong>
             </span>
             <div className="h-3 w-px bg-zinc-700 mx-1" />
-            <span className="text-[10px] text-zinc-500">Space: Play/Pause • Esc: Keluar</span>
+            <span className="text-[10px] text-zinc-400">Space: Play/Pause • Esc: Keluar</span>
           </div>
 
           {/* Timeline Zoom Controls */}
@@ -1260,7 +1274,7 @@ export default function ClipStudioModal({
             <button
               type="button"
               onClick={() => setTimelineZoom((z) => Math.max(0.6, z - 0.2))}
-              className="text-zinc-400 hover:text-white p-0.5 rounded cursor-pointer"
+              className="text-zinc-400 hover:text-white p-0.5 rounded cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
               title="Zoom Out"
             >
               <ZoomOut className="w-3.5 h-3.5" />
@@ -1277,7 +1291,7 @@ export default function ClipStudioModal({
             <button
               type="button"
               onClick={() => setTimelineZoom((z) => Math.min(2.5, z + 0.2))}
-              className="text-zinc-400 hover:text-white p-0.5 rounded cursor-pointer"
+              className="text-zinc-400 hover:text-white p-0.5 rounded cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
               title="Zoom In"
             >
               <ZoomIn className="w-3.5 h-3.5" />
@@ -1285,7 +1299,7 @@ export default function ClipStudioModal({
             <button
               type="button"
               onClick={() => setTimelineZoom(1.0)}
-              className="text-[10px] font-mono text-zinc-400 hover:text-white px-1.5 py-0.5 rounded bg-zinc-800 cursor-pointer"
+              className="text-[10px] font-mono text-zinc-400 hover:text-white px-1.5 py-0.5 rounded bg-zinc-800 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             >
               1.0x
             </button>
@@ -1308,7 +1322,7 @@ export default function ClipStudioModal({
             className="relative h-full flex flex-col gap-1.5"
           >
             {/* A. Time Ruler (Detik Marker) */}
-            <div className="h-5 relative border-b border-zinc-800 text-[9px] text-zinc-500 font-mono select-none">
+            <div className="h-5 relative border-b border-zinc-800 text-[9px] text-zinc-400 font-mono select-none">
               {Array.from({ length: Math.ceil((duration || 35) / 5) + 1 }).map((_, i) => {
                 const sec = i * 5;
                 const xPos = sec * pixelsPerSecond;

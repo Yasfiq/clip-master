@@ -25,7 +25,7 @@ export default function GlobalError({
         <div className="text-5xl mb-4">⚠️</div>
         <h1 className="text-xl font-semibold text-gray-900 mb-2">Something went wrong</h1>
         <p className="text-sm text-gray-500 mb-6">
-          A rendering error occurred. Your jobs and clips are safe on disk — reload or retry to
+          A rendering error occurred. Your jobs and clips are safe on disk, reload or retry to
           continue.
         </p>
         <div className="flex justify-center gap-3">
