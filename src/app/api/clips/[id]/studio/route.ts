@@ -85,11 +85,29 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       cues = parseSrt(srtContent);
     }
 
+    let hasClean = false;
+    if (clip.editedPath) {
+      const p = path.isAbsolute(clip.editedPath)
+        ? clip.editedPath
+        : path.resolve(PATHS.work, clip.editedPath);
+      hasClean = await fileExists(p);
+    }
+    if (!hasClean && clip.cutPath) {
+      const p = path.isAbsolute(clip.cutPath)
+        ? clip.cutPath
+        : path.resolve(PATHS.work, clip.cutPath);
+      hasClean = await fileExists(p);
+    }
+    if (!hasClean && (clip.editedPath || clip.cutPath) && !clip.exportPath) {
+      hasClean = true;
+    }
+
     return apiSuccess({
       clip,
       studioConfig,
       cues,
-      videoUrl: `/api/clips/${id}/file`,
+      isCleanVideo: hasClean,
+      videoUrl: `/api/clips/${id}/file?clean=1`,
     });
   }, req);
 }

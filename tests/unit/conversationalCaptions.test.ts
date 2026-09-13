@@ -101,12 +101,26 @@ describe('conversationalCaptions', () => {
       expect(ass).toContain('Alignment, MarginL, MarginR, MarginV');
       // HookStyle alignment is 5 (middle center)
       expect(ass).toMatch(/Style: HookStyle,Montserrat,72,&H0000EEFF.*,5,/);
-      // DialogueStyle alignment is 2 (bottom center) with MarginV 420 and FontSize 84
-      expect(ass).toMatch(/Style: DialogueStyle,Montserrat,84,&H0000EEFF.*,2,40,40,420/);
+      // DialogueStyle alignment is 2 (bottom center) with MarginV 420, FontSize 62, and Outline 4.5
+      expect(ass).toMatch(/Style: DialogueStyle,Montserrat,62,&H0000EEFF.*,1,4.5,1,2,40,40,420/);
       expect(ass).toContain(
         'Dialogue: 0,0:00:00.00,0:00:03.10,HookStyle,,0,0,0,,Kebebasan Adalah\\NSegalanya',
       );
       expect(ass).toContain('Dialogue: 0,0:00:03.18,0:00:05.20,DialogueStyle');
+    });
+
+    it('calibrates fontSize and outline appropriately for 720p vs 1080p', () => {
+      const ass1080p = generateUnifiedAssDocument({
+        width: 1080,
+        height: 1920,
+      });
+      expect(ass1080p).toMatch(/Style: DialogueStyle,Montserrat,62,.*,4.5,1,2,/);
+
+      const ass720p = generateUnifiedAssDocument({
+        width: 720,
+        height: 1280,
+      });
+      expect(ass720p).toMatch(/Style: DialogueStyle,Montserrat,40,.*,3,1,2,/);
     });
 
     it('does NOT drop dialogue cues that end during or before the hook duration', () => {

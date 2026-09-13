@@ -257,9 +257,9 @@ export function generateUnifiedAssDocument(options: UnifiedAssOptions): string {
 
   const is1080p = width >= 1000;
   const hookFontSize = options.hookFontSize ?? (is1080p ? 72 : 48);
-  const dialogueFontSize = options.dialogueFontSize ?? 84;
+  const dialogueFontSize = options.dialogueFontSize ?? (is1080p ? 62 : 40);
   const hookOutline = is1080p ? 6 : 4;
-  const dialogueOutline = options.dialogueOutline ?? 6.0;
+  const dialogueOutline = options.dialogueOutline ?? (is1080p ? 4.5 : 3.0);
   const dialogueMarginV = options.dialogueMarginV ?? 420;
 
   const events: string[] = [];

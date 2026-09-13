@@ -25,26 +25,60 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return apiError(ErrorCode.JOB_NOT_FOUND, `Clip ${id} not found`, null);
     }
 
-    const rel = clip.exportPath || clip.editedPath || clip.cutPath;
+    const { searchParams } = new URL(req.url);
+    const isClean =
+      searchParams.get('clean') === '1' ||
+      searchParams.get('clean') === 'true' ||
+      searchParams.get('type') === 'clean' ||
+      searchParams.get('mode') === 'studio';
+
+    let rel = isClean
+      ? clip.editedPath || clip.cutPath || clip.exportPath
+      : clip.exportPath || clip.editedPath || clip.cutPath;
     if (!rel) {
       return apiError(ErrorCode.INTERNAL, `Clip ${id} has no media file on disk`);
     }
 
-    const base = clip.exportPath ? PATHS.exports : PATHS.work;
-    const absolute = path.resolve(base, rel);
+    let base =
+      isClean && (clip.editedPath || clip.cutPath)
+        ? PATHS.work
+        : clip.exportPath
+          ? PATHS.exports
+          : PATHS.work;
+    let absolute = path.resolve(base, rel);
     // Guard: resolved path must stay inside the base directory.
     if (!absolute.startsWith(base + path.sep)) {
       return apiError(ErrorCode.INTERNAL, 'Refusing to serve path outside media directory');
     }
 
     let size: number;
+    let isCleanServed = Boolean(isClean && (clip.editedPath || clip.cutPath));
     try {
       const st = await stat(absolute);
       size = st.size;
     } catch {
-      // Preferred file missing — try the next fallback (cut/edited not present
-      // in the same order). exportPath present but file gone -> error.
-      return apiError(ErrorCode.INTERNAL, `Clip media file missing on disk: ${rel}`);
+      // If clean file missing on disk but exportPath exists, try falling back to exportPath
+      if (isClean && clip.exportPath && rel !== clip.exportPath) {
+        const fallbackBase = PATHS.exports;
+        const fallbackRel = clip.exportPath;
+        const fallbackAbs = path.resolve(fallbackBase, fallbackRel);
+        if (fallbackAbs.startsWith(fallbackBase + path.sep)) {
+          try {
+            const fallbackSt = await stat(fallbackAbs);
+            rel = fallbackRel;
+            base = fallbackBase;
+            absolute = fallbackAbs;
+            size = fallbackSt.size;
+            isCleanServed = false;
+          } catch {
+            return apiError(ErrorCode.INTERNAL, `Clip media file missing on disk: ${rel}`);
+          }
+        } else {
+          return apiError(ErrorCode.INTERNAL, `Clip media file missing on disk: ${rel}`);
+        }
+      } else {
+        return apiError(ErrorCode.INTERNAL, `Clip media file missing on disk: ${rel}`);
+      }
     }
 
     const headers: Record<string, string> = {
@@ -52,6 +86,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       'Accept-Ranges': 'bytes',
       'Content-Length': String(size),
       'Cache-Control': 'no-cache, must-revalidate',
+      'x-clean-video': isCleanServed ? '1' : '0',
     };
     const rangeHeader = req.headers.get('range');
 

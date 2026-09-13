@@ -78,6 +78,8 @@ export default function ClipStudioModal({
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [selectedCueIndex, setSelectedCueIndex] = useState<number | null>(0);
   const [timelineZoom, setTimelineZoom] = useState<number>(1.0); // 1x to 3x
+  const [isCleanVideo, setIsCleanVideo] = useState<boolean>(true);
+  const [showInspector, setShowInspector] = useState<boolean>(false);
 
   // Logo state
   const [logoExists, setLogoExists] = useState<boolean>(false);
@@ -105,6 +107,9 @@ export default function ClipStudioModal({
       }
 
       const data = studioPayload.data;
+      if (typeof data.isCleanVideo === 'boolean') {
+        setIsCleanVideo(data.isCleanVideo);
+      }
       if (data.studioConfig) {
         setStudioConfig({
           ...DEFAULT_STUDIO_CONFIG,
@@ -348,7 +353,7 @@ export default function ClipStudioModal({
 
   if (!isOpen) return null;
 
-  const videoSrc = `/api/clips/${clipId}/file?t=${videoTimestampKey}`;
+  const videoSrc = `/api/clips/${clipId}/file?clean=1&t=${videoTimestampKey}`;
   const pixelsPerSecond = 24 * timelineZoom;
   const totalTimelineWidth = Math.max(duration * pixelsPerSecond, 800);
   const activeCue = cues.find((c) => currentTime >= c.start && currentTime <= c.end);
@@ -412,6 +417,20 @@ export default function ClipStudioModal({
               <span>{statusMessage}</span>
             </div>
           )}
+
+          <button
+            type="button"
+            onClick={() => setShowInspector((prev) => !prev)}
+            className={`hidden xl:inline-flex 2xl:hidden px-2.5 py-1.5 min-h-[38px] text-xs font-semibold rounded-md border transition-colors cursor-pointer items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+              showInspector
+                ? 'bg-zinc-700 text-white border-zinc-600'
+                : 'text-zinc-300 bg-zinc-800 hover:bg-zinc-700 border-zinc-700'
+            }`}
+            title="Tampilkan / Sembunyikan Inspector Properti"
+          >
+            <Sliders className="w-3.5 h-3.5 text-blue-400" />
+            <span>Inspector</span>
+          </button>
 
           <button
             type="button"
@@ -546,7 +565,7 @@ export default function ClipStudioModal({
         </div>
 
         {/* B. Asset / Tool Drawer */}
-        <div className="w-80 md:w-96 bg-[#16161c] border-r border-zinc-800/80 flex flex-col overflow-hidden shrink-0">
+        <div className="w-72 xl:w-80 2xl:w-96 bg-[#16161c] border-r border-zinc-800/80 flex flex-col overflow-hidden shrink-0">
           {/* Drawer Sub-Header */}
           <div className="h-10 px-4 border-b border-zinc-800 flex items-center justify-between bg-[#131317]">
             <span className="text-xs font-semibold text-zinc-200 uppercase tracking-wider flex items-center gap-1.5">
@@ -1080,7 +1099,7 @@ export default function ClipStudioModal({
         <div className="flex-1 bg-[#09090c] flex flex-col items-center justify-between p-3 relative min-w-0 overflow-hidden">
           {/* Canvas Container */}
           <div className="flex-1 flex items-center justify-center w-full min-h-0">
-            <div className="relative aspect-[9/16] h-full max-h-[calc(100vh-320px)] w-auto bg-black rounded-lg shadow-2xl border border-zinc-800 overflow-hidden flex items-center justify-center">
+            <div className="relative aspect-[9/16] h-full min-h-[280px] max-h-[calc(100vh-320px)] w-auto bg-black rounded-lg shadow-2xl border border-zinc-800 overflow-hidden flex items-center justify-center">
               <video
                 ref={videoRef}
                 src={videoSrc}
@@ -1094,9 +1113,17 @@ export default function ClipStudioModal({
                 onClick={togglePlay}
               />
 
+              {/* Notice when playing an already exported / hardsubbed video */}
+              {!isCleanVideo && (
+                <div className="absolute top-2 left-2 z-30 px-2 py-0.5 rounded bg-zinc-900/90 border border-zinc-750 text-[10px] text-amber-400 font-mono shadow-sm flex items-center gap-1.5 pointer-events-none">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                  <span>Preview Ekspor (Hardsub)</span>
+                </div>
+              )}
+
               {/* Overlaid Mockup Layers (Matches Actual Render) */}
-              {/* Layer 1A: Watermark Logo */}
-              {studioConfig.logoEnabled && logoExists && (
+              {/* Layer 1A: Watermark Logo - only render if clean video */}
+              {studioConfig.logoEnabled && logoExists && isCleanVideo && (
                 <div
                   className={`pointer-events-none z-20 ${
                     (studioConfig.logoPosition || 'top-left') === 'top-left'
@@ -1126,7 +1153,7 @@ export default function ClipStudioModal({
               {studioConfig.sourceEnabled &&
                 studioConfig.sourceText &&
                 (() => {
-                  const isLogoVisible = studioConfig.logoEnabled && logoExists;
+                  const isLogoVisible = studioConfig.logoEnabled && logoExists && isCleanVideo;
                   const logoPos = studioConfig.logoPosition || 'top-left';
                   const sourcePos = studioConfig.sourcePosition || 'top-right';
 
@@ -1166,8 +1193,8 @@ export default function ClipStudioModal({
                 </div>
               )}
 
-              {/* Layer 3: Active Subtitle Preview in CapCut Yellow */}
-              {activeCue && (
+              {/* Layer 3: Active Subtitle Preview - only render if clean video */}
+              {activeCue && isCleanVideo && (
                 <div className="absolute bottom-16 left-3 right-3 text-center pointer-events-none z-20">
                   <span className="font-montserrat font-black text-amber-300 text-xs sm:text-sm px-2 py-1 rounded drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] stroke-black tracking-tight leading-snug whitespace-pre-line">
                     {activeCue.text}
@@ -1270,7 +1297,11 @@ export default function ClipStudioModal({
         </div>
 
         {/* D. Right Inspector Panel (Properties) */}
-        <div className="w-72 md:w-80 bg-[#16161c] border-l border-zinc-800/80 flex flex-col overflow-y-auto p-4 shrink-0 text-xs space-y-4">
+        <div
+          className={`${
+            showInspector ? 'flex w-64 xl:w-72' : 'hidden 2xl:flex'
+          } 2xl:w-80 bg-[#16161c] border-l border-zinc-800/80 flex-col overflow-y-auto p-4 shrink-0 text-xs space-y-4`}
+        >
           <div className="border-b border-zinc-800 pb-2">
             <span className="text-xs font-semibold text-zinc-200 uppercase tracking-wider flex items-center gap-1.5">
               <Sliders className="w-3.5 h-3.5 text-blue-400" />
@@ -1354,7 +1385,7 @@ export default function ClipStudioModal({
       {/* ========================================================================= */}
       {/* 3. MULTI-TRACK TIMELINE (CapCut NLE Style)                                */}
       {/* ========================================================================= */}
-      <footer className="h-56 md:h-64 bg-[#121216] border-t border-zinc-800/90 flex flex-col shrink-0 select-none overflow-hidden">
+      <footer className="h-48 md:h-52 lg:h-56 bg-[#121216] border-t border-zinc-800/90 flex flex-col shrink-0 select-none overflow-hidden">
         {/* Timeline Header Toolbar */}
         <div className="h-7 px-3 bg-[#15151b] border-b border-zinc-800 flex items-center justify-between text-[11px] shrink-0">
           <div className="flex items-center gap-2">
@@ -1405,7 +1436,7 @@ export default function ClipStudioModal({
         {/* Timeline Scrollable Track Area */}
         <div
           ref={timelineRef}
-          className="flex-1 overflow-x-auto overflow-y-auto relative bg-[#0e0e12] p-2"
+          className="flex-1 overflow-x-auto overflow-y-auto relative bg-[#0e0e12] p-1.5"
           onClick={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
             const clickX = e.clientX - rect.left + e.currentTarget.scrollLeft;
@@ -1415,7 +1446,7 @@ export default function ClipStudioModal({
         >
           <div
             style={{ width: `${totalTimelineWidth}px` }}
-            className="relative h-full flex flex-col gap-1.5"
+            className="relative h-full flex flex-col gap-1"
           >
             {/* A. Time Ruler (Detik Marker) */}
             <div className="h-5 relative border-b border-zinc-800 text-[9px] text-zinc-400 font-mono select-none">
@@ -1441,7 +1472,7 @@ export default function ClipStudioModal({
             </div>
 
             {/* TRACK 1: Hook Banner */}
-            <div className="h-7 bg-zinc-900/60 rounded border border-zinc-800 relative flex items-center px-2">
+            <div className="h-6 bg-zinc-900/60 rounded border border-zinc-800 relative flex items-center px-2">
               <span className="text-[10px] font-mono text-zinc-400 w-16 shrink-0 flex items-center gap-1">
                 <Type className="w-3 h-3 text-amber-400" /> Hook
               </span>
@@ -1453,7 +1484,7 @@ export default function ClipStudioModal({
                       setActiveTab('hook');
                       handleSeek(0);
                     }}
-                    className="absolute top-1 bottom-1 bg-amber-500/80 hover:bg-amber-400 text-black text-[10px] font-bold px-2 rounded flex items-center truncate cursor-pointer shadow-sm border border-amber-300 transition-colors"
+                    className="absolute top-0.5 bottom-0.5 bg-amber-500/80 hover:bg-amber-400 text-black text-[10px] font-bold px-2 rounded flex items-center truncate cursor-pointer shadow-sm border border-amber-300 transition-colors"
                     style={{ left: '0px', width: `${3.1 * pixelsPerSecond}px` }}
                     title={`Hook: ${studioConfig.hookText}`}
                   >
@@ -1464,7 +1495,7 @@ export default function ClipStudioModal({
             </div>
 
             {/* TRACK 2: Subtitle Captions Track */}
-            <div className="h-8 bg-zinc-900/60 rounded border border-zinc-800 relative flex items-center px-2">
+            <div className="h-7 bg-zinc-900/60 rounded border border-zinc-800 relative flex items-center px-2">
               <span className="text-[10px] font-mono text-zinc-400 w-16 shrink-0 flex items-center gap-1">
                 <MessageSquare className="w-3 h-3 text-blue-400" /> Sub
               </span>
@@ -1483,7 +1514,7 @@ export default function ClipStudioModal({
                         setActiveTab('subtitle');
                         handleSeek(cue.start);
                       }}
-                      className={`absolute top-1 bottom-1 text-[9px] font-medium px-1 rounded flex items-center truncate cursor-pointer transition-all border ${
+                      className={`absolute top-0.5 bottom-0.5 text-[9px] font-medium px-1 rounded flex items-center truncate cursor-pointer transition-all border ${
                         isCurrent
                           ? 'bg-amber-400 text-black border-amber-300 font-bold shadow-md z-10'
                           : 'bg-blue-950/80 text-blue-200 border-blue-800 hover:bg-blue-900'
@@ -1510,7 +1541,7 @@ export default function ClipStudioModal({
                       e.stopPropagation();
                       setActiveTab('branding');
                     }}
-                    className="absolute top-1 bottom-1 bg-emerald-950/80 text-emerald-300 text-[9px] font-medium px-2 rounded flex items-center truncate cursor-pointer border border-emerald-800/80"
+                    className="absolute top-0.5 bottom-0.5 bg-emerald-950/80 text-emerald-300 text-[9px] font-medium px-2 rounded flex items-center truncate cursor-pointer border border-emerald-800/80"
                     style={{ left: '0px', width: `${duration * pixelsPerSecond}px` }}
                   >
                     🏷️ Watermark Logo ({studioConfig.logoPosition}) •{' '}
@@ -1521,13 +1552,13 @@ export default function ClipStudioModal({
             </div>
 
             {/* TRACK 4: Video Master Clip */}
-            <div className="h-7 bg-zinc-900/60 rounded border border-zinc-800 relative flex items-center px-2">
+            <div className="h-6 bg-zinc-900/60 rounded border border-zinc-800 relative flex items-center px-2">
               <span className="text-[10px] font-mono text-zinc-400 w-16 shrink-0 flex items-center gap-1">
                 <Film className="w-3 h-3 text-indigo-400" /> Video
               </span>
               <div className="flex-1 relative h-full">
                 <div
-                  className="absolute top-1 bottom-1 bg-indigo-950/90 text-indigo-300 text-[9px] font-mono px-2 rounded flex items-center truncate border border-indigo-800/80 shadow-inner"
+                  className="absolute top-0.5 bottom-0.5 bg-indigo-950/90 text-indigo-300 text-[9px] font-mono px-2 rounded flex items-center truncate border border-indigo-800/80 shadow-inner"
                   style={{ left: '0px', width: `${duration * pixelsPerSecond}px` }}
                 >
                   🎬 Footage Vertical 1080x1920 (Active Speaker Framing)
@@ -1542,7 +1573,7 @@ export default function ClipStudioModal({
               </span>
               <div className="flex-1 relative h-full">
                 <div
-                  className="absolute top-1 bottom-1 bg-cyan-950/80 text-cyan-300 text-[9px] font-mono px-2 rounded flex items-center truncate border border-cyan-800/80"
+                  className="absolute top-0.5 bottom-0.5 bg-cyan-950/80 text-cyan-300 text-[9px] font-mono px-2 rounded flex items-center truncate border border-cyan-800/80"
                   style={{ left: '0px', width: `${duration * pixelsPerSecond}px` }}
                 >
                   🎵 Source Audio + Ducking Level (-16 LUFS)
