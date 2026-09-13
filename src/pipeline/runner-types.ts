@@ -80,6 +80,10 @@ export interface StageContext {
       exportPath?: string; // path to final combined export
       viralScore?: number;
       confidence?: 'HIGH' | 'MEDIUM' | 'LOW';
+      hookHeadline?: string;
+      sourceChannel?: string;
+      studioConfig?: any;
+      error?: string;
     }>;
   };
 }
