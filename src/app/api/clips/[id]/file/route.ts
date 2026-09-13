@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/server/db';
 import { apiError, catchApiErrors, ErrorCode } from '@/server/api-utils';
 import { PATHS } from '@/server/paths';
+import { logger } from '@/server/logger';
 import path from 'path';
 import fs from 'fs';
 import fsPromises, { stat } from 'fs/promises';
@@ -130,12 +131,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         headers['Content-Range'] = `bytes ${start}-${end}/${size}`;
         headers['Content-Length'] = String(end - start + 1);
         const stream = fs.createReadStream(absolute, { start, end });
+        stream.on('error', (err) => {
+          logger.warn(`Stream read error for clip ${id}: ${err.message}`);
+        });
         req.signal.addEventListener('abort', () => stream.destroy());
         return new NextResponse(stream as any, { status: 206, headers });
       }
     }
 
     const full = fs.createReadStream(absolute);
+    full.on('error', (err) => {
+      logger.warn(`Stream read error for clip ${id}: ${err.message}`);
+    });
     req.signal.addEventListener('abort', () => full.destroy());
     return new NextResponse(full as any, { status: 200, headers });
   }, req);

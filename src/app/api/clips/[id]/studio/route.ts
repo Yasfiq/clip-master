@@ -157,25 +157,37 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (typeof incomingStudioConfig.sourceText === 'string') {
       sanitizedIncoming.sourceText = incomingStudioConfig.sourceText.slice(0, 80);
     }
-    if (typeof incomingStudioConfig.freezeDuration === 'number') {
+    if (
+      typeof incomingStudioConfig.freezeDuration === 'number' &&
+      Number.isFinite(incomingStudioConfig.freezeDuration)
+    ) {
       sanitizedIncoming.freezeDuration = Math.max(
         0,
         Math.min(10, incomingStudioConfig.freezeDuration),
       );
     }
-    if (typeof incomingStudioConfig.fadeInDuration === 'number') {
+    if (
+      typeof incomingStudioConfig.fadeInDuration === 'number' &&
+      Number.isFinite(incomingStudioConfig.fadeInDuration)
+    ) {
       sanitizedIncoming.fadeInDuration = Math.max(
         0,
         Math.min(5, incomingStudioConfig.fadeInDuration),
       );
     }
-    if (typeof incomingStudioConfig.fadeOutDuration === 'number') {
+    if (
+      typeof incomingStudioConfig.fadeOutDuration === 'number' &&
+      Number.isFinite(incomingStudioConfig.fadeOutDuration)
+    ) {
       sanitizedIncoming.fadeOutDuration = Math.max(
         0,
         Math.min(5, incomingStudioConfig.fadeOutDuration),
       );
     }
-    if (typeof incomingStudioConfig.logoOpacity === 'number') {
+    if (
+      typeof incomingStudioConfig.logoOpacity === 'number' &&
+      Number.isFinite(incomingStudioConfig.logoOpacity)
+    ) {
       sanitizedIncoming.logoOpacity = Math.max(
         0.1,
         Math.min(1.0, incomingStudioConfig.logoOpacity),
@@ -199,8 +211,20 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (typeof incomingStudioConfig.hookPosition === 'string') {
       sanitizedIncoming.hookPosition = incomingStudioConfig.hookPosition;
     }
-    if (typeof incomingStudioConfig.hookDuration === 'number') {
+    if (
+      typeof incomingStudioConfig.hookDuration === 'number' &&
+      Number.isFinite(incomingStudioConfig.hookDuration)
+    ) {
       sanitizedIncoming.hookDuration = Math.max(0, Math.min(30, incomingStudioConfig.hookDuration));
+    }
+    if (
+      typeof incomingStudioConfig.subtitleDelay === 'number' &&
+      Number.isFinite(incomingStudioConfig.subtitleDelay)
+    ) {
+      sanitizedIncoming.subtitleDelay = Math.max(
+        0,
+        Math.min(10, incomingStudioConfig.subtitleDelay),
+      );
     }
     if (typeof incomingStudioConfig.hookTtsEnabled === 'boolean') {
       sanitizedIncoming.hookTtsEnabled = incomingStudioConfig.hookTtsEnabled;

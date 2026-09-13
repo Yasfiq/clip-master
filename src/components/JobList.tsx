@@ -36,7 +36,10 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
     let firstFetch = true;
 
     // Initial fetch
+    let isFetching = false;
     const fetchJobs = async () => {
+      if (isFetching) return;
+      isFetching = true;
       if (firstFetch) setLoading(true);
       try {
         const res = await fetch(`/api/jobs?limit=${limit}`);
@@ -66,6 +69,7 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
       } catch (e) {
         console.error('Failed to fetch jobs', e);
       } finally {
+        isFetching = false;
         if (firstFetch) {
           firstFetch = false;
           setLoading(false);

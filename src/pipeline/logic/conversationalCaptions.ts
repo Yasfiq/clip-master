@@ -79,10 +79,23 @@ export function formatToTitleCase(text: string): string {
 }
 
 /**
+ * Escape text for ASS subtitles to prevent accidental style override tag injection
+ * and illegal multiline break characters.
+ */
+export function escapeAssText(text: string): string {
+  return text
+    .replace(/\\/g, '\\\\')
+    .replace(/\{/g, '｛')
+    .replace(/\}/g, '｝')
+    .replace(/[\r\n]+/g, ' ');
+}
+
+/**
  * Wrap hook headline into 1 or 2 balanced lines separated by ASS hard line break (\N).
  */
 export function wrapHookHeadlineAss(text: string, maxCharsPerLine: number = 22): string {
-  const words = formatToTitleCase(text).split(/\s+/).filter(Boolean);
+  const safeText = escapeAssText(text);
+  const words = formatToTitleCase(safeText).split(/\s+/).filter(Boolean);
   if (words.length === 0) return '';
   if (words.length <= 2) return words.join(' ');
 
@@ -103,7 +116,8 @@ export function wrapHookHeadlineAss(text: string, maxCharsPerLine: number = 22):
  * Cleanly wrap dialogue text into 1-2 lines for 9:16 mobile display using ASS newline (\N).
  */
 export function wrapDialogueLinesAss(text: string, maxCharsPerLine: number = 28): string {
-  const trimmed = text.trim();
+  const safeText = escapeAssText(text);
+  const trimmed = safeText.trim();
   if (trimmed.length <= maxCharsPerLine) {
     return trimmed;
   }

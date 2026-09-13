@@ -53,7 +53,7 @@ export function escapeDrawText(text: string): string {
     .replace(/'/g, "\\'")
     .replace(/:/g, '\\:')
     .replace(/%/g, '\\%')
-    .replace(/\r?\n/g, ' ');
+    .replace(/[\r\n]+/g, ' ');
 }
 
 /**

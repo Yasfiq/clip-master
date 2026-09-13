@@ -213,7 +213,7 @@ export async function reBurnClipSubtitles(
   const srcFps = probe.fps || 30;
   const duration = probe.durationSec || clip.duration || 60;
 
-  let baseFilter = `scale=-1:${targetH}`;
+  let baseFilter = `scale=${targetW}:${targetH}:force_original_aspect_ratio=increase,scale=trunc(iw/2)*2:trunc(ih/2)*2`;
   let faceCropApplied = false;
 
   if (portrait) {

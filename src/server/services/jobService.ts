@@ -200,7 +200,7 @@ export class JobService {
     logger.info('Cancelling job', { jobId });
 
     // Signal cancellation to runner process
-    const cancelled = cancelPipeline(jobId);
+    const cancelled = await cancelPipeline(jobId);
     if (!cancelled) {
       logger.warn(`No active runner found for job ${jobId}, marking as cancelled anyway`);
     }

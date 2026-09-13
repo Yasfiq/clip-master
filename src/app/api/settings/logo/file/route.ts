@@ -13,10 +13,13 @@ export async function GET(req: NextRequest) {
     const logoFile = path.join(PATHS.assets, 'logo.png');
     try {
       const buffer = await fs.readFile(logoFile);
+      const isJpg =
+        buffer.length > 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+      const contentType = isJpg ? 'image/jpeg' : 'image/png';
       return new NextResponse(buffer, {
         status: 200,
         headers: {
-          'Content-Type': 'image/png',
+          'Content-Type': contentType,
           'Cache-Control': 'no-cache, must-revalidate',
           'X-Content-Type-Options': 'nosniff',
         },

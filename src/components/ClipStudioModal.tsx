@@ -271,13 +271,18 @@ export default function ClipStudioModal({
       };
 
       const updated = [...prev.slice(0, index + 1), newCue, ...prev.slice(index + 1)];
-      // Ensure strictly monotonically increasing start times
+      // Ensure strictly monotonically increasing start times and no overlapping cues
       for (let i = 1; i < updated.length; i++) {
         if (updated[i].start <= updated[i - 1].start) {
           updated[i].start = Number((updated[i - 1].start + 0.05).toFixed(2));
-          if (updated[i].end <= updated[i].start) {
-            updated[i].end = Number((updated[i].start + 0.5).toFixed(2));
-          }
+        }
+        if (updated[i - 1].end > updated[i].start) {
+          updated[i - 1].end = Number(
+            Math.max(updated[i - 1].start + 0.2, updated[i].start - 0.02).toFixed(2),
+          );
+        }
+        if (updated[i].end <= updated[i].start) {
+          updated[i].end = Number((updated[i].start + 0.5).toFixed(2));
         }
       }
       return updated.map((c, i) => ({ ...c, id: i + 1 }));
@@ -386,6 +391,26 @@ export default function ClipStudioModal({
     }
   };
 
+  const handleClose = () => {
+    if (saving || reBurning) return;
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.removeAttribute('src');
+      videoRef.current.load();
+    }
+    onClose();
+  };
+
+  useEffect(() => {
+    return () => {
+      if (videoRef.current) {
+        videoRef.current.pause();
+        videoRef.current.removeAttribute('src');
+        videoRef.current.load();
+      }
+    };
+  }, []);
+
   if (!isOpen) return null;
 
   const videoSrc = `/api/clips/${clipId}/file?clean=1&t=${videoTimestampKey}`;
@@ -408,7 +433,7 @@ export default function ClipStudioModal({
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             disabled={saving || reBurning}
             className="text-zinc-400 hover:text-white flex items-center gap-1.5 px-2.5 py-1.5 rounded-md hover:bg-zinc-800/80 transition-colors text-xs font-medium cursor-pointer disabled:opacity-50"
             aria-label="Tutup jendela editor"
@@ -456,7 +481,7 @@ export default function ClipStudioModal({
           <button
             type="button"
             onClick={() => setShowInspector((prev) => !prev)}
-            className={`hidden xl:inline-flex 2xl:hidden px-2.5 py-1.5 min-h-[38px] text-xs font-semibold rounded-md border transition-colors cursor-pointer items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+            className={`inline-flex 2xl:hidden px-2.5 py-1.5 min-h-[38px] text-xs font-semibold rounded-md border transition-colors cursor-pointer items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
               showInspector
                 ? 'bg-zinc-700 text-white border-zinc-600'
                 : 'text-zinc-300 bg-zinc-800 hover:bg-zinc-700 border-zinc-700'
@@ -499,7 +524,7 @@ export default function ClipStudioModal({
 
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             disabled={saving || reBurning}
             className="text-zinc-400 hover:text-zinc-200 p-1.5 min-h-[38px] min-w-[38px] rounded hover:bg-zinc-800 transition-colors ml-1 cursor-pointer flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
             title="Batal / Tutup"
@@ -1146,6 +1171,12 @@ export default function ClipStudioModal({
                 onLoadedMetadata={handleLoadedMetadata}
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
+                onEnded={() => setIsPlaying(false)}
+                onError={() =>
+                  setError(
+                    'Gagal memuat preview video klip. Pastikan berkas media tersedia di disk.',
+                  )
+                }
                 onClick={togglePlay}
               />
 

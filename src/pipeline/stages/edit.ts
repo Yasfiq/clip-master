@@ -257,6 +257,8 @@ export class EditStage implements PipelineStageHandler {
     const args = [
       '-i',
       inputPath,
+      '-stream_loop',
+      '-1',
       '-i',
       backsoundPath,
       '-filter_complex',

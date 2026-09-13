@@ -134,8 +134,8 @@ export class CompressStage implements PipelineStageHandler {
     const probe = await probeMedia(inputPath).catch(() => null);
     const srcFps = probe?.fps || ctx.metadata?.fps || 30;
 
-    // Base video scaling: height = targetH, width auto (maintains source aspect)
-    let baseVideoFilter = 'scale=-1:' + targetH;
+    // Base video scaling: ensure video covers target dimensions with even numbers
+    let baseVideoFilter = `scale=${targetW}:${targetH}:force_original_aspect_ratio=increase,scale=trunc(iw/2)*2:trunc(ih/2)*2`;
 
     // Face-aware horizontal crop for portrait Shorts: detect faces on the
     // raw cut and slide the vertical slice so the speaker stays centered.
@@ -284,7 +284,10 @@ export class CompressStage implements PipelineStageHandler {
       let activeSubtitlePath: string | undefined;
       if (clip?.subtitlePath && ctx.config?.subtitleEnabled !== false) {
         if (await this.fileExists(clip.subtitlePath)) {
-          activeSubtitlePath = clip.subtitlePath;
+          const stat = await fs.stat(clip.subtitlePath).catch(() => null);
+          if (stat && stat.size > 0) {
+            activeSubtitlePath = clip.subtitlePath;
+          }
         } else {
           logger.warn(`Subtitle sidecar missing for ${clip.id}: ${clip.subtitlePath}`);
         }
@@ -352,16 +355,18 @@ export class CompressStage implements PipelineStageHandler {
       let filter = baseVideoFilter;
       if (clip?.subtitlePath && ctx.config?.subtitleEnabled !== false) {
         try {
-          await fs.access(clip.subtitlePath);
-          const esc = clip.subtitlePath
-            .replace(/\\/g, '/')
-            .replace(/'/g, "'\\\\''")
-            .replace(/:/g, '\\:');
-          const styleParams = buildForceStyle(subtitleStyle);
-          filter += `,subtitles='${esc}':force_style='${styleParams}'`;
-          logger.info(
-            `Burning subtitles into ${clip.id} (style=${subtitleStyle.id}): ${clip.subtitlePath}`,
-          );
+          const stat = await fs.stat(clip.subtitlePath).catch(() => null);
+          if (stat && stat.size > 0) {
+            const esc = clip.subtitlePath
+              .replace(/\\/g, '/')
+              .replace(/'/g, "\\'")
+              .replace(/:/g, '\\:');
+            const styleParams = buildForceStyle(subtitleStyle);
+            filter += `,subtitles='${esc}':force_style='${styleParams}'`;
+            logger.info(
+              `Burning subtitles into ${clip.id} (style=${subtitleStyle.id}): ${clip.subtitlePath}`,
+            );
+          }
         } catch {
           logger.warn(`Subtitle sidecar missing for ${clip.id}: ${clip.subtitlePath}`);
         }
