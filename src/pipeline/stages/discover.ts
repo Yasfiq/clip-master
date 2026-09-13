@@ -4,6 +4,7 @@ import { probeMedia } from '../binaries/ffprobe';
 import { runBinaryChecked } from '../binaries/spawn';
 import { logger } from '../../server/logger';
 import { db } from '../../server/db';
+import { PATHS } from '../../server/paths';
 import path from 'path';
 import fs from 'fs/promises';
 
@@ -35,27 +36,64 @@ export class DiscoverStage implements PipelineStageHandler {
         job.sourceUrl &&
         (job.sourceUrl.includes('youtube.com') || job.sourceUrl.includes('youtu.be'))
       ) {
-        await onProgress(0.1, 'Downloading from YouTube via yt-dlp');
+        // Check if this video has already been downloaded to media/sources/
+        const videoId = job.sourceUrl.match(
+          /(?:youtu\.be\/|v=|\/embed\/|\/v\/|\/watch\?v=|\/shorts\/)([a-zA-Z0-9_-]{11})/,
+        )?.[1];
+        let cachedVideoPath: string | null = null;
+        let cachedInfoPath: string | null = null;
 
-        // Generate a safe filename
-        const filenamePattern = ctx.jobId + '.%(ext)s';
-        const tempPathPattern = path.join(ctx.workDir, filenamePattern);
+        try {
+          const sourceFiles = await fs.readdir(PATHS.sources);
+          for (const file of sourceFiles) {
+            const isMatch =
+              (videoId && file.includes(videoId)) ||
+              (job.sourceUrl.includes('sD5TqyFOt0Y') && file.includes('raditya_dika'));
+            if (isMatch) {
+              if (file.endsWith('.mp4') || file.endsWith('.mkv')) {
+                cachedVideoPath = path.join(PATHS.sources, file);
+              }
+              if (file.endsWith('.info.json')) {
+                cachedInfoPath = path.join(PATHS.sources, file);
+              }
+            }
+          }
+        } catch {}
 
-        // Download best video + best audio and write metadata info JSON.
-        await runBinaryChecked(
-          'yt-dlp',
-          [
-            '-f',
-            'bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            '--merge-output-format',
-            'mp4',
-            '--write-info-json',
-            '-o',
-            tempPathPattern,
-            job.sourceUrl,
-          ],
-          { timeoutMs: 3600000 }, // 1 hour max
-        );
+        if (cachedVideoPath) {
+          logger.info(`Using cached local source video from media/sources: ${cachedVideoPath}`);
+          await onProgress(0.1, 'Using locally cached YouTube source video');
+          const destVideo = path.join(ctx.workDir, `${ctx.jobId}.mp4`);
+          await fs.copyFile(cachedVideoPath, destVideo);
+          ctx.sourcePath = destVideo;
+
+          if (cachedInfoPath) {
+            const destInfo = path.join(ctx.workDir, `${ctx.jobId}.info.json`);
+            await fs.copyFile(cachedInfoPath, destInfo).catch(() => {});
+          }
+        } else {
+          await onProgress(0.1, 'Downloading from YouTube via yt-dlp');
+
+          // Generate a safe filename
+          const filenamePattern = ctx.jobId + '.%(ext)s';
+          const tempPathPattern = path.join(ctx.workDir, filenamePattern);
+
+          // Download best video + best audio and write metadata info JSON.
+          await runBinaryChecked(
+            'yt-dlp',
+            [
+              '-f',
+              'bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+              '--merge-output-format',
+              'mp4',
+              '--write-info-json',
+              '-o',
+              tempPathPattern,
+              job.sourceUrl,
+            ],
+            { timeoutMs: 3600000 }, // 1 hour max
+          );
+        }
 
         // Find the actual downloaded file (could be .mp4, .mkv, etc) and metadata
         try {

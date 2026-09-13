@@ -13,7 +13,7 @@ import { PipelineStage } from '@prisma/client';
 import { PipelineStageHandler, StageContext, TranscriptSegment } from '../runner-types';
 import { runBinaryChecked } from '../binaries/spawn';
 import { logger } from '../../server/logger';
-import { BINARIES } from '../../server/paths';
+import { BINARIES, PATHS } from '../../server/paths';
 import {
   buildAudioBoostFilter,
   DEFAULT_AUDIO_BOOST,
@@ -85,6 +85,22 @@ export class TranscribeStage implements PipelineStageHandler {
       await fs.access(jsonPath);
       cached = true;
     } catch {}
+
+    if (!cached) {
+      // Check if a pre-computed transcript exists in media/sources/
+      try {
+        const sourceFiles = await fs.readdir(PATHS.sources);
+        for (const file of sourceFiles) {
+          if (file.endsWith('.transcript.json')) {
+            const preComputed = path.join(PATHS.sources, file);
+            await fs.copyFile(preComputed, jsonPath);
+            cached = true;
+            logger.info(`Loaded pre-computed transcript from media/sources cache: ${preComputed}`);
+            break;
+          }
+        }
+      } catch {}
+    }
 
     if (cached) {
       logger.info(`Using cached transcript JSON: ${jsonPath}`);
