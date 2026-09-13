@@ -551,9 +551,9 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
               ) : null}
               <button
                 onClick={handleRunPhase2}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-indigo-200 bg-indigo-950/60 border border-indigo-700/80 hover:bg-indigo-900/60 rounded-lg transition-colors shadow-sm"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors shadow-sm cursor-pointer"
               >
-                <Sparkles className="w-3.5 h-3.5 text-indigo-300" />
+                <Film className="w-3.5 h-3.5" />
                 <span>Jalankan Phase 2</span>
               </button>
             </div>
