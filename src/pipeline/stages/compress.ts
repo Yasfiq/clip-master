@@ -17,6 +17,9 @@ import { detectFacesInVideoSync } from '../binaries/faceDetect';
 import { StudioConfig, DEFAULT_STUDIO_CONFIG } from '../../types/clipStudio';
 import { buildStudioFilterGraph } from '../logic/studioFilterGraph';
 import { writeSourcePillSvg } from '../logic/brandingPill';
+import { generateHookTtsAudio } from '../logic/ttsVoiceover';
+import { parseSrt } from '../logic/srtParser';
+import { generateUnifiedAssDocument } from '../logic/conversationalCaptions';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -218,7 +221,7 @@ export class CompressStage implements PipelineStageHandler {
       const defaultStudioConfig: StudioConfig = {
         ...DEFAULT_STUDIO_CONFIG,
         hookText: clip.hookHeadline || '',
-        hookPosition: 'top',
+        hookPosition: 'center',
         sourceText,
         sourceEnabled: Boolean(sourceText),
         logoEnabled: true,
@@ -228,6 +231,8 @@ export class CompressStage implements PipelineStageHandler {
         fadeInDuration: 0.4,
         fadeOutDuration: 0.6,
         freezeDuration: 0,
+        hookTtsEnabled: true,
+        hookTtsVoice: 'id-ID-GadisNeural',
       };
 
       const clipStudioRaw =
@@ -236,6 +241,32 @@ export class CompressStage implements PipelineStageHandler {
         ...defaultStudioConfig,
         ...clipStudioRaw,
       };
+
+      // 1. Generate hook TTS voiceover if enabled and hook text exists
+      let ttsAudioPath: string | undefined;
+      let ttsAudioDuration: number | undefined;
+
+      if (studioConfig.hookTtsEnabled !== false && studioConfig.hookText?.trim()) {
+        try {
+          const ttsDir = path.join(ctx.workDir, 'tts');
+          await fs.mkdir(ttsDir, { recursive: true });
+          const ttsDestPath = path.join(ttsDir, `${clip.id}_hook.mp3`);
+          const ttsResult = await generateHookTtsAudio({
+            text: studioConfig.hookText.trim(),
+            outputPath: ttsDestPath,
+            voice: studioConfig.hookTtsVoice || 'id-ID-GadisNeural',
+            rate: '+20%',
+          });
+          ttsAudioPath = ttsResult.audioPath;
+          ttsAudioDuration = ttsResult.duration;
+          const ttsDurRounded = Number(ttsResult.duration.toFixed(2));
+          studioConfig.hookDuration = ttsDurRounded;
+          studioConfig.freezeDuration = ttsDurRounded;
+          studioConfig.hookPosition = 'center';
+        } catch (ttsErr: any) {
+          logger.warn(`Failed to generate TTS hook audio for clip ${clip.id}: ${ttsErr.message}`);
+        }
+      }
 
       // Check if media/assets/logo.png exists
       let logoResolvedPath: string | undefined;
@@ -280,8 +311,9 @@ export class CompressStage implements PipelineStageHandler {
         }
       }
 
-      // Subtitle sidecar check
+      // Subtitle sidecar check & unified ASS generation
       let activeSubtitlePath: string | undefined;
+      let isAssSubtitle = false;
       if (clip?.subtitlePath && ctx.config?.subtitleEnabled !== false) {
         if (await this.fileExists(clip.subtitlePath)) {
           const stat = await fs.stat(clip.subtitlePath).catch(() => null);
@@ -293,12 +325,54 @@ export class CompressStage implements PipelineStageHandler {
         }
       }
 
-      // Burn TikTok yellow subtitles
       const style = getStyleById(studioConfig.subtitleStyleId || 'clipajaib') || CLIPAJAIB_STYLE;
-      const subtitleForceStyle = buildForceStyle(style);
+
+      if (activeSubtitlePath) {
+        try {
+          const rawSrt = await fs.readFile(activeSubtitlePath, 'utf8');
+          const parsedCues = parseSrt(rawSrt);
+          const freezeSec = studioConfig.freezeDuration || 0;
+          const subDelay =
+            typeof studioConfig.subtitleDelay === 'number' ? studioConfig.subtitleDelay : 0;
+          const totalShift = freezeSec + subDelay;
+          const shiftedCues =
+            totalShift !== 0
+              ? parsedCues.map((c) => ({
+                  ...c,
+                  start: Math.max(0, Number((c.start + totalShift).toFixed(3))),
+                  end: Math.max(0.1, Number((c.end + totalShift).toFixed(3))),
+                }))
+              : parsedCues;
+
+          const assContent = generateUnifiedAssDocument({
+            width: targetW,
+            height: targetH,
+            hookText: studioConfig.hookText?.trim() || '',
+            hookDuration: studioConfig.hookDuration || studioConfig.freezeDuration || 0,
+            dialogueCues: shiftedCues,
+            fontName: 'Montserrat',
+            dialogueFontSize: style.fontSize || 62,
+            dialogueOutline: style.outline || 4.5,
+            dialogueMarginV: style.marginV || 420,
+            primaryColorHex: style.primaryColour,
+            outlineColorHex: style.outlineColour,
+          });
+
+          const subtitlesDir = path.join(ctx.workDir, 'subtitles');
+          await fs.mkdir(subtitlesDir, { recursive: true });
+          const assDestPath = path.join(subtitlesDir, `${clip.id}_compress.ass`);
+          await fs.writeFile(assDestPath, assContent, 'utf8');
+          activeSubtitlePath = assDestPath;
+          isAssSubtitle = true;
+        } catch (assErr: any) {
+          logger.warn(
+            `Failed to generate unified ASS in compress for clip ${clip.id}: ${assErr.message}`,
+          );
+        }
+      }
 
       const duration = clip?.duration ?? 60;
-      const { filterComplex, hasLogoInput, hasPillInput } = buildStudioFilterGraph({
+      const { filterComplex, hasLogoInput, hasPillInput, hasTtsInput } = buildStudioFilterGraph({
         inputVideoDuration: duration,
         width: targetW,
         height: targetH,
@@ -306,10 +380,12 @@ export class CompressStage implements PipelineStageHandler {
         subtitlePath: activeSubtitlePath,
         logoResolvedPath,
         pillResolvedPath,
-        isAssSubtitle: false,
+        isAssSubtitle,
         filmBurnIntro: Boolean(studioConfig.filmBurnIntro),
-        subtitleForceStyle,
+        subtitleForceStyle: isAssSubtitle ? undefined : buildForceStyle(style),
         baseVideoFilter,
+        ttsAudioPath,
+        ttsAudioDuration,
         hasAudio: ctx.metadata?.hasAudio ?? true,
       });
 
@@ -318,6 +394,7 @@ export class CompressStage implements PipelineStageHandler {
         inputPath,
         ...(hasLogoInput && logoResolvedPath ? ['-i', logoResolvedPath] : []),
         ...(hasPillInput && pillResolvedPath ? ['-i', pillResolvedPath] : []),
+        ...(hasTtsInput && ttsAudioPath ? ['-i', ttsAudioPath] : []),
         '-filter_complex',
         filterComplex,
         '-map',

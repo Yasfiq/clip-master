@@ -301,9 +301,10 @@ export async function reBurnClipSubtitles(
       ttsAudioPath = ttsResult.audioPath;
       ttsAudioDuration = ttsResult.duration;
 
-      if (!finalStudioConfig.hookDuration || finalStudioConfig.hookDuration <= 0) {
-        finalStudioConfig.hookDuration = Number(Math.max(2.0, ttsResult.duration).toFixed(2));
-      }
+      const ttsDurRounded = Number(ttsResult.duration.toFixed(2));
+      finalStudioConfig.hookDuration = ttsDurRounded;
+      finalStudioConfig.freezeDuration = ttsDurRounded;
+      finalStudioConfig.hookPosition = 'center';
     } catch (ttsErr) {
       logger.warn(
         `Failed to generate TTS hook audio for clip ${clip.id}: ${ttsErr instanceof Error ? ttsErr.message : String(ttsErr)}`,

@@ -313,11 +313,17 @@ export function buildStudioFilterGraph(
     // Media has no audio stream — generate silent audio track to guarantee filtergraph output map
     chains.push(`anullsrc=channel_layout=stereo:sample_rate=48000:d=${effectiveDuration}[a_out]`);
   } else if (hasTtsInput) {
-    // Duck background podcast audio to 0.2 during intro hook, then restore to 1.0
-    const delayPrefix = freezeAudioFilter ? `${freezeAudioFilter},` : '';
-    chains.push(
-      `[0:a]${delayPrefix}volume=enable='between(t,0,${hookDuration})':volume=0.2,volume=enable='gte(t,${hookDuration})':volume=1.0${fadeOutAudioPart}[a_bg]`,
-    );
+    if (freezeDuration > 0) {
+      // Complete silence on background podcast during the freeze frame while TTS female voice narrates
+      chains.push(
+        `[0:a]${freezeAudioFilter},volume=enable='lt(t,${freezeDuration})':volume=0.0,volume=enable='gte(t,${freezeDuration})':volume=1.0${fadeOutAudioPart}[a_bg]`,
+      );
+    } else {
+      // Duck background podcast audio to 0.2 during intro hook, then restore to 1.0
+      chains.push(
+        `[0:a]volume=enable='between(t,0,${hookDuration})':volume=0.2,volume=enable='gte(t,${hookDuration})':volume=1.0${fadeOutAudioPart}[a_bg]`,
+      );
+    }
     chains.push(
       `[${ttsInputIdx}:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=1.0[a_tts]`,
     );

@@ -889,7 +889,7 @@ export default function ClipStudioModal({
                               : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-zinc-200'
                           }`}
                         >
-                          Tengah Layar (Cover Baku)
+                          Tengah Layar (Baku)
                         </button>
                         <button
                           type="button"
@@ -907,28 +907,72 @@ export default function ClipStudioModal({
                       </div>
                     </div>
 
-                    <div>
-                      <label className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block mb-1.5">
-                        Durasi Freeze Frame Awal (Opsional)
-                      </label>
-                      <div className="flex flex-wrap gap-1.5">
-                        {FREEZE_OPTIONS.map((sec) => (
-                          <button
-                            key={sec}
-                            type="button"
-                            onClick={() =>
-                              setStudioConfig((prev) => ({ ...prev, freezeDuration: sec }))
+                    {/* Voiceover Wanita AI (TTS) */}
+                    <div className="p-3 bg-zinc-900/80 border border-zinc-800 rounded-lg space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="text-xs font-semibold text-zinc-200 block">
+                            Voiceover Wanita AI (TTS)
+                          </span>
+                          <span className="text-[10px] text-zinc-400">
+                            Frame 1 dibekukan selama suara wanita membaca hook.
+                          </span>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={studioConfig.hookTtsEnabled !== false}
+                            onChange={(e) =>
+                              setStudioConfig((prev) => ({
+                                ...prev,
+                                hookTtsEnabled: e.target.checked,
+                              }))
                             }
-                            className={`px-3 py-1.5 text-xs font-mono font-semibold rounded-lg border transition-all cursor-pointer ${
-                              studioConfig.freezeDuration === sec
-                                ? 'bg-amber-400 text-black border-amber-300 shadow-sm'
-                                : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-zinc-200'
-                            }`}
-                          >
-                            {sec === 0 ? '0s (Tanpa Freeze)' : `${sec.toFixed(1)}s`}
-                          </button>
-                        ))}
+                            className="sr-only peer"
+                          />
+                          <div className="w-9 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                        </label>
                       </div>
+
+                      {studioConfig.hookTtsEnabled !== false ? (
+                        <div className="space-y-1.5 pt-1 border-t border-zinc-800/80">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="text-zinc-400">Pilihan Suara:</span>
+                            <span className="text-amber-400 font-semibold font-mono text-[10px]">
+                              Suara Wanita (GadisNeural)
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-zinc-400 leading-relaxed bg-zinc-950/60 p-2 rounded border border-zinc-800/60">
+                            💡 <strong>Formula Standar Baku:</strong> 1 frame pertama video akan
+                            dibekukan selama audio suara wanita membaca hook. Setelah selesai
+                            diucapkan, hook menghilang dan video segmen langsung lanjut berputar.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="pt-2 border-t border-zinc-800/80 space-y-1.5">
+                          <label className="text-[10px] font-semibold text-zinc-400 block">
+                            Durasi Freeze Frame Manual (Detik)
+                          </label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {FREEZE_OPTIONS.map((sec) => (
+                              <button
+                                key={sec}
+                                type="button"
+                                onClick={() =>
+                                  setStudioConfig((prev) => ({ ...prev, freezeDuration: sec }))
+                                }
+                                className={`px-2.5 py-1 text-xs font-mono font-semibold rounded border transition-all cursor-pointer ${
+                                  studioConfig.freezeDuration === sec
+                                    ? 'bg-amber-400 text-black border-amber-300 shadow-sm'
+                                    : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-zinc-200'
+                                }`}
+                              >
+                                {sec === 0 ? '0s' : `${sec.toFixed(1)}s`}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1342,20 +1386,21 @@ export default function ClipStudioModal({
                   );
                 })()}
 
-              {/* Layer 2: Hook Headline Banner (Shows in first 3.1s) */}
-              {currentTime <= 3.1 && studioConfig.hookText && (
-                <div
-                  className={`absolute left-3 right-3 text-center pointer-events-none z-20 transition-all ${
-                    (studioConfig.hookPosition || 'center') === 'top'
-                      ? 'top-14'
-                      : 'top-1/2 -translate-y-1/2'
-                  }`}
-                >
-                  <div className="inline-block bg-amber-400 text-black font-black uppercase text-xs sm:text-sm px-3.5 py-1.5 rounded-md shadow-2xl border-2 border-black tracking-wide">
-                    {studioConfig.hookText}
+              {/* Layer 2: Hook Headline Banner (Shows during freeze frame / hook TTS duration) */}
+              {currentTime <= (studioConfig.hookDuration || studioConfig.freezeDuration || 3.1) &&
+                studioConfig.hookText && (
+                  <div
+                    className={`absolute left-3 right-3 text-center pointer-events-none z-20 transition-all ${
+                      (studioConfig.hookPosition || 'center') === 'top'
+                        ? 'top-14'
+                        : 'top-1/2 -translate-y-1/2'
+                    }`}
+                  >
+                    <div className="inline-block bg-amber-400 text-black font-black uppercase text-xs sm:text-sm px-3.5 py-1.5 rounded-md shadow-2xl border-2 border-black tracking-wide">
+                      {studioConfig.hookText}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
               {/* Layer 3: Active Subtitle Preview - only render if clean video */}
               {activeCue && isCleanVideo && (

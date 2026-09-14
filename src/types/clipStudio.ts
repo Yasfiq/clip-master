@@ -21,9 +21,9 @@ export interface StudioConfig {
 
 export const DEFAULT_STUDIO_CONFIG: StudioConfig = {
   hookText: '',
-  hookPosition: 'top',
+  hookPosition: 'center',
   hookDuration: 0,
-  hookTtsEnabled: false,
+  hookTtsEnabled: true,
   hookTtsVoice: 'id-ID-GadisNeural',
   freezeDuration: 0,
   logoEnabled: true,
