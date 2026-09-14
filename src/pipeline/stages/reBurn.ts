@@ -355,12 +355,15 @@ export async function reBurnClipSubtitles(
 
       if (isConversationalStyle) {
         const freezeSec = finalStudioConfig.freezeDuration || 0;
+        const subDelay =
+          typeof finalStudioConfig.subtitleDelay === 'number' ? finalStudioConfig.subtitleDelay : 0;
+        const totalShift = freezeSec + subDelay;
         const shiftedCues =
-          freezeSec > 0
+          totalShift !== 0
             ? parsedCues.map((c) => ({
                 ...c,
-                start: Number((c.start + freezeSec).toFixed(3)),
-                end: Number((c.end + freezeSec).toFixed(3)),
+                start: Math.max(0, Number((c.start + totalShift).toFixed(3))),
+                end: Math.max(0.1, Number((c.end + totalShift).toFixed(3))),
               }))
             : parsedCues;
 

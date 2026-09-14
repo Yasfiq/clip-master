@@ -247,6 +247,37 @@ export default function ClipStudioModal({
     });
   };
 
+  const handleNudgeAllCues = (delta: number) => {
+    setCues((prev) =>
+      prev.map((c) => {
+        const newStart = Math.max(0, Number((c.start + delta).toFixed(3)));
+        const newEnd = Math.max(newStart + 0.1, Number((c.end + delta).toFixed(3)));
+        return {
+          ...c,
+          start: newStart,
+          end: newEnd,
+        };
+      }),
+    );
+    setStatusMessage(`Semua timing subtitle digeser ${delta > 0 ? '+' : ''}${delta}s.`);
+  };
+
+  const handleNudgeSingleCue = (index: number, delta: number) => {
+    setCues((prev) => {
+      const copy = [...prev];
+      const target = copy[index];
+      if (!target) return prev;
+      const newStart = Math.max(0, Number((target.start + delta).toFixed(3)));
+      const newEnd = Math.max(newStart + 0.1, Number((target.end + delta).toFixed(3)));
+      copy[index] = {
+        ...target,
+        start: newStart,
+        end: newEnd,
+      };
+      return copy;
+    });
+  };
+
   const handleAddCue = (index: number) => {
     setCues((prev) => {
       const current = prev[index];
@@ -690,6 +721,54 @@ export default function ClipStudioModal({
                       </select>
                     </div>
 
+                    {/* Timing & Audio-Sync Nudge Card */}
+                    <div className="bg-zinc-900/90 border border-zinc-800 rounded-lg p-2.5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-semibold text-zinc-300 flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-blue-400" />
+                          <span>Sinkronisasi Timing ({cues.length} Cues)</span>
+                        </label>
+                        <span className="text-[10px] text-zinc-400 font-mono">Nudge Serentak</span>
+                      </div>
+                      <p className="text-[10px] text-zinc-400 leading-relaxed">
+                        Geser kemunculan subtitle agar selaras dengan ketukan suara:
+                      </p>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleNudgeAllCues(-0.25)}
+                          className="py-1 px-1.5 text-[10px] font-mono font-medium rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 hover:text-white transition-colors text-center"
+                          title="Percepat kemunculan subtitle 0.25 detik (muncul lebih awal)"
+                        >
+                          -0.25s
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleNudgeAllCues(-0.1)}
+                          className="py-1 px-1.5 text-[10px] font-mono font-medium rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 hover:text-white transition-colors text-center"
+                          title="Percepat kemunculan subtitle 0.10 detik"
+                        >
+                          -0.10s
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleNudgeAllCues(0.1)}
+                          className="py-1 px-1.5 text-[10px] font-mono font-medium rounded bg-blue-950/60 hover:bg-blue-900/60 text-blue-300 border border-blue-800/60 transition-colors text-center"
+                          title="Tunda kemunculan subtitle 0.10 detik (lebih lambat)"
+                        >
+                          +0.10s
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleNudgeAllCues(0.25)}
+                          className="py-1 px-1.5 text-[10px] font-mono font-medium rounded bg-blue-950/60 hover:bg-blue-900/60 text-blue-300 border border-blue-800/60 transition-colors text-center"
+                          title="Tunda kemunculan subtitle 0.25 detik (lebih lambat)"
+                        >
+                          +0.25s
+                        </button>
+                      </div>
+                    </div>
+
                     {/* Cues List */}
                     <div className="space-y-2">
                       {cues.map((cue, index) => {
@@ -704,20 +783,38 @@ export default function ClipStudioModal({
                             }`}
                           >
                             <div className="flex items-center justify-between mb-1.5">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedCueIndex(index);
-                                  handleSeek(cue.start);
-                                }}
-                                className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 hover:bg-blue-600 hover:text-white transition-colors cursor-pointer flex items-center gap-1"
-                                title="Klik untuk memutar video dari detik ini"
-                              >
-                                <Play className="w-2.5 h-2.5 fill-current" />
-                                <span>
-                                  {formatSrtTimestamp(cue.start)} → {formatSrtTimestamp(cue.end)}
-                                </span>
-                              </button>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedCueIndex(index);
+                                    handleSeek(cue.start);
+                                  }}
+                                  className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 hover:bg-blue-600 hover:text-white transition-colors cursor-pointer flex items-center gap-1"
+                                  title="Klik untuk memutar video dari detik ini"
+                                >
+                                  <Play className="w-2.5 h-2.5 fill-current" />
+                                  <span>
+                                    {formatSrtTimestamp(cue.start)} → {formatSrtTimestamp(cue.end)}
+                                  </span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleNudgeSingleCue(index, -0.1)}
+                                  className="text-[9px] font-mono text-zinc-400 hover:text-zinc-200 px-1 py-0.5 rounded bg-zinc-800 hover:bg-zinc-750 transition-colors"
+                                  title="Nudge cue ini -0.1s"
+                                >
+                                  -0.1s
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleNudgeSingleCue(index, 0.1)}
+                                  className="text-[9px] font-mono text-zinc-400 hover:text-zinc-200 px-1 py-0.5 rounded bg-zinc-800 hover:bg-zinc-750 transition-colors"
+                                  title="Nudge cue ini +0.1s"
+                                >
+                                  +0.1s
+                                </button>
+                              </div>
 
                               <div className="flex items-center gap-1">
                                 <button

@@ -20,6 +20,8 @@ import { parseWhisperTranscriptJson, reassembleWhisperTokens } from '../logic/to
 import fs from 'fs/promises';
 import path from 'path';
 
+export const DEFAULT_SUBTITLE_ONSET_OFFSET = 0.28;
+
 export class SubtitleStage implements PipelineStageHandler {
   stage = PipelineStage.SUBTITLE;
 
@@ -192,20 +194,26 @@ export class SubtitleStage implements PipelineStageHandler {
       if (seg.words && seg.words.length > 0) {
         for (const w of seg.words) {
           if (w.end <= clipStart || w.start >= clipEnd) continue;
-          const s = Math.max(0, w.start - clipStart);
-          const e = Math.min(clipEnd - clipStart, w.end - clipStart);
+          const s = Math.max(0, w.start - clipStart + DEFAULT_SUBTITLE_ONSET_OFFSET);
+          const e = Math.min(
+            clipEnd - clipStart,
+            w.end - clipStart + DEFAULT_SUBTITLE_ONSET_OFFSET,
+          );
           if (e > s) {
             clipWords.push({
               text: w.text,
-              start: s,
-              end: e,
+              start: Number(s.toFixed(3)),
+              end: Number(e.toFixed(3)),
             });
           }
         }
       } else {
         // Fallback: estimate word timings from segment text
-        const s = Math.max(0, seg.start - clipStart);
-        const e = Math.min(clipEnd - clipStart, seg.end - clipStart);
+        const s = Math.max(0, seg.start - clipStart + DEFAULT_SUBTITLE_ONSET_OFFSET);
+        const e = Math.min(
+          clipEnd - clipStart,
+          seg.end - clipStart + DEFAULT_SUBTITLE_ONSET_OFFSET,
+        );
         if (e > s && seg.text.trim().length > 0) {
           const estimated = splitTextIntoWordTimings(seg.text, s, e);
           clipWords.push(...estimated);
@@ -339,9 +347,19 @@ export class SubtitleStage implements PipelineStageHandler {
         const clipWords: WordTiming[] = [];
         for (const seg of parsed.segments) {
           if (seg.words && seg.words.length > 0) {
-            clipWords.push(...seg.words);
+            clipWords.push(
+              ...seg.words.map((w) => ({
+                text: w.text,
+                start: Number(Math.max(0, w.start + DEFAULT_SUBTITLE_ONSET_OFFSET).toFixed(3)),
+                end: Number((w.end + DEFAULT_SUBTITLE_ONSET_OFFSET).toFixed(3)),
+              })),
+            );
           } else if (seg.text && seg.text.trim()) {
-            const estimated = splitTextIntoWordTimings(seg.text, seg.start, seg.end);
+            const estimated = splitTextIntoWordTimings(
+              seg.text,
+              Math.max(0, seg.start + DEFAULT_SUBTITLE_ONSET_OFFSET),
+              seg.end + DEFAULT_SUBTITLE_ONSET_OFFSET,
+            );
             clipWords.push(...estimated);
           }
         }
