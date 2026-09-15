@@ -20,6 +20,13 @@ import {
   pickStyle,
   SubtitleStyle,
 } from '../logic/subtitleStyle';
+import { StudioConfig, DEFAULT_STUDIO_CONFIG } from '../../types/clipStudio';
+import { buildStudioFilterGraph } from '../logic/studioFilterGraph';
+import { generateHookTtsAudio } from '../logic/ttsVoiceover';
+import { parseSrt, serializeSrt, delaySubtitleCues } from '../logic/srtParser';
+import { writeSourcePillSvg } from '../logic/brandingPill';
+import { WordTiming, SrtCueInput } from '../logic/wordChunker';
+import { generateUnifiedAssDocument } from '../logic/conversationalCaptions';
 
 async function fileExists(filePath: string): Promise<boolean> {
   try {
@@ -32,8 +39,20 @@ async function fileExists(filePath: string): Promise<boolean> {
 
 export async function reBurnClipSubtitles(
   clipId: string,
-  styleId?: string,
+  styleIdOrConfig?: string | Partial<StudioConfig>,
+  studioConfigInput?: Partial<StudioConfig>,
 ): Promise<{ exportPath: string; fileSize: number; duration: number }> {
+  let styleId: string | undefined;
+  let studioConfigParam: Partial<StudioConfig> | undefined;
+
+  if (typeof styleIdOrConfig === 'string') {
+    styleId = styleIdOrConfig;
+    studioConfigParam = studioConfigInput;
+  } else if (typeof styleIdOrConfig === 'object' && styleIdOrConfig !== null) {
+    studioConfigParam = styleIdOrConfig;
+    styleId = studioConfigParam.subtitleStyleId;
+  }
+
   const clip = await db.clip.findUnique({
     where: { id: clipId },
     include: { job: { include: { config: true } } },
@@ -41,6 +60,27 @@ export async function reBurnClipSubtitles(
 
   if (!clip) {
     throw new Error(`Clip ${clipId} not found`);
+  }
+
+  const existingConfig =
+    typeof clip.studioConfig === 'object' && clip.studioConfig !== null
+      ? (clip.studioConfig as unknown as StudioConfig)
+      : null;
+
+  const baseConfig: StudioConfig = {
+    ...DEFAULT_STUDIO_CONFIG,
+    hookText: clip.hookHeadline || '',
+    sourceText: clip.job?.sourceChannel ? `Sumber: ${clip.job.sourceChannel}` : '',
+    ...(existingConfig || {}),
+  };
+
+  const finalStudioConfig: StudioConfig = {
+    ...baseConfig,
+    ...(studioConfigParam || {}),
+  };
+
+  if (styleId) {
+    finalStudioConfig.subtitleStyleId = styleId;
   }
 
   let videoInputPath: string | null = null;
@@ -86,7 +126,9 @@ export async function reBurnClipSubtitles(
   }
 
   if (!videoInputPath) {
-    throw new Error(`Clip ${clipId} has no valid video file (edited or cut) to re-burn`);
+    throw new Error(
+      `Clip ${clipId} tidak memiliki berkas video bersih (editedPath atau cutPath) di media/work untuk dirender ulang`,
+    );
   }
 
   let srtPath: string | null = null;
@@ -122,13 +164,9 @@ export async function reBurnClipSubtitles(
     }
   }
 
-  if (!srtPath) {
-    throw new Error(`Subtitle file not found for clip ${clipId}`);
-  }
-
   let style: SubtitleStyle | undefined;
-  if (styleId) {
-    style = getStyleById(styleId);
+  if (finalStudioConfig.subtitleStyleId) {
+    style = getStyleById(finalStudioConfig.subtitleStyleId);
   } else if (
     typeof clip.metadata === 'object' &&
     clip.metadata !== null &&
@@ -146,6 +184,22 @@ export async function reBurnClipSubtitles(
     style = pickStyle(0);
   }
 
+  let logoResolvedPath: string | undefined;
+  if (finalStudioConfig.logoEnabled) {
+    // Prevent path traversal: only resolve strictly within PATHS.assets
+    const defaultAssetLogo = path.join(PATHS.assets, 'logo.png');
+    if (await fileExists(defaultAssetLogo)) {
+      logoResolvedPath = defaultAssetLogo;
+    } else if (finalStudioConfig.logoPath) {
+      const safeAssetPath = path.join(PATHS.assets, path.basename(finalStudioConfig.logoPath));
+      if (await fileExists(safeAssetPath)) {
+        logoResolvedPath = safeAssetPath;
+      } else {
+        logger.warn(`Logo path not found at ${safeAssetPath}, omitting logo layer`);
+      }
+    }
+  }
+
   const targetRes = clip.job?.config?.targetResolution || '1080x1920';
   const [wStr, hStr] = targetRes.split('x');
   const targetW = parseInt(wStr, 10) || 1080;
@@ -156,9 +210,10 @@ export async function reBurnClipSubtitles(
   const probe = await probeMedia(videoInputPath);
   const srcW = probe.width ?? 1280;
   const srcH = probe.height ?? 720;
+  const srcFps = probe.fps || 30;
   const duration = probe.durationSec || clip.duration || 60;
 
-  let filter = `scale=-1:${targetH}`;
+  let baseFilter = `scale=${targetW}:${targetH}:force_original_aspect_ratio=increase,scale=trunc(iw/2)*2:trunc(ih/2)*2`;
   let faceCropApplied = false;
 
   if (portrait) {
@@ -188,7 +243,7 @@ export async function reBurnClipSubtitles(
           const cropW = Math.floor(rawCropW / 2) * 2;
           const cropResult = buildFfmpegCropFilter(segments, srcW, scaledSrcW, cropW, scaledH);
 
-          filter = `scale=-1:${scaledH},${cropResult.filter}`;
+          baseFilter = `scale=-1:${scaledH},${cropResult.filter}`;
           faceCropApplied = true;
         }
       }
@@ -207,23 +262,184 @@ export async function reBurnClipSubtitles(
       duration: duration,
       zoomStart: 1.0,
       zoomEnd: 1.12,
-      fps: 30,
+      fps: srcFps,
     };
     const kbErr = validateKenBurnsConfig(kbConfig);
     if (!kbErr) {
       const kb = buildKenBurnsFilter(kbConfig);
-      filter += ',' + kb;
+      baseFilter += ',' + kb;
       kenBurnsApplied = true;
     }
   }
 
   if (!kenBurnsApplied && !faceCropApplied) {
-    filter += `,crop=${targetW}:${targetH}:(iw-${targetW})/2:0`;
+    baseFilter += `,crop=${targetW}:${targetH}:(iw-${targetW})/2:0`;
   }
 
-  const escSrtPath = srtPath.replace(/\\/g, '/').replace(/'/g, "'\\\\''").replace(/:/g, '\\:');
   const forceStyle = buildForceStyle(style);
-  filter += `,subtitles='${escSrtPath}':force_style='${forceStyle}'`;
+  const renderTag = `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+  // 1. Generate hook TTS voiceover if enabled and hook text exists
+  let ttsAudioPath: string | undefined;
+  let ttsAudioDuration: number | undefined;
+
+  if (finalStudioConfig.hookTtsEnabled !== false && finalStudioConfig.hookText?.trim()) {
+    try {
+      const ttsDestPath = path.join(
+        PATHS.work,
+        clip.jobId,
+        'tts',
+        `${clip.id}_${renderTag}_hook.mp3`,
+      );
+      const voice = finalStudioConfig.hookTtsVoice || 'id-ID-GadisNeural';
+      const ttsResult = await generateHookTtsAudio({
+        text: finalStudioConfig.hookText.trim(),
+        outputPath: ttsDestPath,
+        voice,
+        rate: '+20%',
+      });
+      ttsAudioPath = ttsResult.audioPath;
+      ttsAudioDuration = ttsResult.duration;
+
+      const ttsDurRounded = Number(ttsResult.duration.toFixed(2));
+      finalStudioConfig.hookDuration = ttsDurRounded;
+      finalStudioConfig.freezeDuration = ttsDurRounded;
+      finalStudioConfig.hookPosition = 'center';
+    } catch (ttsErr) {
+      logger.warn(
+        `Failed to generate TTS hook audio for clip ${clip.id}: ${ttsErr instanceof Error ? ttsErr.message : String(ttsErr)}`,
+      );
+    }
+  }
+
+  // 2. Generate vector SVG source pill if source attribution is enabled
+  let pillResolvedPath: string | undefined;
+  if (finalStudioConfig.sourceEnabled && finalStudioConfig.sourceText?.trim()) {
+    try {
+      const pillDestPath = path.join(
+        PATHS.work,
+        clip.jobId,
+        'branding',
+        `${clip.id}_${renderTag}_pill.svg`,
+      );
+      await writeSourcePillSvg(pillDestPath, {
+        sourceText: finalStudioConfig.sourceText.trim(),
+        fontSize: portrait ? 20 : 18,
+        height: 50,
+        fillColor: 'white',
+        fillOpacity: 0.88,
+        textColor: '#1a1a1a',
+        fontFamily: 'Montserrat, DejaVu Sans, sans-serif',
+      });
+      pillResolvedPath = pillDestPath;
+    } catch (pillErr) {
+      logger.warn(`Failed to generate SVG pill for clip ${clip.id}: ${pillErr}`);
+    }
+  }
+
+  // 3. Generate unified ASS subtitle file (Floating Typography Hook + Conversational Subtitles)
+  let activeSubtitlePath = srtPath;
+  let isAssSubtitle = false;
+
+  if (srtPath) {
+    try {
+      const rawSrt = await fs.readFile(srtPath, 'utf8');
+      const parsedCues = parseSrt(rawSrt);
+
+      const isConversationalStyle =
+        !finalStudioConfig.subtitleStyleId ||
+        finalStudioConfig.subtitleStyleId === 'clipajaib' ||
+        finalStudioConfig.subtitleStyleId === 'tiktok' ||
+        finalStudioConfig.subtitleStyleId === 'sule' ||
+        finalStudioConfig.subtitleStyleId === 'kamal' ||
+        Boolean(finalStudioConfig.hookText?.trim());
+
+      if (isConversationalStyle) {
+        const freezeSec = finalStudioConfig.freezeDuration || 0;
+        const subDelay =
+          typeof finalStudioConfig.subtitleDelay === 'number' ? finalStudioConfig.subtitleDelay : 0;
+        const totalShift = freezeSec + subDelay;
+        const shiftedCues =
+          totalShift !== 0
+            ? parsedCues.map((c) => ({
+                ...c,
+                start: Math.max(0, Number((c.start + totalShift).toFixed(3))),
+                end: Math.max(0.1, Number((c.end + totalShift).toFixed(3))),
+              }))
+            : parsedCues;
+
+        const assContent = generateUnifiedAssDocument({
+          width: targetW,
+          height: targetH,
+          hookText: finalStudioConfig.hookText?.trim() || '',
+          hookDuration: finalStudioConfig.hookDuration || 3.1,
+          dialogueCues: shiftedCues,
+          fontName: 'Montserrat',
+          dialogueFontSize: style.fontSize || 62,
+          dialogueOutline: style.outline || 4.5,
+          dialogueMarginV: style.marginV || 420,
+          primaryColorHex: style.primaryColour,
+          outlineColorHex: style.outlineColour,
+        });
+
+        const assDestPath = path.join(
+          PATHS.work,
+          clip.jobId,
+          'subtitles',
+          `${clip.id}_${renderTag}_studio.ass`,
+        );
+        await fs.mkdir(path.dirname(assDestPath), { recursive: true });
+        await fs.writeFile(assDestPath, assContent, 'utf8');
+        activeSubtitlePath = assDestPath;
+        isAssSubtitle = true;
+      }
+    } catch (assErr) {
+      logger.warn(`Failed to generate unified ASS for clip ${clip.id}: ${assErr}`);
+    }
+  }
+
+  // Fallback: Synchronize subtitles with hook delay if using standard SRT
+  if (!isAssSubtitle && srtPath) {
+    const subDelay =
+      typeof finalStudioConfig.subtitleDelay === 'number' ? finalStudioConfig.subtitleDelay : 0;
+
+    if (subDelay > 0) {
+      try {
+        const rawSrt = await fs.readFile(srtPath, 'utf8');
+        const parsedCues = parseSrt(rawSrt);
+        const delayedCues = delaySubtitleCues(parsedCues, subDelay);
+        const delayedSrtPath = path.join(
+          PATHS.work,
+          clip.jobId,
+          'subtitles',
+          `${clip.id}_${renderTag}_delayed.srt`,
+        );
+        await fs.mkdir(path.dirname(delayedSrtPath), { recursive: true });
+        await fs.writeFile(delayedSrtPath, serializeSrt(delayedCues), 'utf8');
+        activeSubtitlePath = delayedSrtPath;
+      } catch (delayErr) {
+        logger.warn(`Failed to delay subtitle cues for clip ${clip.id}: ${delayErr}`);
+      }
+    }
+  }
+
+  const { filterComplex, hasLogoInput, hasPillInput, hasTtsInput, effectiveDuration } =
+    buildStudioFilterGraph({
+      inputVideoDuration: duration,
+      width: targetW,
+      height: targetH,
+      config: finalStudioConfig,
+      subtitlePath: activeSubtitlePath || undefined,
+      logoResolvedPath,
+      pillResolvedPath,
+      isAssSubtitle,
+      filmBurnIntro: finalStudioConfig.filmBurnIntro !== false,
+      subtitleForceStyle: isAssSubtitle ? undefined : forceStyle,
+      baseVideoFilter: baseFilter,
+      ttsAudioPath,
+      ttsAudioDuration,
+      hasAudio: probe.hasAudio ?? true,
+    });
 
   let finalExportPath: string;
   if (clip.exportPath) {
@@ -240,14 +456,23 @@ export async function reBurnClipSubtitles(
   const ffmpegArgs: string[] = [
     '-i',
     videoInputPath,
-    '-vf',
-    filter,
+    ...(hasLogoInput && logoResolvedPath ? ['-i', logoResolvedPath] : []),
+    ...(hasPillInput && pillResolvedPath ? ['-i', pillResolvedPath] : []),
+    ...(hasTtsInput && ttsAudioPath ? ['-i', ttsAudioPath] : []),
+    '-filter_complex',
+    filterComplex,
+    '-map',
+    '[v_out]',
+    '-map',
+    '[a_out]',
+    '-r',
+    String(srcFps),
     '-c:v',
     'libx264',
     '-preset',
     'medium',
     '-crf',
-    '21',
+    '20',
     '-g',
     '48',
     '-c:a',
@@ -275,7 +500,7 @@ export async function reBurnClipSubtitles(
   const stat = await fs.stat(finalExportPath);
   const fileSize = stat.size;
   const finalProbe = await probeMedia(finalExportPath).catch(() => null);
-  const finalDuration = finalProbe?.durationSec || duration;
+  const finalDuration = finalProbe?.durationSec || effectiveDuration;
 
   const relativeExportPath = path.relative(PATHS.exports, finalExportPath);
   const existingMetadata =
@@ -289,6 +514,8 @@ export async function reBurnClipSubtitles(
       exportPath: relativeExportPath,
       isExported: true,
       duration: finalDuration,
+      hookHeadline: finalStudioConfig.hookText || clip.hookHeadline,
+      studioConfig: finalStudioConfig as any,
       metadata: {
         ...existingMetadata,
         fileSize,
@@ -303,10 +530,11 @@ export async function reBurnClipSubtitles(
       jobId: clip.jobId,
       stage: 'COMPRESS',
       level: 'info',
-      message: `Re-burned subtitles for clip ${clip.id} (style=${style.id})`,
+      message: `Re-burned subtitles and studio layers for clip ${clip.id} (style=${style.id})`,
       metadata: {
         clipId: clip.id,
         styleId: style.id,
+        hookText: finalStudioConfig.hookText,
         fileSize,
         duration: finalDuration,
       },

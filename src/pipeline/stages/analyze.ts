@@ -2,7 +2,9 @@ import { PipelineStage } from '@prisma/client';
 import { PipelineStageHandler, StageContext } from '../runner-types';
 import { runBinaryChecked } from '../binaries/spawn';
 import { logger } from '../../server/logger';
+import { db } from '../../server/db';
 import { scoreWindowsWithAI, windowText, AIScoredWindow } from '../ai/momentScorer';
+import { StudioConfig, DEFAULT_STUDIO_CONFIG } from '../../types/clipStudio';
 
 export class AnalyzeStage implements PipelineStageHandler {
   stage = PipelineStage.ANALYZE;
@@ -25,7 +27,7 @@ export class AnalyzeStage implements PipelineStageHandler {
     const targetDur = ctx.config?.targetDuration || 60;
     const minDur = Math.min(ctx.config?.minSegmentDuration || 120, targetDur);
     const stepSize = Math.max(30, Math.floor(targetDur / 3));
-    const maxClips = Math.min(ctx.config?.maxClips || 10, 50);
+    const maxClips = Math.min(ctx.config?.maxClips || 15, 50);
 
     const windows: Array<{ start: number; end: number }> = [];
     for (let start = 0; start < duration - minDur; start += stepSize) {
@@ -86,43 +88,60 @@ export class AnalyzeStage implements PipelineStageHandler {
       (a, b) => b.viralPotential - a.viralPotential || a.startTime - b.startTime,
     );
 
-    const selected: AIScoredWindow[] = [];
-    for (const w of ranked) {
-      if (selected.length >= maxClips) break;
-      if (selected.some((s) => overlap(s.startTime, s.endTime, w.startTime, w.endTime))) {
-        continue;
-      }
-      selected.push(w);
-    }
-    selected.sort((a, b) => a.startTime - b.startTime);
+    const minViralScore =
+      typeof ctx.config?.minViralScore === 'number' ? ctx.config.minViralScore : 0.38;
+
+    const { qualifying, selected } = selectViralMoments(ranked, {
+      minViralScore,
+      maxClips,
+    });
 
     if (selected.length === 0) {
       throw new Error('NO_QUALIFYING_SEGMENTS: no window passed analysis');
     }
 
+    logger.info(
+      `ANALYZE: ${qualifying.length} moments met viral score threshold >= ${minViralScore}, selected ${selected.length} clips (cap: ${maxClips})`,
+    );
+
     // 5. Emit moments + backward-compatible segments
-    ctx.stageData.moments = selected.map((w) => ({
-      startTime: w.startTime,
-      endTime: w.endTime,
-      duration: Number((w.endTime - w.startTime).toFixed(3)),
-      scores: {
-        transcriptHook: w.transcriptHook,
-        audioInterest: w.audioInterest,
-        visualInterest: w.visualInterest,
-        viralPotential: w.viralPotential,
-      },
-      reasons: w.reasons,
-      confidence: w.confidence,
-      hasKineticTrigger: w.hasKineticTrigger,
-      hookLine: w.hookLine,
-    }));
-    ctx.stageData.segments = selected.map((w) => ({
-      startTime: w.startTime,
-      endTime: w.endTime,
-      duration: Number((w.endTime - w.startTime).toFixed(3)),
-      viralScore: w.viralPotential,
-      confidence: w.confidence,
-    }));
+    ctx.stageData.moments = selected.map((w) => {
+      const textToExtract =
+        w.hookLine ||
+        (transcriptAvailable && transcript
+          ? windowText(transcript.segments, w.startTime, w.endTime)
+          : '');
+      const hookHeadline = generateHookHeadline(textToExtract);
+      return {
+        startTime: w.startTime,
+        endTime: w.endTime,
+        duration: Number((w.endTime - w.startTime).toFixed(3)),
+        scores: {
+          transcriptHook: w.transcriptHook,
+          audioInterest: w.audioInterest,
+          visualInterest: w.visualInterest,
+          viralPotential: w.viralPotential,
+        },
+        reasons: w.reasons,
+        confidence: w.confidence,
+        hasKineticTrigger: w.hasKineticTrigger,
+        hookLine: w.hookLine,
+        hookHeadline,
+      };
+    });
+
+    ctx.stageData.segments = selected.map((w, idx) => {
+      const hookHeadline =
+        ctx.stageData.moments?.[idx]?.hookHeadline || generateHookHeadline(w.hookLine);
+      return {
+        startTime: w.startTime,
+        endTime: w.endTime,
+        duration: Number((w.endTime - w.startTime).toFixed(3)),
+        viralScore: w.viralPotential,
+        confidence: w.confidence,
+        hookHeadline,
+      };
+    });
 
     const aiTag = aiUsed ? 'AI' : 'HEURISTIC';
     logger.info(`ANALYZE (${aiTag}): selected ${selected.length} moments`, {
@@ -199,11 +218,127 @@ export class AnalyzeStage implements PipelineStageHandler {
   }
 }
 
-function overlap(a1: number, a2: number, b1: number, b2: number): boolean {
+export function overlap(a1: number, a2: number, b1: number, b2: number): boolean {
   return a1 < b2 && b1 < a2;
+}
+
+export interface SelectViralMomentsOptions {
+  minViralScore?: number;
+  maxClips?: number;
+}
+
+export interface SelectViralMomentsResult {
+  qualifying: AIScoredWindow[];
+  selected: AIScoredWindow[];
+  minViralScore: number;
+  maxClips: number;
+}
+
+/**
+ * Filter and deduplicate ranked candidate windows by viral score threshold.
+ * If no windows meet minViralScore, falls back to top scoring windows (minimum 3 if available).
+ */
+export function selectViralMoments(
+  ranked: AIScoredWindow[],
+  options?: SelectViralMomentsOptions,
+): SelectViralMomentsResult {
+  const minViralScore = typeof options?.minViralScore === 'number' ? options.minViralScore : 0.38;
+  const maxClips = Math.min(options?.maxClips || 15, 50);
+
+  const qualifying = ranked.filter((w) => w.viralPotential >= minViralScore);
+
+  // If qualifying.length === 0, fallback to taking the top scoring windows (minimum 3 if available) so a job is never empty.
+  const pool = qualifying.length > 0 ? qualifying : ranked;
+  const clipCap = qualifying.length > 0 ? maxClips : Math.min(maxClips, 3);
+
+  const selected: AIScoredWindow[] = [];
+  for (const w of pool) {
+    if (selected.length >= clipCap) break;
+    if (selected.some((s) => overlap(s.startTime, s.endTime, w.startTime, w.endTime))) {
+      continue;
+    }
+    selected.push(w);
+  }
+  selected.sort((a, b) => a.startTime - b.startTime);
+
+  return {
+    qualifying,
+    selected,
+    minViralScore,
+    maxClips,
+  };
 }
 
 /** Audio-only heuristic when no transcript: high energy = interesting. */
 function heuristicAudioOnly(interest: number): number {
   return Math.min(1, 0.3 + interest * 0.6);
+}
+
+/**
+ * Generate a concise 3-5 word uppercase hook headline for a segment.
+ */
+export function generateHookHeadline(text?: string): string {
+  if (!text || !text.trim()) {
+    return 'MOMEN VIRAL PILIHAN';
+  }
+  const cleaned = text
+    .replace(/[«»""''`]/g, '')
+    .replace(/[^\w\s-]/g, ' ')
+    .trim();
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  if (words.length === 0) {
+    return 'MOMEN VIRAL PILIHAN';
+  }
+  const count = Math.min(5, Math.max(3, words.length));
+  return words.slice(0, count).join(' ').toUpperCase();
+}
+
+/**
+ * Initialize default StudioConfig for a clip.
+ */
+export function createDefaultStudioConfig(
+  hookHeadline: string,
+  sourceChannel?: string | null,
+): StudioConfig {
+  return {
+    ...DEFAULT_STUDIO_CONFIG,
+    hookText: hookHeadline,
+    sourceText: sourceChannel ? `Sumber: ${sourceChannel}` : '',
+  };
+}
+
+export interface CreateClipRecordParams {
+  clipId: string;
+  jobId: string;
+  startTime: number;
+  endTime: number;
+  duration: number;
+  cutPath: string;
+  viralScore?: number;
+  confidence?: 'HIGH' | 'MEDIUM' | 'LOW';
+  hookHeadline?: string;
+  sourceChannel?: string | null;
+}
+
+/**
+ * Create a Clip record populated with hookHeadline and initial studioConfig.
+ */
+export async function createClipRecord(params: CreateClipRecordParams) {
+  const hookHeadline = params.hookHeadline || 'MOMEN VIRAL PILIHAN';
+  const studioConfig = createDefaultStudioConfig(hookHeadline, params.sourceChannel);
+
+  return db.clip.create({
+    data: {
+      id: params.clipId,
+      jobId: params.jobId,
+      startTime: params.startTime,
+      endTime: params.endTime,
+      duration: params.duration,
+      cutPath: params.cutPath,
+      viralScore: params.viralScore,
+      confidence: params.confidence,
+      hookHeadline,
+      studioConfig: studioConfig as any,
+    },
+  });
 }

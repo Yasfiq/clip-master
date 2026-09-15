@@ -122,3 +122,20 @@ export function validateCues(cues: SubtitleCue[]): string | null {
 
   return null;
 }
+
+/**
+ * Delay and filter subtitle cues so they do not clash with the intro hook voiceover/banner.
+ * Cues ending before or at delaySeconds are omitted.
+ * Cues spanning across delaySeconds are clamped to start at delaySeconds.
+ */
+export function delaySubtitleCues(cues: SubtitleCue[], delaySeconds: number): SubtitleCue[] {
+  if (!cues || cues.length === 0 || delaySeconds <= 0) return cues || [];
+
+  return cues
+    .filter((cue) => cue.end > delaySeconds)
+    .map((cue, idx) => ({
+      ...cue,
+      id: idx + 1,
+      start: Number(Math.max(cue.start, delaySeconds).toFixed(3)),
+    }));
+}

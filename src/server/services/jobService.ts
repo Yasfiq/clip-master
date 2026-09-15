@@ -131,46 +131,49 @@ export class JobService {
    * Verifies binaries via preflight, spawns pipeline runner in background.
    */
   async startJob(jobId: string): Promise<Job> {
-    const job = await db.job.findUnique({ where: { id: jobId } });
-    if (!job) {
-      throw new Error(`Job ${jobId} not found`);
-    }
-    if (job.status !== JobStatus.PENDING) {
-      throw new Error(`Job ${jobId} is not in PENDING state (current: ${job.status})`);
-    }
-
-    // One-active-job invariant: refuse to start a second job while another
-    // job is executing a phase. PENDING rows queue behind the active one.
-    const active = await db.job.findFirst({
-      where: {
-        id: { not: jobId },
-        status: { in: [JobStatus.RUNNING_PHASE1, JobStatus.RUNNING_PHASE2] },
-      },
-      select: { id: true },
-    });
-    if (active) {
-      throw new Error(
-        `Job ${active.id} is already running — one active job at a time (queue stays PENDING)`,
-      );
-    }
-
     // Preflight check
     const preflight = await runPreflight();
     if (!preflight.success) {
       throw new Error(`Preflight failed: ${JSON.stringify(preflight)}`);
     }
 
-    logger.info('Starting job', { jobId });
+    // Atomic transaction: verify status is PENDING and no other job is RUNNING, then set RUNNING_PHASE1
+    const updated = await db.$transaction(async (tx) => {
+      const job = await tx.job.findUnique({ where: { id: jobId } });
+      if (!job) {
+        throw new Error(`Job ${jobId} not found`);
+      }
+      if (job.status !== JobStatus.PENDING) {
+        throw new Error(`Job ${jobId} is not in PENDING state (current: ${job.status})`);
+      }
 
-    const updated = await db.job.update({
-      where: { id: jobId },
-      data: {
-        status: JobStatus.RUNNING_PHASE1,
-        startedAt: new Date(),
-        currentStage: PipelineStage.DISCOVER,
-        stageStartedAt: new Date(),
-      },
+      // One-active-job invariant: refuse to start a second job while another
+      // job is executing a phase. PENDING rows queue behind the active one.
+      const active = await tx.job.findFirst({
+        where: {
+          id: { not: jobId },
+          status: { in: [JobStatus.RUNNING_PHASE1, JobStatus.RUNNING_PHASE2] },
+        },
+        select: { id: true },
+      });
+      if (active) {
+        throw new Error(
+          `Job ${active.id} is already running — one active job at a time (queue stays PENDING)`,
+        );
+      }
+
+      return tx.job.update({
+        where: { id: jobId },
+        data: {
+          status: JobStatus.RUNNING_PHASE1,
+          startedAt: new Date(),
+          currentStage: PipelineStage.DISCOVER,
+          stageStartedAt: new Date(),
+        },
+      });
     });
+
+    logger.info('Starting job', { jobId });
 
     // Start Phase 1 in background (non-blocking)
     setTimeout(() => {
@@ -197,7 +200,7 @@ export class JobService {
     logger.info('Cancelling job', { jobId });
 
     // Signal cancellation to runner process
-    const cancelled = cancelPipeline(jobId);
+    const cancelled = await cancelPipeline(jobId);
     if (!cancelled) {
       logger.warn(`No active runner found for job ${jobId}, marking as cancelled anyway`);
     }
@@ -219,13 +222,13 @@ export class JobService {
   /**
    * Delete a job and all its child records (logs, clips).
    * Cannot delete a job that is actively running a phase — cancel it first.
-   *
-   * Media files on disk are NOT removed here; file retention is a pipeline-agent
-   * escalation (TBD — requires user confirmation). Orphaned media files accumulate
-   * until a cleanup policy is implemented.
+   * Removes work directory and exported clips from disk to prevent storage leaks.
    */
   async deleteJob(jobId: string): Promise<void> {
-    const job = await db.job.findUnique({ where: { id: jobId } });
+    const job = await db.job.findUnique({
+      where: { id: jobId },
+      include: { clips: { select: { exportPath: true, thumbnailPath: true } } },
+    });
     if (!job) {
       throw new Error(`Job ${jobId} not found`);
     }
@@ -245,7 +248,21 @@ export class JobService {
       logger.warn(`Failed to clean up work dir for deleted job ${jobId}: ${err.message}`);
     });
 
-    logger.info('Job deleted', { jobId, hadStatus: job.status });
+    // Clean up exports directory for this job if present
+    const exportJobDir = path.join(PATHS.exports, jobId);
+    await fs.rm(exportJobDir, { recursive: true, force: true }).catch(() => {});
+
+    // Clean up individual exported clip files
+    for (const clip of job.clips) {
+      if (clip.exportPath) {
+        const fullExportPath = path.resolve(PATHS.exports, clip.exportPath);
+        if (fullExportPath.startsWith(PATHS.exports)) {
+          await fs.rm(fullExportPath, { force: true }).catch(() => {});
+        }
+      }
+    }
+
+    logger.info('Job deleted and storage cleaned up', { jobId, hadStatus: job.status });
   }
 
   /**
@@ -408,28 +425,6 @@ export class JobService {
    * Start Phase 2: validates PHASE1_DONE state, transitions to RUNNING_PHASE2.
    */
   async startPhase2(jobId: string, newConfigId?: string): Promise<Job> {
-    const job = await db.job.findUnique({ where: { id: jobId } });
-    if (!job) {
-      throw new Error(`Job ${jobId} not found`);
-    }
-    if (job.status !== JobStatus.PHASE1_DONE) {
-      throw new Error(`Job ${jobId} is not in PHASE1_DONE state (current: ${job.status})`);
-    }
-
-    // One-active-job invariant (phase 2 is also an active run).
-    const active = await db.job.findFirst({
-      where: {
-        id: { not: jobId },
-        status: { in: [JobStatus.RUNNING_PHASE1, JobStatus.RUNNING_PHASE2] },
-      },
-      select: { id: true },
-    });
-    if (active) {
-      throw new Error(`Job ${active.id} is already running — one active job at a time`);
-    }
-
-    logger.info('Starting Phase 2', { jobId, newConfigId });
-
     // Validate optional config switch before mutating job state: an unknown
     // id would surface as a raw Prisma FK violation instead of a clear error.
     if (newConfigId) {
@@ -439,22 +434,45 @@ export class JobService {
       }
     }
 
-    const updateData: any = {
-      status: JobStatus.RUNNING_PHASE2,
-      currentStage: PipelineStage.EDIT,
-      stageStartedAt: new Date(),
-      stageProgress: 0.0,
-    };
+    const updated = await db.$transaction(async (tx) => {
+      const job = await tx.job.findUnique({ where: { id: jobId } });
+      if (!job) {
+        throw new Error(`Job ${jobId} not found`);
+      }
+      if (job.status !== JobStatus.PHASE1_DONE) {
+        throw new Error(`Job ${jobId} is not in PHASE1_DONE state (current: ${job.status})`);
+      }
 
-    // Optionally switch to a new config for Phase 2
-    if (newConfigId) {
-      updateData.configId = newConfigId;
-    }
+      // One-active-job invariant (phase 2 is also an active run).
+      const active = await tx.job.findFirst({
+        where: {
+          id: { not: jobId },
+          status: { in: [JobStatus.RUNNING_PHASE1, JobStatus.RUNNING_PHASE2] },
+        },
+        select: { id: true },
+      });
+      if (active) {
+        throw new Error(`Job ${active.id} is already running — one active job at a time`);
+      }
 
-    const updated = await db.job.update({
-      where: { id: jobId },
-      data: updateData,
+      const updateData: any = {
+        status: JobStatus.RUNNING_PHASE2,
+        currentStage: PipelineStage.EDIT,
+        stageStartedAt: new Date(),
+        stageProgress: 0.0,
+      };
+
+      if (newConfigId) {
+        updateData.configId = newConfigId;
+      }
+
+      return tx.job.update({
+        where: { id: jobId },
+        data: updateData,
+      });
     });
+
+    logger.info('Starting Phase 2', { jobId, newConfigId });
 
     // Start Phase 2 in background (non-blocking)
     setTimeout(() => {

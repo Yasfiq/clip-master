@@ -40,12 +40,13 @@ export async function recoverStaleJobs(): Promise<void> {
 
     logger.warn(`Crash recovery: found ${staleJobs.length} stale RUNNING jobs, marking as FAILED`);
 
-    // Mark each as FAILED + write a JobLog entry so the user-visible
-    // log timeline shows the recovery event.
+    // Mark each as FAILED + write JobLog entries atomically within a transaction
     const now = new Date();
-    const updates = staleJobs.flatMap((job) => [
-      db.job.update({
-        where: { id: job.id },
+    await db.$transaction(async (tx) => {
+      await tx.job.updateMany({
+        where: {
+          id: { in: staleJobs.map((j) => j.id) },
+        },
         data: {
           status: JobStatus.FAILED,
           errorCode: JobErrorCode.INTERNAL,
@@ -53,19 +54,18 @@ export async function recoverStaleJobs(): Promise<void> {
           stageEndedAt: now,
           currentStage: null,
         },
-      }),
-      db.jobLog.create({
-        data: {
+      });
+
+      await tx.jobLog.createMany({
+        data: staleJobs.map((job) => ({
           jobId: job.id,
           stage: null,
           level: 'error',
           message: 'Marked FAILED by crash recovery on server startup',
           metadata: { recoveredAt: now.toISOString() },
-        },
-      }),
-    ]);
-
-    await Promise.all(updates);
+        })),
+      });
+    });
 
     logger.info(`Crash recovery: successfully recovered ${staleJobs.length} stale jobs`, {
       jobIds: staleJobs.map((j) => j.id),

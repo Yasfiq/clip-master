@@ -12,6 +12,7 @@ import { logger } from '../server/logger';
 import { PATHS } from '../server/paths';
 import path from 'path';
 import fs from 'fs/promises';
+import { parseWhisperTranscriptJson } from './logic/tokenReassembler';
 
 export interface RunnerConfig {
   jobId: string;
@@ -138,13 +139,81 @@ export async function runPhase2(config: RunnerConfig): Promise<void> {
     });
     if (clips.length === 0) throw new Error('No clips — Phase 1 must complete first');
 
+    let transcript = (job.stageLogs as any)?.transcript;
+    if (!transcript?.segments || transcript.segments.length === 0) {
+      const candidatePaths: string[] = [path.join(PATHS.work, jobId, 'transcript', 'full.json')];
+
+      if (job.sourceFilename) {
+        candidatePaths.push(path.join(PATHS.sources, `${job.sourceFilename}.transcript.json`));
+        candidatePaths.push(
+          path.join(PATHS.sources, `${path.parse(job.sourceFilename).name}.transcript.json`),
+        );
+      }
+      if (job.sourcePath) {
+        const base = path.basename(job.sourcePath);
+        const nameWithoutExt = path.parse(job.sourcePath).name;
+        candidatePaths.push(path.join(PATHS.sources, `${base}.transcript.json`));
+        candidatePaths.push(path.join(PATHS.sources, `${nameWithoutExt}.transcript.json`));
+        candidatePaths.push(`${path.join(PATHS.root, job.sourcePath)}.transcript.json`);
+        candidatePaths.push(`${job.sourcePath}.transcript.json`);
+      }
+
+      let foundTranscriptFile: string | null = null;
+      for (const p of candidatePaths) {
+        try {
+          await fs.access(p);
+          foundTranscriptFile = p;
+          break;
+        } catch {}
+      }
+
+      if (!foundTranscriptFile) {
+        try {
+          const files = await fs.readdir(PATHS.sources);
+          for (const f of files) {
+            if (f.endsWith('.transcript.json')) {
+              if (
+                (job.sourceFilename && f.includes(path.parse(job.sourceFilename).name)) ||
+                (job.sourcePath && f.includes(path.parse(job.sourcePath).name))
+              ) {
+                foundTranscriptFile = path.join(PATHS.sources, f);
+                break;
+              }
+            }
+          }
+        } catch {}
+      }
+
+      if (foundTranscriptFile) {
+        try {
+          const content = await fs.readFile(foundTranscriptFile, 'utf8');
+          const parsed = parseWhisperTranscriptJson(JSON.parse(content));
+          if (parsed.segments.length > 0) {
+            transcript = parsed;
+            logger.info('Populated Phase 2 transcript from file', {
+              jobId,
+              file: foundTranscriptFile,
+              segmentsCount: parsed.segments.length,
+            });
+          }
+        } catch (err: any) {
+          logger.warn('Failed to parse transcript file for Phase 2', {
+            jobId,
+            file: foundTranscriptFile,
+            error: err.message,
+          });
+        }
+      }
+    }
+
     const ctx: any = {
       jobId,
       sourcePath: job.sourcePath ? path.join(PATHS.root, job.sourcePath) : '',
       workDir: path.join(PATHS.work, jobId),
       outputDir: PATHS.exports,
       config: job.config,
-      sourceTitle: job.sourceFilename || job.sourceUrl || 'Untitled Source',
+      sourceTitle: job.sourceTitle || job.sourceFilename || job.sourceUrl || 'Untitled Source',
+      sourceChannel: job.sourceChannel || undefined,
       metadata: (job.sourceMetadata as any) || {},
       stageData: {
         clips: clips.map((c) => ({
@@ -160,7 +229,7 @@ export async function runPhase2(config: RunnerConfig): Promise<void> {
           viralScore: c.viralScore,
           confidence: c.confidence,
         })),
-        transcript: (job.stageLogs as any)?.transcript || {
+        transcript: transcript || {
           segments: [],
           language: null,
           text: '',

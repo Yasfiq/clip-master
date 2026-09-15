@@ -1,19 +1,25 @@
 import { PipelineStage } from '@prisma/client';
 import { PipelineStageHandler, StageContext } from '../runner-types';
 import { runBinaryChecked } from '../binaries/spawn';
+import { probeMedia } from '../binaries/ffprobe';
 import { db } from '../../server/db';
 import { logger } from '../../server/logger';
 import { PATHS } from '../../server/paths';
-import { pickStyle, buildForceStyle } from '../logic/subtitleStyle';
+import { pickStyle, getStyleById, buildForceStyle, CLIPAJAIB_STYLE } from '../logic/subtitleStyle';
 import { buildKenBurnsFilter, DEFAULT_KEN_BURNS, validateKenBurnsConfig } from '../logic/kenBurns';
 import {
-  chooseCropX,
   computeDynamicCropSegments,
   buildFfmpegCropFilter,
   DEFAULT_FACE_CROP,
   validateFaceCropConfig,
 } from '../logic/faceCrop';
 import { detectFacesInVideoSync } from '../binaries/faceDetect';
+import { StudioConfig, DEFAULT_STUDIO_CONFIG } from '../../types/clipStudio';
+import { buildStudioFilterGraph } from '../logic/studioFilterGraph';
+import { writeSourcePillSvg } from '../logic/brandingPill';
+import { generateHookTtsAudio } from '../logic/ttsVoiceover';
+import { parseSrt } from '../logic/srtParser';
+import { generateUnifiedAssDocument } from '../logic/conversationalCaptions';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -46,46 +52,66 @@ export class CompressStage implements PipelineStageHandler {
         `Compressing clip ${idx + 1}/${totalClips}: ${clip.id}`,
       );
 
-      // Pick a different subtitle style per clip (SULE → TikTok → KAMAL cycle)
-      const subtitleStyle = pickStyle(idx);
-      logger.info(
-        `Clip ${idx + 1}/${totalClips} style: ${subtitleStyle.label} (${subtitleStyle.id})`,
-      );
-
-      const exportPath = clip.exportPath;
-      if (!exportPath || !(await this.fileExists(exportPath))) {
-        logger.warn(`Clip ${clip.id} has no export path, skipping compress`);
-        completed++;
-        continue;
-      }
-
-      // Apply final encoding: scale to target ratio + burn subtitles
-      const compressedPath = exportPath.replace('.mp4', '_final.mp4');
-      await this.applyFinalCompress(exportPath, compressedPath, ctx, clip, subtitleStyle);
-
-      // Replace export path with compressed final
       try {
-        await fs.unlink(exportPath); // Remove uncompressed version
-        await fs.rename(compressedPath, exportPath); // Rename compressed to final
-      } catch (err: any) {
-        logger.warn(`Failed to replace ${exportPath} with compressed: ${err.message}`);
-        // If rename fails, keep both versions (non-fatal)
-      }
-
-      // Verify final file
-      const stat = await fs.stat(exportPath);
-      if (stat.size < 1024) {
-        logger.warn(
-          `Final export too small (${stat.size} bytes) for clip ${clip.id}, skipping registration`,
+        // Pick a different subtitle style per clip (SULE → TikTok → KAMAL cycle)
+        const subtitleStyle = pickStyle(idx);
+        logger.info(
+          `Clip ${idx + 1}/${totalClips} style: ${subtitleStyle.label} (${subtitleStyle.id})`,
         );
+
+        const exportPath = clip.exportPath;
+        if (!exportPath || !(await this.fileExists(exportPath))) {
+          logger.warn(`Clip ${clip.id} has no export path, skipping compress`);
+          continue;
+        }
+
+        // Apply final encoding: scale to target ratio + studio filters / subtitles
+        const compressedPath = exportPath.replace('.mp4', '_final.mp4');
+        const appliedStudioConfig = await this.applyFinalCompress(
+          exportPath,
+          compressedPath,
+          ctx,
+          clip,
+          subtitleStyle,
+        );
+
+        // Replace export path with compressed final
+        try {
+          await fs.unlink(exportPath); // Remove uncompressed version
+          await fs.rename(compressedPath, exportPath); // Rename compressed to final
+        } catch (err: any) {
+          logger.warn(`Failed to replace ${exportPath} with compressed: ${err.message}`);
+          // If rename fails, keep both versions (non-fatal)
+        }
+
+        // Verify final file
+        const stat = await fs.stat(exportPath);
+        if (stat.size < 1024) {
+          logger.warn(
+            `Final export too small (${stat.size} bytes) for clip ${clip.id}, skipping registration`,
+          );
+          continue;
+        }
+
+        // Register Clip record in database
+        await this.registerClipInDB(
+          ctx.jobId,
+          clip,
+          exportPath,
+          stat.size,
+          ctx,
+          appliedStudioConfig
+            ? getStyleById(appliedStudioConfig.subtitleStyleId || 'clipajaib') || CLIPAJAIB_STYLE
+            : subtitleStyle,
+          appliedStudioConfig,
+        );
+      } catch (err: any) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        logger.error(`Encoding failed for clip ${clip.id}: ${errMsg}`, { error: err });
+        clip.error = errMsg;
+      } finally {
         completed++;
-        continue;
       }
-
-      // Register Clip record in database
-      await this.registerClipInDB(ctx.jobId, clip, exportPath, stat.size, ctx, subtitleStyle);
-
-      completed++;
     }
 
     await onProgress(1.0, `COMPRESS stage completed: ${totalClips} clips finalized`);
@@ -101,23 +127,22 @@ export class CompressStage implements PipelineStageHandler {
     ctx: StageContext,
     clip: any,
     subtitleStyle: ReturnType<typeof pickStyle>,
-  ): Promise<void> {
-    // H.264/libx264, CRF 21, target resolution from config (e.g., "1080x1920" for 9:16)
-
+  ): Promise<StudioConfig | undefined> {
     // Parse targetResolution from config (format: "widthxheight")
-    const targetRes = ctx.config?.targetResolution || '1920x1080';
-    const targetW = parseInt(targetRes.split('x')[0], 10) || 1920;
-    const targetH = parseInt(targetRes.split('x')[1], 10) || 1080;
+    const targetRes = ctx.config?.targetResolution || '1080x1920';
+    const targetW = parseInt(targetRes.split('x')[0], 10) || 1080;
+    const targetH = parseInt(targetRes.split('x')[1], 10) || 1920;
 
     const portrait = targetH > targetW;
+    const probe = await probeMedia(inputPath).catch(() => null);
+    const srcFps = probe?.fps || ctx.metadata?.fps || 30;
 
-    // Pre-scale: height = targetH, width auto (keeps source aspect, no crop yet).
-    let filter = 'scale=-1:' + targetH;
+    // Base video scaling: ensure video covers target dimensions with even numbers
+    let baseVideoFilter = `scale=${targetW}:${targetH}:force_original_aspect_ratio=increase,scale=trunc(iw/2)*2:trunc(ih/2)*2`;
 
     // Face-aware horizontal crop for portrait Shorts: detect faces on the
     // raw cut and slide the vertical slice so the speaker stays centered.
     // Falls back to center when no faces found or detection fails.
-    // TBD — requires user confirmation: default face crop padding 15%.
     let faceCropApplied = false;
     if (portrait) {
       try {
@@ -150,7 +175,7 @@ export class CompressStage implements PipelineStageHandler {
             const cropW = Math.floor(rawCropW / 2) * 2;
             const cropResult = buildFfmpegCropFilter(segments, srcW, scaledSrcW, cropW, scaledH);
 
-            filter = `scale=-1:${scaledH},${cropResult.filter}`;
+            baseVideoFilter = `scale=-1:${scaledH},${cropResult.filter}`;
             faceCropApplied = true;
             logger.info(
               `Face crop ${clip.id}: primaryX=${cropResult.primaryX} cropW=${cropW} srcW=${scaledSrcW} dynamic=${cropResult.isDynamic} segments=${segments.length} (${det.detections.length} dets / ${det.framesAnalyzed} frames)`,
@@ -166,7 +191,6 @@ export class CompressStage implements PipelineStageHandler {
     // Ken Burns slow push-in for portrait Shorts exports: zoompan between the
     // pre-scale (wider than target) and the final crop. Gives the static
     // center-column crop gentle motion like reference Shorts.
-    // TBD — requires user confirmation: default zoom strength 1.0→1.12.
     let kenBurnsApplied = false;
     if (portrait && faceCropApplied) {
       const kbConfig = {
@@ -176,71 +200,285 @@ export class CompressStage implements PipelineStageHandler {
         duration: clip?.duration ?? 10,
         zoomStart: 1.0,
         zoomEnd: 1.12,
-        fps: 30,
+        fps: srcFps,
       };
       const kbErr = validateKenBurnsConfig(kbConfig);
       if (!kbErr) {
         const kb = buildKenBurnsFilter(kbConfig);
-        // kb = zoompan (s=WxH) + guard crop; run before subtitle burn so text
-        // burns crisply at final resolution.
-        filter += ',' + kb;
+        baseVideoFilter += ',' + kb;
         kenBurnsApplied = true;
       }
     }
     if (!kenBurnsApplied && !faceCropApplied) {
       // Fallback / landscape: center-crop to target dimensions.
-      filter += ',crop=' + targetW + ':' + targetH + ':(iw-' + targetW + ')/2:0';
+      baseVideoFilter += ',crop=' + targetW + ':' + targetH + ':(iw-' + targetW + ')/2:0';
     }
 
-    // Burn subtitles into the video if a sidecar SRT exists for this clip.
-    // Must run AFTER scale so text stays legible at target resolution.
-    if (clip?.subtitlePath && ctx.config?.subtitleEnabled !== false) {
-      try {
-        await fs.access(clip.subtitlePath);
-        // Escape colons, single quotes, and backslashes in path for ffmpeg filter syntax
-        const esc = clip.subtitlePath
-          .replace(/\\/g, '/')
-          .replace(/'/g, "'\\\\''")
-          .replace(/:/g, '\\:');
-        // Per-clip style picked by compress caller: SULE / TikTok / KAMAL.
-        const styleParams = buildForceStyle(subtitleStyle);
-        filter += `,subtitles='${esc}':force_style='${styleParams}'`;
-        logger.info(
-          `Burning subtitles into ${clip.id} (style=${subtitleStyle.id}): ${clip.subtitlePath}`,
-        );
-      } catch {
-        logger.warn(`Subtitle sidecar missing for ${clip.id}: ${clip.subtitlePath}`);
+    if (portrait) {
+      // Formula Standar Baku via buildStudioFilterGraph
+      const sourceChannel = clip.sourceChannel || ctx.sourceChannel || '';
+      const sourceText = sourceChannel ? `Sumber: ${sourceChannel}` : '';
+      const defaultStudioConfig: StudioConfig = {
+        ...DEFAULT_STUDIO_CONFIG,
+        hookText: clip.hookHeadline || '',
+        hookPosition: 'center',
+        sourceText,
+        sourceEnabled: Boolean(sourceText),
+        logoEnabled: true,
+        logoPath: 'media/assets/logo.png',
+        logoPosition: 'top-left',
+        subtitleStyleId: 'clipajaib',
+        fadeInDuration: 0.4,
+        fadeOutDuration: 0.6,
+        freezeDuration: 0,
+        hookTtsEnabled: true,
+        hookTtsVoice: 'id-ID-GadisNeural',
+      };
+
+      const clipStudioRaw =
+        clip.studioConfig && typeof clip.studioConfig === 'object' ? clip.studioConfig : {};
+      const studioConfig: StudioConfig = {
+        ...defaultStudioConfig,
+        ...clipStudioRaw,
+      };
+
+      // 1. Generate hook TTS voiceover if enabled and hook text exists
+      let ttsAudioPath: string | undefined;
+      let ttsAudioDuration: number | undefined;
+
+      if (studioConfig.hookTtsEnabled !== false && studioConfig.hookText?.trim()) {
+        try {
+          const ttsDir = path.join(ctx.workDir, 'tts');
+          await fs.mkdir(ttsDir, { recursive: true });
+          const ttsDestPath = path.join(ttsDir, `${clip.id}_hook.mp3`);
+          const ttsResult = await generateHookTtsAudio({
+            text: studioConfig.hookText.trim(),
+            outputPath: ttsDestPath,
+            voice: studioConfig.hookTtsVoice || 'id-ID-GadisNeural',
+            rate: '+20%',
+          });
+          ttsAudioPath = ttsResult.audioPath;
+          ttsAudioDuration = ttsResult.duration;
+          const ttsDurRounded = Number(ttsResult.duration.toFixed(2));
+          studioConfig.hookDuration = ttsDurRounded;
+          studioConfig.freezeDuration = ttsDurRounded;
+          studioConfig.hookPosition = 'center';
+        } catch (ttsErr: any) {
+          logger.warn(`Failed to generate TTS hook audio for clip ${clip.id}: ${ttsErr.message}`);
+        }
       }
+
+      // Check if media/assets/logo.png exists
+      let logoResolvedPath: string | undefined;
+      if (studioConfig.logoEnabled && studioConfig.logoPath) {
+        const candidatePaths = [
+          path.isAbsolute(studioConfig.logoPath)
+            ? studioConfig.logoPath
+            : path.join(PATHS.root, studioConfig.logoPath),
+          path.join(PATHS.assets, 'logo.png'),
+          path.join(PATHS.root, 'media/assets/logo.png'),
+        ];
+        for (const cp of candidatePaths) {
+          if (await this.fileExists(cp)) {
+            logoResolvedPath = cp;
+            break;
+          }
+        }
+        if (!logoResolvedPath) {
+          logger.warn(`Logo file not found at candidate paths for clip ${clip.id}`);
+        }
+      }
+
+      // Generate vector SVG source pill if source attribution is enabled
+      let pillResolvedPath: string | undefined;
+      if (studioConfig.sourceEnabled && studioConfig.sourceText?.trim()) {
+        try {
+          const brandingDir = path.join(ctx.workDir, 'branding');
+          await fs.mkdir(brandingDir, { recursive: true });
+          const pillDestPath = path.join(brandingDir, `${clip.id}_pill.svg`);
+          await writeSourcePillSvg(pillDestPath, {
+            sourceText: studioConfig.sourceText.trim(),
+            fontSize: 20,
+            height: 50,
+            fillColor: 'white',
+            fillOpacity: 0.88,
+            textColor: '#1a1a1a',
+            fontFamily: 'Montserrat, DejaVu Sans, sans-serif',
+          });
+          pillResolvedPath = pillDestPath;
+        } catch (pillErr: any) {
+          logger.warn(`Failed to generate SVG pill for clip ${clip.id}: ${pillErr.message}`);
+        }
+      }
+
+      // Subtitle sidecar check & unified ASS generation
+      let activeSubtitlePath: string | undefined;
+      let isAssSubtitle = false;
+      if (clip?.subtitlePath && ctx.config?.subtitleEnabled !== false) {
+        if (await this.fileExists(clip.subtitlePath)) {
+          const stat = await fs.stat(clip.subtitlePath).catch(() => null);
+          if (stat && stat.size > 0) {
+            activeSubtitlePath = clip.subtitlePath;
+          }
+        } else {
+          logger.warn(`Subtitle sidecar missing for ${clip.id}: ${clip.subtitlePath}`);
+        }
+      }
+
+      const style = getStyleById(studioConfig.subtitleStyleId || 'clipajaib') || CLIPAJAIB_STYLE;
+
+      if (activeSubtitlePath) {
+        try {
+          const rawSrt = await fs.readFile(activeSubtitlePath, 'utf8');
+          const parsedCues = parseSrt(rawSrt);
+          const freezeSec = studioConfig.freezeDuration || 0;
+          const subDelay =
+            typeof studioConfig.subtitleDelay === 'number' ? studioConfig.subtitleDelay : 0;
+          const totalShift = freezeSec + subDelay;
+          const shiftedCues =
+            totalShift !== 0
+              ? parsedCues.map((c) => ({
+                  ...c,
+                  start: Math.max(0, Number((c.start + totalShift).toFixed(3))),
+                  end: Math.max(0.1, Number((c.end + totalShift).toFixed(3))),
+                }))
+              : parsedCues;
+
+          const assContent = generateUnifiedAssDocument({
+            width: targetW,
+            height: targetH,
+            hookText: studioConfig.hookText?.trim() || '',
+            hookDuration: studioConfig.hookDuration || studioConfig.freezeDuration || 0,
+            dialogueCues: shiftedCues,
+            fontName: 'Montserrat',
+            dialogueFontSize: style.fontSize || 62,
+            dialogueOutline: style.outline || 4.5,
+            dialogueMarginV: style.marginV || 420,
+            primaryColorHex: style.primaryColour,
+            outlineColorHex: style.outlineColour,
+          });
+
+          const subtitlesDir = path.join(ctx.workDir, 'subtitles');
+          await fs.mkdir(subtitlesDir, { recursive: true });
+          const assDestPath = path.join(subtitlesDir, `${clip.id}_compress.ass`);
+          await fs.writeFile(assDestPath, assContent, 'utf8');
+          activeSubtitlePath = assDestPath;
+          isAssSubtitle = true;
+        } catch (assErr: any) {
+          logger.warn(
+            `Failed to generate unified ASS in compress for clip ${clip.id}: ${assErr.message}`,
+          );
+        }
+      }
+
+      const duration = clip?.duration ?? 60;
+      const { filterComplex, hasLogoInput, hasPillInput, hasTtsInput } = buildStudioFilterGraph({
+        inputVideoDuration: duration,
+        width: targetW,
+        height: targetH,
+        config: studioConfig,
+        subtitlePath: activeSubtitlePath,
+        logoResolvedPath,
+        pillResolvedPath,
+        isAssSubtitle,
+        filmBurnIntro: Boolean(studioConfig.filmBurnIntro),
+        subtitleForceStyle: isAssSubtitle ? undefined : buildForceStyle(style),
+        baseVideoFilter,
+        ttsAudioPath,
+        ttsAudioDuration,
+        hasAudio: ctx.metadata?.hasAudio ?? true,
+      });
+
+      const args: string[] = [
+        '-i',
+        inputPath,
+        ...(hasLogoInput && logoResolvedPath ? ['-i', logoResolvedPath] : []),
+        ...(hasPillInput && pillResolvedPath ? ['-i', pillResolvedPath] : []),
+        ...(hasTtsInput && ttsAudioPath ? ['-i', ttsAudioPath] : []),
+        '-filter_complex',
+        filterComplex,
+        '-map',
+        '[v_out]',
+        '-map',
+        '[a_out]',
+        '-r',
+        String(srcFps),
+        '-c:v',
+        'libx264',
+        '-preset',
+        'medium',
+        '-crf',
+        '21',
+        '-g',
+        '48',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '192k',
+        '-ar',
+        '48000',
+        '-ac',
+        '2',
+        '-movflags',
+        '+faststart',
+        '-y',
+        outputPath,
+      ];
+
+      await runBinaryChecked('ffmpeg', args, { timeoutMs: 1800000 });
+      return studioConfig;
+    } else {
+      // Fallback / landscape: burn subtitles into video if sidecar SRT exists
+      let filter = baseVideoFilter;
+      if (clip?.subtitlePath && ctx.config?.subtitleEnabled !== false) {
+        try {
+          const stat = await fs.stat(clip.subtitlePath).catch(() => null);
+          if (stat && stat.size > 0) {
+            const esc = clip.subtitlePath
+              .replace(/\\/g, '/')
+              .replace(/'/g, "\\'")
+              .replace(/:/g, '\\:');
+            const styleParams = buildForceStyle(subtitleStyle);
+            filter += `,subtitles='${esc}':force_style='${styleParams}'`;
+            logger.info(
+              `Burning subtitles into ${clip.id} (style=${subtitleStyle.id}): ${clip.subtitlePath}`,
+            );
+          }
+        } catch {
+          logger.warn(`Subtitle sidecar missing for ${clip.id}: ${clip.subtitlePath}`);
+        }
+      }
+
+      const args: string[] = [
+        '-i',
+        inputPath,
+        '-vf',
+        filter,
+        '-c:v',
+        'libx264',
+        '-preset',
+        'medium',
+        '-crf',
+        '21',
+        '-g',
+        '48',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '192k',
+        '-ar',
+        '48000',
+        '-ac',
+        '2',
+        '-movflags',
+        '+faststart',
+        '-y',
+        outputPath,
+      ];
+
+      await runBinaryChecked('ffmpeg', args, { timeoutMs: 1800000 });
+      return undefined;
     }
-
-    const args: string[] = [
-      '-i',
-      inputPath,
-      '-vf',
-      filter,
-      '-c:v',
-      'libx264',
-      '-preset',
-      'medium',
-      '-crf',
-      '21',
-      '-g',
-      '48', // keyframe interval
-      '-c:a',
-      'aac',
-      '-b:a',
-      '192k',
-      '-ar',
-      '48000',
-      '-ac',
-      '2', // stereo
-      '-movflags',
-      '+faststart',
-      '-y',
-      outputPath,
-    ];
-
-    await runBinaryChecked('ffmpeg', args, { timeoutMs: 1800000 });
   }
 
   /**
@@ -253,6 +491,7 @@ export class CompressStage implements PipelineStageHandler {
     fileSize: number,
     ctx: StageContext,
     subtitleStyle?: ReturnType<typeof pickStyle>,
+    studioConfig?: StudioConfig,
   ): Promise<void> {
     // Store relative path from media/exports
     const relativePath = path.relative(PATHS.exports, finalPath);
@@ -264,6 +503,7 @@ export class CompressStage implements PipelineStageHandler {
         data: {
           exportPath: relativePath,
           isExported: true,
+          ...(studioConfig ? { studioConfig: studioConfig as any } : {}),
           metadata: {
             segmentIndex: ctx.stageData.clips?.indexOf(clip) ?? 0,
             subtitlePath: clip.subtitlePath ? path.relative(PATHS.work, clip.subtitlePath) : null,
