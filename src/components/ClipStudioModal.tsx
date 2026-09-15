@@ -29,6 +29,8 @@ import {
   Music,
   Layers,
   Palette,
+  Eye,
+  Volume1,
 } from 'lucide-react';
 
 interface ClipStudioModalProps {
@@ -81,23 +83,94 @@ export default function ClipStudioModal({
   const [isCleanVideo, setIsCleanVideo] = useState<boolean>(true);
   const [showInspector, setShowInspector] = useState<boolean>(false);
 
+  // View mode: 'draft' (interactive overlays + freeze simulation) vs 'rendered' (final hardsubbed video from FFmpeg)
+  const [clipData, setClipData] = useState<any>(null);
+  const [viewMode, setViewMode] = useState<'draft' | 'rendered'>('draft');
+  const [ttsPreviewLoading, setTtsPreviewLoading] = useState<boolean>(false);
+  const [ttsPreviewPlaying, setTtsPreviewPlaying] = useState<boolean>(false);
+
   // Logo state
   const [logoExists, setLogoExists] = useState<boolean>(false);
   const [uploadingLogo, setUploadingLogo] = useState<boolean>(false);
   const [logoUploadMsg, setLogoUploadMsg] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
 
+  // Freeze Frame duration: in draft mode, freeze duration is active if TTS is enabled or manual duration > 0
+  const freezeSec =
+    viewMode === 'draft' &&
+    (studioConfig.hookTtsEnabled !== false ||
+      (typeof studioConfig.freezeDuration === 'number' && studioConfig.freezeDuration > 0))
+      ? Number((studioConfig.freezeDuration || studioConfig.hookDuration || 2.0).toFixed(2))
+      : 0;
+
+  const totalTimelineDuration = (duration || 60) + (viewMode === 'draft' ? freezeSec : 0);
+
   const togglePlay = useCallback(() => {
-    if (!videoRef.current) return;
-    if (videoRef.current.paused) {
-      videoRef.current.play().catch(() => {});
+    if (isPlaying) {
+      setIsPlaying(false);
+      if (videoRef.current) videoRef.current.pause();
+      if (ttsAudioRef.current) ttsAudioRef.current.pause();
     } else {
-      videoRef.current.pause();
+      setIsPlaying(true);
+      if (viewMode === 'draft' && freezeSec > 0 && currentTime < freezeSec) {
+        if (videoRef.current) {
+          videoRef.current.currentTime = 0;
+          videoRef.current.pause();
+        }
+        if (ttsAudioRef.current) {
+          ttsAudioRef.current.currentTime = currentTime;
+          ttsAudioRef.current.play().catch(() => {});
+        }
+      } else {
+        if (videoRef.current) {
+          if (viewMode === 'draft' && freezeSec > 0) {
+            videoRef.current.currentTime = Math.max(0, currentTime - freezeSec);
+          }
+          videoRef.current.play().catch(() => {});
+        }
+      }
     }
-  }, []);
+  }, [isPlaying, viewMode, freezeSec, currentTime]);
+
+  // Freeze Frame animation loop during draft mode playback (frame 1 frozen while clock advances)
+  useEffect(() => {
+    let animId: number;
+    let lastTime = performance.now();
+
+    if (isPlaying && viewMode === 'draft' && freezeSec > 0 && currentTime < freezeSec) {
+      const loop = (now: number) => {
+        const dt = (now - lastTime) / 1000;
+        lastTime = now;
+
+        setCurrentTime((prev) => {
+          const next = prev + dt;
+          if (next >= freezeSec) {
+            if (ttsAudioRef.current) {
+              ttsAudioRef.current.pause();
+            }
+            if (videoRef.current) {
+              videoRef.current.currentTime = 0;
+              videoRef.current.play().catch(() => {});
+            }
+            return freezeSec;
+          }
+          return next;
+        });
+
+        animId = requestAnimationFrame(loop);
+      };
+
+      animId = requestAnimationFrame(loop);
+    }
+
+    return () => {
+      if (animId) cancelAnimationFrame(animId);
+    };
+  }, [isPlaying, viewMode, freezeSec, currentTime]);
 
   const fetchStudioData = useCallback(
     async (signal?: AbortSignal) => {
@@ -121,6 +194,9 @@ export default function ClipStudioModal({
         if (signal?.aborted) return;
 
         const data = studioPayload.data;
+        if (data.clip) {
+          setClipData(data.clip);
+        }
         if (typeof data.isCleanVideo === 'boolean') {
           setIsCleanVideo(data.isCleanVideo);
         }
@@ -143,6 +219,11 @@ export default function ClipStudioModal({
           if (logoPayload.success && !signal?.aborted) {
             setLogoExists(!!logoPayload.data?.exists);
           }
+        }
+
+        if (ttsAudioRef.current) {
+          ttsAudioRef.current.src = `/api/clips/${clipId}/tts`;
+          ttsAudioRef.current.load();
         }
       } catch (err: any) {
         if (err.name === 'AbortError' || signal?.aborted) return;
@@ -182,42 +263,68 @@ export default function ClipStudioModal({
         togglePlay();
       } else if (e.key === 'ArrowLeft' && isOpen && !isInteractive) {
         e.preventDefault();
-        if (videoRef.current) {
-          const targetSec = Math.max(0, videoRef.current.currentTime - 1.0);
-          videoRef.current.currentTime = targetSec;
-          setCurrentTime(targetSec);
-        }
+        handleSeek(Math.max(0, currentTime - 1.0));
       } else if (e.key === 'ArrowRight' && isOpen && !isInteractive) {
         e.preventDefault();
-        if (videoRef.current) {
-          const maxSec = duration || videoRef.current.duration || 60;
-          const targetSec = Math.min(maxSec, videoRef.current.currentTime + 1.0);
-          videoRef.current.currentTime = targetSec;
-          setCurrentTime(targetSec);
-        }
+        handleSeek(Math.min(totalTimelineDuration, currentTime + 1.0));
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, saving, reBurning, duration, onClose, togglePlay]);
+  }, [isOpen, saving, reBurning, totalTimelineDuration, currentTime, onClose, togglePlay]);
 
   const handleSeek = (seconds: number) => {
-    if (videoRef.current) {
-      const targetSec = Math.max(0, Math.min(seconds, duration || 60));
-      videoRef.current.currentTime = targetSec;
-      setCurrentTime(targetSec);
-      if (!isPlaying) {
-        videoRef.current.play().catch(() => {});
+    const targetSec = Math.max(0, Math.min(seconds, totalTimelineDuration));
+    setCurrentTime(targetSec);
+
+    if (viewMode === 'draft' && freezeSec > 0) {
+      if (targetSec < freezeSec) {
+        if (videoRef.current) {
+          videoRef.current.currentTime = 0;
+          videoRef.current.pause();
+        }
+        if (ttsAudioRef.current) {
+          ttsAudioRef.current.currentTime = targetSec;
+          if (isPlaying) ttsAudioRef.current.play().catch(() => {});
+        }
+      } else {
+        if (ttsAudioRef.current) {
+          ttsAudioRef.current.pause();
+        }
+        if (videoRef.current) {
+          videoRef.current.currentTime = targetSec - freezeSec;
+          if (isPlaying && videoRef.current.paused) {
+            videoRef.current.play().catch(() => {});
+          }
+        }
+      }
+    } else {
+      if (videoRef.current) {
+        videoRef.current.currentTime = targetSec;
+        if (isPlaying && videoRef.current.paused) {
+          videoRef.current.play().catch(() => {});
+        }
       }
     }
   };
 
   const handleTimeUpdate = () => {
-    if (videoRef.current) {
+    if (!videoRef.current) return;
+
+    if (viewMode === 'draft' && freezeSec > 0) {
+      if (currentTime >= freezeSec) {
+        const cur = freezeSec + videoRef.current.currentTime;
+        setCurrentTime(cur);
+
+        const dialogueTime = videoRef.current.currentTime;
+        const activeIdx = cues.findIndex((c) => dialogueTime >= c.start && dialogueTime <= c.end);
+        if (activeIdx !== -1 && activeIdx !== selectedCueIndex) {
+          setSelectedCueIndex(activeIdx);
+        }
+      }
+    } else {
       const cur = videoRef.current.currentTime;
       setCurrentTime(cur);
-
-      // Auto detect active cue for inspector highlight
       const activeIdx = cues.findIndex((c) => cur >= c.start && cur <= c.end);
       if (activeIdx !== -1 && activeIdx !== selectedCueIndex) {
         setSelectedCueIndex(activeIdx);
@@ -229,6 +336,74 @@ export default function ClipStudioModal({
     if (videoRef.current && videoRef.current.duration) {
       setDuration(videoRef.current.duration);
     }
+  };
+
+  const handleSwitchViewMode = (mode: 'draft' | 'rendered') => {
+    if (mode === viewMode) return;
+    setIsPlaying(false);
+    if (videoRef.current) videoRef.current.pause();
+    if (ttsAudioRef.current) ttsAudioRef.current.pause();
+    setViewMode(mode);
+    setCurrentTime(0);
+    setVideoTimestampKey(Date.now());
+  };
+
+  const handleTestTts = async () => {
+    if (!studioConfig.hookText?.trim()) {
+      setError('Masukkan teks headline hook terlebih dahulu sebelum menguji voiceover');
+      return;
+    }
+    setTtsPreviewLoading(true);
+    setError(null);
+    setStatusMessage('Sedang menghasilkan audio voiceover AI (GadisNeural)...');
+    try {
+      const res = await fetch(`/api/clips/${clipId}/tts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: studioConfig.hookText.trim(),
+          voice: studioConfig.hookTtsVoice || 'id-ID-GadisNeural',
+        }),
+      });
+      const payload = await res.json();
+      if (!res.ok || !payload.success) {
+        throw new Error(payload?.error?.message || 'Gagal menghasilkan voiceover TTS');
+      }
+
+      const dur = payload.data.duration;
+      const audioUrl = payload.data.audioUrl;
+
+      setStudioConfig((prev) => ({
+        ...prev,
+        freezeDuration: dur,
+        hookDuration: dur,
+      }));
+
+      setStatusMessage(
+        `Voiceover berhasil dibuat (${dur}s). Durasi freeze frame otomatis disinkronkan!`,
+      );
+
+      if (ttsAudioRef.current) {
+        ttsAudioRef.current.src = audioUrl;
+        ttsAudioRef.current.load();
+        setTtsPreviewPlaying(true);
+        ttsAudioRef.current.play().catch(() => {});
+        ttsAudioRef.current.onended = () => setTtsPreviewPlaying(false);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Gagal membuat voiceover');
+      setStatusMessage(null);
+    } finally {
+      setTtsPreviewLoading(false);
+    }
+  };
+
+  const handleStopTts = () => {
+    if (ttsAudioRef.current) {
+      ttsAudioRef.current.pause();
+      ttsAudioRef.current.currentTime = 0;
+    }
+    setTtsPreviewPlaying(false);
   };
 
   const handleCueTextChange = (index: number, newText: string) => {
@@ -410,6 +585,8 @@ export default function ClipStudioModal({
       setStatusMessage('Video studio berhasil dirender ulang!');
       const newKey = Date.now();
       setVideoTimestampKey(newKey);
+      setViewMode('rendered');
+      setClipData((prev: any) => ({ ...prev, isExported: true, exportPath: true }));
       if (videoRef.current) {
         videoRef.current.load();
       }
@@ -429,6 +606,10 @@ export default function ClipStudioModal({
       videoRef.current.removeAttribute('src');
       videoRef.current.load();
     }
+    if (ttsAudioRef.current) {
+      ttsAudioRef.current.pause();
+      ttsAudioRef.current.removeAttribute('src');
+    }
     onClose();
   };
 
@@ -439,15 +620,25 @@ export default function ClipStudioModal({
         videoRef.current.removeAttribute('src');
         videoRef.current.load();
       }
+      if (ttsAudioRef.current) {
+        ttsAudioRef.current.pause();
+        ttsAudioRef.current.removeAttribute('src');
+      }
     };
   }, []);
 
   if (!isOpen) return null;
 
-  const videoSrc = `/api/clips/${clipId}/file?clean=1&t=${videoTimestampKey}`;
+  const videoSrc =
+    viewMode === 'rendered'
+      ? `/api/clips/${clipId}/file?t=${videoTimestampKey}`
+      : `/api/clips/${clipId}/file?clean=1&t=${videoTimestampKey}`;
   const pixelsPerSecond = 24 * timelineZoom;
-  const totalTimelineWidth = Math.max(duration * pixelsPerSecond, 800);
-  const activeCue = cues.find((c) => currentTime >= c.start && currentTime <= c.end);
+  const totalTimelineWidth = Math.max(totalTimelineDuration * pixelsPerSecond, 800);
+  const dialogueTime =
+    viewMode === 'draft' && freezeSec > 0 ? currentTime - freezeSec : currentTime;
+  const activeCue =
+    dialogueTime >= 0 ? cues.find((c) => dialogueTime >= c.start && dialogueTime <= c.end) : null;
 
   return (
     <div
@@ -935,13 +1126,55 @@ export default function ClipStudioModal({
                       </div>
 
                       {studioConfig.hookTtsEnabled !== false ? (
-                        <div className="space-y-1.5 pt-1 border-t border-zinc-800/80">
+                        <div className="space-y-2.5 pt-1 border-t border-zinc-800/80">
                           <div className="flex items-center justify-between text-[11px]">
                             <span className="text-zinc-400">Pilihan Suara:</span>
                             <span className="text-amber-400 font-semibold font-mono text-[10px]">
                               Suara Wanita (GadisNeural)
                             </span>
                           </div>
+
+                          <div className="flex items-center justify-between text-[11px] bg-zinc-950/40 p-2 rounded border border-zinc-800">
+                            <span className="text-zinc-400">Durasi Freeze Frame:</span>
+                            <span className="text-amber-300 font-mono font-bold text-xs">
+                              ⏱{' '}
+                              {(
+                                studioConfig.freezeDuration ||
+                                studioConfig.hookDuration ||
+                                2.0
+                              ).toFixed(2)}
+                              s
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={ttsPreviewPlaying ? handleStopTts : handleTestTts}
+                            disabled={ttsPreviewLoading || !studioConfig.hookText?.trim()}
+                            className={`w-full py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 border transition-all cursor-pointer ${
+                              ttsPreviewPlaying
+                                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30'
+                                : 'bg-zinc-800 text-zinc-200 border-zinc-700 hover:bg-zinc-750 hover:text-white'
+                            } disabled:opacity-50 disabled:cursor-not-allowed shadow-sm`}
+                          >
+                            {ttsPreviewLoading ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                                <span>Membuat Suara AI...</span>
+                              </>
+                            ) : ttsPreviewPlaying ? (
+                              <>
+                                <Pause className="w-3.5 h-3.5 text-amber-400 fill-current" />
+                                <span>Hentikan Suara Voiceover</span>
+                              </>
+                            ) : (
+                              <>
+                                <Volume2 className="w-3.5 h-3.5 text-amber-400" />
+                                <span>Dengarkan Voiceover AI & Sinkron Durasi</span>
+                              </>
+                            )}
+                          </button>
+
                           <p className="text-[10px] text-zinc-400 leading-relaxed bg-zinc-950/60 p-2 rounded border border-zinc-800/60">
                             💡 <strong>Formula Standar Baku:</strong> 1 frame pertama video akan
                             dibekukan selama audio suara wanita membaca hook. Setelah selesai
@@ -1299,6 +1532,54 @@ export default function ClipStudioModal({
 
         {/* C. Center Canvas Monitor (9:16 Vertical Video Preview) */}
         <div className="flex-1 bg-[#09090c] flex flex-col items-center justify-between p-3 relative min-w-0 overflow-hidden">
+          {/* Top Canvas Mode Switcher Bar */}
+          <div className="w-full max-w-md flex items-center justify-between mb-2 px-1">
+            <div className="flex items-center gap-1 bg-zinc-900/90 p-1 rounded-lg border border-zinc-800">
+              <button
+                type="button"
+                onClick={() => handleSwitchViewMode('draft')}
+                className={`px-3 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  viewMode === 'draft'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span>Simulasi Draf</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSwitchViewMode('rendered')}
+                disabled={!clipData?.isExported && !clipData?.exportPath}
+                className={`px-3 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  viewMode === 'rendered'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : clipData?.isExported || clipData?.exportPath
+                      ? 'text-zinc-400 hover:text-zinc-200'
+                      : 'text-zinc-600 cursor-not-allowed opacity-50'
+                }`}
+                title={
+                  clipData?.isExported || clipData?.exportPath
+                    ? 'Lihat video final hasil render FFmpeg dengan freeze frame & voiceover'
+                    : 'Render ulang terlebih dahulu untuk melihat hasil ekspor'
+                }
+              >
+                <Film className="w-3.5 h-3.5" />
+                <span>Hasil Render (Final)</span>
+                {(clipData?.isExported || clipData?.exportPath) && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                )}
+              </button>
+            </div>
+
+            {freezeSec > 0 && viewMode === 'draft' && (
+              <div className="text-[11px] font-mono font-semibold text-amber-400 flex items-center gap-1 bg-amber-400/10 px-2.5 py-1 rounded-md border border-amber-400/20 shadow-sm">
+                <span>❄️ Freeze Frame:</span>
+                <span>{freezeSec.toFixed(1)}s</span>
+              </div>
+            )}
+          </div>
+
           {/* Canvas Container */}
           <div className="flex-1 flex items-center justify-center w-full min-h-0">
             <div className="relative aspect-[9/16] h-full min-h-[280px] max-h-[calc(100vh-320px)] w-auto bg-black rounded-lg shadow-2xl border border-zinc-800 overflow-hidden flex items-center justify-center">
@@ -1312,7 +1593,10 @@ export default function ClipStudioModal({
                 onLoadedMetadata={handleLoadedMetadata}
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
-                onEnded={() => setIsPlaying(false)}
+                onEnded={() => {
+                  setIsPlaying(false);
+                  if (ttsAudioRef.current) ttsAudioRef.current.pause();
+                }}
                 onError={() =>
                   setError(
                     'Gagal memuat preview video klip. Pastikan berkas media tersedia di disk.',
@@ -1321,101 +1605,111 @@ export default function ClipStudioModal({
                 onClick={togglePlay}
               />
 
-              {/* Notice when playing an already exported / hardsubbed video */}
-              {!isCleanVideo && (
-                <div className="absolute top-2 left-2 z-30 px-2 py-0.5 rounded bg-zinc-900/90 border border-zinc-750 text-[10px] text-amber-400 font-mono shadow-sm flex items-center gap-1.5 pointer-events-none">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                  <span>Preview Ekspor (Hardsub)</span>
+              {/* Hidden audio element for previewing TTS voiceover in draft simulation */}
+              <audio ref={ttsAudioRef} preload="auto" />
+
+              {/* Rendered Mode Notification Badge */}
+              {viewMode === 'rendered' && (
+                <div className="absolute top-2 left-2 z-30 px-2.5 py-1 rounded bg-zinc-950/85 border border-emerald-500/40 text-[10px] text-emerald-400 font-mono shadow-md flex items-center gap-1.5 pointer-events-none backdrop-blur-sm">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>🎬 Video Hasil Render (Final Hardsub & Freeze Frame)</span>
                 </div>
               )}
 
-              {/* Overlaid Mockup Layers (Matches Actual Render) */}
-              {/* Layer 1A: Watermark Logo - only render if clean video */}
-              {studioConfig.logoEnabled && logoExists && isCleanVideo && (
-                <div
-                  className={`pointer-events-none z-20 ${
-                    (studioConfig.logoPosition || 'top-left') === 'top-left'
-                      ? 'absolute top-4 left-4'
-                      : (studioConfig.logoPosition || 'top-left') === 'top-right'
-                        ? 'absolute top-4 right-4'
-                        : (studioConfig.logoPosition || 'top-left') === 'bottom-left'
-                          ? 'absolute bottom-6 left-4'
-                          : 'absolute bottom-6 right-4'
-                  }`}
-                >
-                  <div
-                    className="w-7 h-7 rounded shadow-md overflow-hidden"
-                    style={{ opacity: studioConfig.logoOpacity }}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={`/api/settings/logo/file?t=${videoTimestampKey}`}
-                      alt="Logo"
-                      className="w-full h-full object-contain"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Layer 1B: Source Attribution Pill */}
-              {studioConfig.sourceEnabled &&
-                studioConfig.sourceText &&
-                (() => {
-                  const isLogoVisible = studioConfig.logoEnabled && logoExists && isCleanVideo;
-                  const logoPos = studioConfig.logoPosition || 'top-left';
-                  const sourcePos = studioConfig.sourcePosition || 'top-right';
-
-                  let pillPlacement = 'absolute pointer-events-none z-20 ';
-                  if (sourcePos === 'bottom') {
-                    pillPlacement += 'bottom-28 left-1/2 -translate-x-1/2';
-                  } else if (sourcePos === 'top-left') {
-                    pillPlacement +=
-                      isLogoVisible && logoPos === 'top-left' ? 'top-4 left-14' : 'top-4 left-4';
-                  } else {
-                    // top-right
-                    pillPlacement +=
-                      isLogoVisible && logoPos === 'top-right' ? 'top-4 right-14' : 'top-4 right-4';
-                  }
-
-                  return (
-                    <div className={pillPlacement}>
-                      <div className="bg-white/90 text-zinc-900 text-[9px] font-bold px-2.5 py-1 rounded-full shadow-sm whitespace-nowrap">
-                        {studioConfig.sourceText}
+              {/* Overlaid Mockup Layers (Draft Simulation Mode Only) */}
+              {viewMode === 'draft' && (
+                <>
+                  {/* Layer 1A: Watermark Logo */}
+                  {studioConfig.logoEnabled && logoExists && isCleanVideo && (
+                    <div
+                      className={`pointer-events-none z-20 ${
+                        (studioConfig.logoPosition || 'top-left') === 'top-left'
+                          ? 'absolute top-4 left-4'
+                          : (studioConfig.logoPosition || 'top-left') === 'top-right'
+                            ? 'absolute top-4 right-4'
+                            : (studioConfig.logoPosition || 'top-left') === 'bottom-left'
+                              ? 'absolute bottom-6 left-4'
+                              : 'absolute bottom-6 right-4'
+                      }`}
+                    >
+                      <div
+                        className="w-7 h-7 rounded shadow-md overflow-hidden"
+                        style={{ opacity: studioConfig.logoOpacity }}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={`/api/settings/logo/file?t=${videoTimestampKey}`}
+                          alt="Logo"
+                          className="w-full h-full object-contain"
+                        />
                       </div>
                     </div>
-                  );
-                })()}
+                  )}
 
-              {/* Layer 2: Hook Headline Banner (Shows during freeze frame / hook TTS duration) */}
-              {currentTime <= (studioConfig.hookDuration || studioConfig.freezeDuration || 3.1) &&
-                studioConfig.hookText && (
-                  <div
-                    className={`absolute left-3 right-3 text-center pointer-events-none z-20 transition-all ${
-                      (studioConfig.hookPosition || 'center') === 'top'
-                        ? 'top-14'
-                        : 'top-1/2 -translate-y-1/2'
-                    }`}
-                  >
-                    <div className="inline-block bg-amber-400 text-black font-black uppercase text-xs sm:text-sm px-3.5 py-1.5 rounded-md shadow-2xl border-2 border-black tracking-wide">
-                      {studioConfig.hookText}
+                  {/* Layer 1B: Source Attribution Pill */}
+                  {studioConfig.sourceEnabled &&
+                    studioConfig.sourceText &&
+                    (() => {
+                      const isLogoVisible = studioConfig.logoEnabled && logoExists && isCleanVideo;
+                      const logoPos = studioConfig.logoPosition || 'top-left';
+                      const sourcePos = studioConfig.sourcePosition || 'top-right';
+
+                      let pillPlacement = 'absolute pointer-events-none z-20 ';
+                      if (sourcePos === 'bottom') {
+                        pillPlacement += 'bottom-28 left-1/2 -translate-x-1/2';
+                      } else if (sourcePos === 'top-left') {
+                        pillPlacement +=
+                          isLogoVisible && logoPos === 'top-left'
+                            ? 'top-4 left-14'
+                            : 'top-4 left-4';
+                      } else {
+                        pillPlacement +=
+                          isLogoVisible && logoPos === 'top-right'
+                            ? 'top-4 right-14'
+                            : 'top-4 right-4';
+                      }
+
+                      return (
+                        <div className={pillPlacement}>
+                          <div className="bg-white/90 text-zinc-900 text-[9px] font-bold px-2.5 py-1 rounded-full shadow-sm whitespace-nowrap">
+                            {studioConfig.sourceText}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                  {/* Layer 2: Hook Headline Banner (Visible during freeze frame / hook TTS duration) */}
+                  {currentTime < Math.max(freezeSec, 0.1) && studioConfig.hookText && (
+                    <div
+                      className={`absolute left-3 right-3 text-center pointer-events-none z-20 transition-all ${
+                        (studioConfig.hookPosition || 'center') === 'top'
+                          ? 'top-14'
+                          : 'top-1/2 -translate-y-1/2'
+                      }`}
+                    >
+                      <div className="inline-block bg-amber-400 text-black font-black uppercase text-xs sm:text-sm px-3.5 py-1.5 rounded-md shadow-2xl border-2 border-black tracking-wide">
+                        {studioConfig.hookText}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-              {/* Layer 3: Active Subtitle Preview - only render if clean video */}
-              {activeCue && isCleanVideo && (
-                <div className="absolute bottom-16 left-3 right-3 text-center pointer-events-none z-20">
-                  <span className="font-montserrat font-black text-amber-300 text-xs sm:text-sm px-2 py-1 rounded drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] stroke-black tracking-tight leading-snug whitespace-pre-line">
-                    {activeCue.text}
-                  </span>
-                </div>
-              )}
+                  {/* Layer 3: Active Subtitle Preview (Shown only after freeze frame ends) */}
+                  {activeCue && isCleanVideo && (
+                    <div className="absolute bottom-16 left-3 right-3 text-center pointer-events-none z-20">
+                      <span className="font-montserrat font-black text-amber-300 text-xs sm:text-sm px-2 py-1 rounded drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] stroke-black tracking-tight leading-snug whitespace-pre-line">
+                        {activeCue.text}
+                      </span>
+                    </div>
+                  )}
 
-              {/* Freeze Frame Indicator Badge */}
-              {studioConfig.freezeDuration > 0 && currentTime < studioConfig.freezeDuration && (
-                <div className="absolute bottom-2 left-2 px-1.5 py-0.5 rounded bg-amber-400/90 text-black text-[9px] font-bold font-mono">
-                  ⏱ Freeze: {studioConfig.freezeDuration.toFixed(1)}s
-                </div>
+                  {/* Freeze Frame Indicator Badge with Countdown */}
+                  {freezeSec > 0 && currentTime < freezeSec && (
+                    <div className="absolute bottom-2 left-2 px-2 py-1 rounded bg-amber-400 text-black text-[10px] font-bold font-mono shadow-md flex items-center gap-1.5 animate-pulse">
+                      <span className="w-1.5 h-1.5 rounded-full bg-black" />
+                      <span>⏱ Freeze: {(freezeSec - currentTime).toFixed(1)}s</span>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -1659,7 +1953,7 @@ export default function ClipStudioModal({
           >
             {/* A. Time Ruler (Detik Marker) */}
             <div className="h-5 relative border-b border-zinc-800 text-[9px] text-zinc-400 font-mono select-none">
-              {Array.from({ length: Math.ceil((duration || 35) / 5) + 1 }).map((_, i) => {
+              {Array.from({ length: Math.ceil(totalTimelineDuration / 5) + 1 }).map((_, i) => {
                 const sec = i * 5;
                 const xPos = sec * pixelsPerSecond;
                 return (
@@ -1680,7 +1974,7 @@ export default function ClipStudioModal({
               <div className="w-3 h-3 bg-red-500 absolute -top-1 -left-[5px] rotate-45 rounded-xs shadow-md" />
             </div>
 
-            {/* TRACK 1: Hook Banner */}
+            {/* TRACK 1: Hook Banner & Freeze Frame */}
             <div className="h-6 bg-zinc-900/60 rounded border border-zinc-800 relative flex items-center px-2">
               <span className="text-[10px] font-mono text-zinc-400 w-16 shrink-0 flex items-center gap-1">
                 <Type className="w-3 h-3 text-amber-400" /> Hook
@@ -1693,11 +1987,17 @@ export default function ClipStudioModal({
                       setActiveTab('hook');
                       handleSeek(0);
                     }}
-                    className="absolute top-0.5 bottom-0.5 bg-amber-500/80 hover:bg-amber-400 text-black text-[10px] font-bold px-2 rounded flex items-center truncate cursor-pointer shadow-sm border border-amber-300 transition-colors"
-                    style={{ left: '0px', width: `${3.1 * pixelsPerSecond}px` }}
-                    title={`Hook: ${studioConfig.hookText}`}
+                    className="absolute top-0.5 bottom-0.5 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-black text-[10px] font-bold px-2 rounded flex items-center truncate cursor-pointer shadow-md border border-amber-300 transition-colors"
+                    style={{
+                      left: '0px',
+                      width: `${Math.max(freezeSec, 1.0) * pixelsPerSecond}px`,
+                    }}
+                    title={`Hook Freeze Frame (${freezeSec.toFixed(1)}s): ${studioConfig.hookText}`}
                   >
-                    🪝 {studioConfig.hookText}
+                    <span className="shrink-0 mr-1 font-mono text-[9px] bg-black/20 px-1 rounded">
+                      ❄️ {freezeSec.toFixed(1)}s
+                    </span>
+                    <span className="truncate">🪝 {studioConfig.hookText}</span>
                   </div>
                 )}
               </div>
@@ -1710,9 +2010,10 @@ export default function ClipStudioModal({
               </span>
               <div className="flex-1 relative h-full">
                 {cues.map((cue, idx) => {
-                  const left = cue.start * pixelsPerSecond;
+                  const cueOffset = viewMode === 'draft' ? freezeSec : 0;
+                  const left = (cue.start + cueOffset) * pixelsPerSecond;
                   const width = Math.max(16, (cue.end - cue.start) * pixelsPerSecond);
-                  const isCurrent = currentTime >= cue.start && currentTime <= cue.end;
+                  const isCurrent = dialogueTime >= cue.start && dialogueTime <= cue.end;
 
                   return (
                     <div
@@ -1721,7 +2022,7 @@ export default function ClipStudioModal({
                         e.stopPropagation();
                         setSelectedCueIndex(idx);
                         setActiveTab('subtitle');
-                        handleSeek(cue.start);
+                        handleSeek(cue.start + cueOffset);
                       }}
                       className={`absolute top-0.5 bottom-0.5 text-[9px] font-medium px-1 rounded flex items-center truncate cursor-pointer transition-all border ${
                         isCurrent
@@ -1751,7 +2052,7 @@ export default function ClipStudioModal({
                       setActiveTab('branding');
                     }}
                     className="absolute top-0.5 bottom-0.5 bg-emerald-950/80 text-emerald-300 text-[9px] font-medium px-2 rounded flex items-center truncate cursor-pointer border border-emerald-800/80"
-                    style={{ left: '0px', width: `${duration * pixelsPerSecond}px` }}
+                    style={{ left: '0px', width: `${totalTimelineDuration * pixelsPerSecond}px` }}
                   >
                     🏷️ Watermark Logo ({studioConfig.logoPosition}) •{' '}
                     {studioConfig.sourceText || 'Atribusi Sumber'}
@@ -1768,7 +2069,7 @@ export default function ClipStudioModal({
               <div className="flex-1 relative h-full">
                 <div
                   className="absolute top-0.5 bottom-0.5 bg-indigo-950/90 text-indigo-300 text-[9px] font-mono px-2 rounded flex items-center truncate border border-indigo-800/80 shadow-inner"
-                  style={{ left: '0px', width: `${duration * pixelsPerSecond}px` }}
+                  style={{ left: '0px', width: `${totalTimelineDuration * pixelsPerSecond}px` }}
                 >
                   🎬 Footage Vertical 1080x1920 (Active Speaker Framing)
                 </div>
@@ -1783,7 +2084,7 @@ export default function ClipStudioModal({
               <div className="flex-1 relative h-full">
                 <div
                   className="absolute top-0.5 bottom-0.5 bg-cyan-950/80 text-cyan-300 text-[9px] font-mono px-2 rounded flex items-center truncate border border-cyan-800/80"
-                  style={{ left: '0px', width: `${duration * pixelsPerSecond}px` }}
+                  style={{ left: '0px', width: `${totalTimelineDuration * pixelsPerSecond}px` }}
                 >
                   🎵 Source Audio + Ducking Level (-16 LUFS)
                 </div>
