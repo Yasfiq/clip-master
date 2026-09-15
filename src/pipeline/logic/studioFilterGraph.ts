@@ -179,8 +179,8 @@ export function buildStudioFilterGraph(
 
   if (useFilmBurn && fadeInDuration > 0) {
     // Cinematic warm red-to-gold light leak intro with explicit RGBA format for alpha fade
-    chains.push(`color=c='#B41400':s=${targetW}x${targetH}:d=0.25:format=rgba[burn_red]`);
-    chains.push(`color=c='#FFE580':s=${targetW}x${targetH}:d=0.35:format=rgba[burn_yel]`);
+    chains.push(`color=c='#B41400':s=${targetW}x${targetH}:d=0.25,format=rgba[burn_red]`);
+    chains.push(`color=c='#FFE580':s=${targetW}x${targetH}:d=0.35,format=rgba[burn_yel]`);
     chains.push(`[burn_red][burn_yel]xfade=transition=fade:duration=0.12:offset=0.15[burn_seq]`);
     chains.push(`[burn_seq]fade=t=out:st=0.30:d=0.25:alpha=1[burn_alpha]`);
   } else if (fadeInDuration > 0) {
