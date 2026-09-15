@@ -694,7 +694,7 @@ export default function ClipStudioModal({
         {/* Right: Actions (Simpan Draf & Render Video Studio) */}
         <div className="flex items-center gap-2">
           {statusMessage && (
-            <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 bg-emerald-950/80 border border-emerald-800/70 rounded text-[11px] text-emerald-300">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-950/80 border border-emerald-800/70 rounded text-[11px] text-emerald-300">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               <span>{statusMessage}</span>
             </div>

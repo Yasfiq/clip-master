@@ -49,8 +49,8 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
-  const fetchClips = async () => {
-    setLoading(true);
+  const fetchClips = async (silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams({ limit: '500' });
@@ -75,7 +75,7 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
       setError(e.message || 'Gagal memuat klip');
       setClips([]);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -109,7 +109,7 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
     a.click();
   };
 
-  if (loading) {
+  if (loading && clips.length === 0) {
     return (
       <div className={`bg-zinc-900 border border-zinc-800 rounded-xl shadow-sm p-6 ${className}`}>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -182,7 +182,7 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
                   : 'Klip akan muncul di sini setelah pipeline selesai memproses video. Buat job baru untuk memulai.')}
             </p>
             <button
-              onClick={fetchClips}
+              onClick={() => fetchClips()}
               className="mt-4 px-3.5 py-1.5 text-xs font-semibold text-zinc-200 bg-zinc-800 hover:bg-zinc-750 border border-zinc-700 rounded-lg transition-colors inline-flex items-center gap-1.5"
             >
               <RefreshCw className="w-3.5 h-3.5" />
@@ -230,7 +230,7 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
               m {Math.floor(filteredClips.reduce((sum, c) => sum + c.duration, 0) % 60)}s
             </span>
             <button
-              onClick={fetchClips}
+              onClick={() => fetchClips()}
               className="text-zinc-300 hover:text-white inline-flex items-center gap-1"
             >
               <RefreshCw className="w-3 h-3" />
@@ -246,7 +246,7 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
           isOpen={true}
           initialTab={editingTab}
           onClose={() => setEditingClipId(null)}
-          onSuccess={() => fetchClips()}
+          onSuccess={() => fetchClips(true)}
         />
       )}
     </div>
