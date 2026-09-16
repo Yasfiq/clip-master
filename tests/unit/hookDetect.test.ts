@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { detectHook, positionBias, composeHookAudio } from '@/pipeline/logic/hookDetect';
+import {
+  detectHook,
+  positionBias,
+  composeHookAudio,
+  evaluateCoreSegmentHook,
+  wrapWhiteHookHeadlineAss,
+} from '@/pipeline/logic/hookDetect';
 
 describe('hookDetect', () => {
   describe('positionBias', () => {
@@ -130,6 +136,46 @@ describe('hookDetect', () => {
     it('clamps inputs to [0, 1]', () => {
       expect(composeHookAudio(-1, 0.5)).toBeGreaterThanOrEqual(0);
       expect(composeHookAudio(2, 0.5)).toBeLessThanOrEqual(1);
+    });
+  });
+
+  describe('evaluateCoreSegmentHook', () => {
+    it('extracts high-impact punchline from Indonesian dialogue transcript', () => {
+      const transcript =
+        'Nah jadi waktu itu tuh, ternyata gak naik kelas bisa jadi bos. Gila banget sih pengalamannya.';
+      const res = evaluateCoreSegmentHook(transcript);
+      expect(res.score).toBeGreaterThan(0.5);
+      expect(res.headline.toLowerCase()).toContain('bisa jadi bos');
+    });
+
+    it('falls back to provided fallback title when transcript is empty', () => {
+      const res = evaluateCoreSegmentHook('', 'Awal Mula Sukses');
+      expect(res.headline).toBe('Awal Mula Sukses');
+      expect(res.score).toBe(0.5);
+    });
+
+    it('cleans conversational filler words from the extracted headline', () => {
+      const transcript = 'Eh nah terus rahasia sukses bisnis ini gampang banget.';
+      const res = evaluateCoreSegmentHook(transcript);
+      expect(res.headline).not.toMatch(/\b(eh|nah|terus)\b/i);
+      expect(res.headline.toLowerCase()).toContain('rahasia');
+    });
+  });
+
+  describe('wrapWhiteHookHeadlineAss', () => {
+    it('keeps short headlines on a single line', () => {
+      const wrapped = wrapWhiteHookHeadlineAss('Kebebasan Segalanya');
+      expect(wrapped).toBe('Kebebasan Segalanya');
+      expect(wrapped).not.toContain('\\N');
+    });
+
+    it('wraps longer headlines across 2 balanced lines using \\N', () => {
+      const wrapped = wrapWhiteHookHeadlineAss('Gak Naik Kelas Bisa Jadi Bos');
+      expect(wrapped).toContain('\\N');
+      const lines = wrapped.split('\\N');
+      expect(lines.length).toBe(2);
+      expect(lines[0].split(' ').length).toBeGreaterThanOrEqual(2);
+      expect(lines[1].split(' ').length).toBeGreaterThanOrEqual(2);
     });
   });
 });

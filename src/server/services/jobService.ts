@@ -7,6 +7,7 @@ import { runPhase1, runPhase2, cancelPipeline } from '../../pipeline/runner';
 import fs from 'fs/promises';
 import path from 'path';
 import { randomUUID } from 'crypto';
+import { parseLocalSourceFilename } from '../../pipeline/logic/sourceNaming';
 
 export interface CreateJobInput {
   sourceUrl?: string;
@@ -110,7 +111,10 @@ export class JobService {
       }
     }
 
-    // 5. Create the job record
+    // 5. Parse local file naming pattern if applicable
+    const localMeta = input.sourcePath ? parseLocalSourceFilename(input.sourcePath) : undefined;
+
+    // 6. Create the job record
     const job = await db.job.create({
       data: {
         status: JobStatus.PENDING,
@@ -118,11 +122,17 @@ export class JobService {
         sourceFilename,
         sourcePath: finalSourcePath,
         sourceFileSize: input.sourcePath ? undefined : null,
+        sourceTitle: localMeta?.sourceTitle,
+        sourceChannel: localMeta?.sourceChannel,
         configId,
       },
     });
 
-    logger.info('Job created', { jobId: job.id });
+    logger.info('Job created', {
+      jobId: job.id,
+      sourceTitle: job.sourceTitle,
+      sourceChannel: job.sourceChannel,
+    });
     return job;
   }
 

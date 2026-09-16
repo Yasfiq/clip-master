@@ -26,6 +26,7 @@ import { generateHookTtsAudio } from '../logic/ttsVoiceover';
 import { parseSrt, serializeSrt, delaySubtitleCues } from '../logic/srtParser';
 import { writeSourcePillSvg } from '../logic/brandingPill';
 import { WordTiming, SrtCueInput } from '../logic/wordChunker';
+import { generateKaraokeAssDocument } from '../logic/karaokeSubtitles';
 import { generateUnifiedAssDocument } from '../logic/conversationalCaptions';
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -368,18 +369,39 @@ export async function reBurnClipSubtitles(
               }))
             : parsedCues;
 
-        const assContent = generateUnifiedAssDocument({
+        // Attempt to load exact word timings from _words.json if available
+        let clipWords: any[] = [];
+        const wordsJsonPath = srtPath.replace(/\.srt$/, '_words.json');
+        if (await fileExists(wordsJsonPath)) {
+          try {
+            const wordsContent = await fs.readFile(wordsJsonPath, 'utf8');
+            clipWords = JSON.parse(wordsContent);
+          } catch {}
+        }
+
+        const shiftedWords =
+          totalShift !== 0 && clipWords.length > 0
+            ? clipWords.map((w: any) => ({
+                text: w.text,
+                start: Math.max(0, Number((w.start + totalShift).toFixed(3))),
+                end: Math.max(0.1, Number((w.end + totalShift).toFixed(3))),
+              }))
+            : clipWords;
+
+        const assContent = generateKaraokeAssDocument({
           width: targetW,
           height: targetH,
           hookText: finalStudioConfig.hookText?.trim() || '',
-          hookDuration: finalStudioConfig.hookDuration || 3.1,
-          dialogueCues: shiftedCues,
+          hookDuration: finalStudioConfig.hookDuration || finalStudioConfig.freezeDuration || 0,
+          words: shiftedWords.length > 0 ? shiftedWords : undefined,
+          cues: shiftedCues,
           fontName: 'Montserrat',
+          activeColorHex: '&H0000EEFF', // Bright CapCut Yellow for current word
+          baseColorHex: '&H00FFFFFF', // Pure White for other words
+          outlineColorHex: '&H00000000', // Solid black outline
           dialogueFontSize: style.fontSize || 62,
-          dialogueOutline: style.outline || 4.5,
-          dialogueMarginV: style.marginV || 420,
-          primaryColorHex: style.primaryColour,
-          outlineColorHex: style.outlineColour,
+          dialogueOutline: style.outline || 5.0,
+          dialogueMarginV: style.marginV || 380,
         });
 
         const assDestPath = path.join(

@@ -1687,18 +1687,47 @@ export default function ClipStudioModal({
                           : 'top-1/2 -translate-y-1/2'
                       }`}
                     >
-                      <div className="inline-block bg-amber-400 text-black font-black uppercase text-xs sm:text-sm px-3.5 py-1.5 rounded-md shadow-2xl border-2 border-black tracking-wide">
+                      <div className="inline-block max-w-[85%] text-center text-white font-montserrat font-black text-sm sm:text-base px-4 py-2 drop-shadow-[0_4px_8px_rgba(0,0,0,1)] [text-shadow:_2px_2px_0_rgb(0_0_0),_-2px_-2px_0_rgb(0_0_0),_2px_-2px_0_rgb(0_0_0),_-2px_2px_0_rgb(0_0_0),_0_3px_0_rgb(0_0_0)] tracking-tight whitespace-pre-line leading-tight">
                         {studioConfig.hookText}
                       </div>
                     </div>
                   )}
 
-                  {/* Layer 3: Active Subtitle Preview (Shown only after freeze frame ends) */}
+                  {/* Layer 3: Active Subtitle Preview (Shown only after freeze frame ends, with Karaoke Active Word Highlight) */}
                   {activeCue && isCleanVideo && (
                     <div className="absolute bottom-16 left-3 right-3 text-center pointer-events-none z-20">
-                      <span className="font-montserrat font-black text-amber-300 text-xs sm:text-sm px-2 py-1 rounded drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] stroke-black tracking-tight leading-snug whitespace-pre-line">
-                        {activeCue.text}
-                      </span>
+                      <div className="font-montserrat font-black text-xs sm:text-sm px-2 py-1 drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)] [text-shadow:_1.5px_1.5px_0_rgb(0_0_0),_-1.5px_-1.5px_0_rgb(0_0_0),_1.5px_-1.5px_0_rgb(0_0_0),_-1.5px_1.5px_0_rgb(0_0_0)] tracking-tight leading-snug whitespace-pre-line flex flex-wrap items-center justify-center gap-1">
+                        {(() => {
+                          const words = activeCue.text.trim().split(/\s+/).filter(Boolean);
+                          if (words.length <= 1) {
+                            return <span className="text-amber-300">{activeCue.text}</span>;
+                          }
+                          const cueOffset = viewMode === 'draft' ? freezeSec : 0;
+                          const cueDuration = Math.max(0.2, activeCue.end - activeCue.start);
+                          const elapsedInCue = Math.max(
+                            0,
+                            currentTime - (activeCue.start + cueOffset),
+                          );
+                          const progress = Math.min(1, elapsedInCue / cueDuration);
+                          const activeWordIdx = Math.min(
+                            words.length - 1,
+                            Math.floor(progress * words.length),
+                          );
+
+                          return words.map((w, idx) => (
+                            <span
+                              key={idx}
+                              className={
+                                idx === activeWordIdx
+                                  ? 'text-amber-300 scale-105 transition-transform'
+                                  : 'text-white'
+                              }
+                            >
+                              {w}
+                            </span>
+                          ));
+                        })()}
+                      </div>
                     </div>
                   )}
 

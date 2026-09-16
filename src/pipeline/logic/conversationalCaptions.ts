@@ -237,10 +237,12 @@ export function chunkConversationalWords(
  */
 export function formatAssTime(seconds: number): string {
   const safeSeconds = Math.max(0, seconds || 0);
-  const h = Math.floor(safeSeconds / 3600);
-  const m = Math.floor((safeSeconds % 3600) / 60);
-  const s = Math.floor(safeSeconds % 60);
-  const cs = Math.floor((safeSeconds - Math.floor(safeSeconds)) * 100);
+  const totalCs = Math.round(safeSeconds * 100);
+  const cs = totalCs % 100;
+  const totalSec = Math.floor(totalCs / 100);
+  const s = totalSec % 60;
+  const m = Math.floor(totalSec / 60) % 60;
+  const h = Math.floor(totalSec / 3600);
 
   const mStr = String(m).padStart(2, '0');
   const sStr = String(s).padStart(2, '0');

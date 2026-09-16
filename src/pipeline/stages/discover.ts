@@ -7,6 +7,7 @@ import { db } from '../../server/db';
 import { PATHS } from '../../server/paths';
 import path from 'path';
 import fs from 'fs/promises';
+import { parseLocalSourceFilename } from '../logic/sourceNaming';
 
 export class DiscoverStage implements PipelineStageHandler {
   stage = PipelineStage.DISCOVER;
@@ -170,8 +171,15 @@ export class DiscoverStage implements PipelineStageHandler {
       fileSize: probe.fileSizeBytes,
     };
 
+    const localMeta = ctx.sourcePath ? parseLocalSourceFilename(ctx.sourcePath) : undefined;
+    if (!ctx.sourceChannel && localMeta?.sourceChannel) {
+      ctx.sourceChannel = localMeta.sourceChannel;
+    }
     if (!ctx.sourceChannel && (probe.tags.artist || probe.tags.uploader || probe.tags.author)) {
       ctx.sourceChannel = probe.tags.artist || probe.tags.uploader || probe.tags.author;
+    }
+    if ((!ctx.sourceTitle || ctx.sourceTitle === 'Untitled Source') && localMeta?.sourceTitle) {
+      ctx.sourceTitle = localMeta.sourceTitle;
     }
     if ((!ctx.sourceTitle || ctx.sourceTitle === 'Untitled Source') && probe.tags.title) {
       ctx.sourceTitle = probe.tags.title;

@@ -5,6 +5,7 @@ import { logger } from '../../server/logger';
 import { db } from '../../server/db';
 import { scoreWindowsWithAI, windowText, AIScoredWindow } from '../ai/momentScorer';
 import { StudioConfig, DEFAULT_STUDIO_CONFIG } from '../../types/clipStudio';
+import { evaluateCoreSegmentHook } from '../logic/hookDetect';
 
 export class AnalyzeStage implements PipelineStageHandler {
   stage = PipelineStage.ANALYZE;
@@ -111,7 +112,7 @@ export class AnalyzeStage implements PipelineStageHandler {
         (transcriptAvailable && transcript
           ? windowText(transcript.segments, w.startTime, w.endTime)
           : '');
-      const hookHeadline = generateHookHeadline(textToExtract);
+      const hookHeadline = evaluateCoreSegmentHook(textToExtract, ctx.sourceTitle).headline;
       return {
         startTime: w.startTime,
         endTime: w.endTime,
@@ -132,7 +133,8 @@ export class AnalyzeStage implements PipelineStageHandler {
 
     ctx.stageData.segments = selected.map((w, idx) => {
       const hookHeadline =
-        ctx.stageData.moments?.[idx]?.hookHeadline || generateHookHeadline(w.hookLine);
+        ctx.stageData.moments?.[idx]?.hookHeadline ||
+        evaluateCoreSegmentHook(w.hookLine || '', ctx.sourceTitle).headline;
       return {
         startTime: w.startTime,
         endTime: w.endTime,
@@ -300,10 +302,19 @@ export function createDefaultStudioConfig(
   hookHeadline: string,
   sourceChannel?: string | null,
 ): StudioConfig {
+  const sourceText = sourceChannel ? `Sumber: ${sourceChannel}` : '';
   return {
     ...DEFAULT_STUDIO_CONFIG,
     hookText: hookHeadline,
-    sourceText: sourceChannel ? `Sumber: ${sourceChannel}` : '',
+    hookPosition: 'center',
+    hookTtsEnabled: true,
+    hookTtsVoice: 'id-ID-GadisNeural',
+    logoEnabled: true,
+    logoPosition: 'top-left',
+    sourceText,
+    sourceEnabled: Boolean(sourceText),
+    sourcePosition: 'top-right',
+    subtitleStyleId: 'clipajaib',
   };
 }
 

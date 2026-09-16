@@ -229,6 +229,10 @@ export class SubtitleStage implements PipelineStageHandler {
     const cues = chunkWords(clipWords, 3);
     const srt = renderSrt(cues);
     await fs.writeFile(srtPath, srt, 'utf8');
+
+    // Also persist word-level timings for Karaoke Active-Word subtitle engine
+    const wordsJsonPath = srtPath.replace(/\.srt$/, '_words.json');
+    await fs.writeFile(wordsJsonPath, JSON.stringify(clipWords, null, 2), 'utf8');
     logger.debug(
       `SRT sliced: ${relevant.length} segments (${clipWords.length} words) → ${cues.length} cues`,
     );
@@ -368,6 +372,9 @@ export class SubtitleStage implements PipelineStageHandler {
           const cues = chunkWords(clipWords, 3);
           const srt = renderSrt(cues);
           await fs.writeFile(srtPath, srt, 'utf8');
+
+          const wordsJsonPath = srtPath.replace(/\.srt$/, '_words.json');
+          await fs.writeFile(wordsJsonPath, JSON.stringify(clipWords, null, 2), 'utf8');
         } else {
           await fs.writeFile(srtPath, '', 'utf8');
         }
