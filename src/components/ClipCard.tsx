@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Play, Download, Edit3, Film, Flame, SlidersHorizontal } from 'lucide-react';
+import { Play, Download, Edit3, Film, Flame, SlidersHorizontal, Sparkles } from 'lucide-react';
 
 interface Clip {
   id: string;
@@ -22,6 +22,7 @@ interface ClipCardProps {
   onDownload?: (clipId: string) => void;
   onEditSubtitle?: (clipId: string) => void;
   onOpenStudio?: (clipId: string, tab?: 'hook' | 'branding' | 'subtitle' | 'transition') => void;
+  onOpenCopywriting?: (clipId: string) => void;
 }
 
 const ClipCard: React.FC<ClipCardProps> = ({
@@ -31,6 +32,7 @@ const ClipCard: React.FC<ClipCardProps> = ({
   onDownload,
   onEditSubtitle,
   onOpenStudio,
+  onOpenCopywriting,
 }) => {
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -182,6 +184,17 @@ const ClipCard: React.FC<ClipCardProps> = ({
                 </button>
               )}
             </div>
+          )}
+          {onOpenCopywriting && (
+            <button
+              type="button"
+              onClick={() => onOpenCopywriting(clip.id)}
+              className="w-full min-h-[36px] py-1.5 px-3 text-xs font-semibold text-amber-300 bg-amber-950/40 hover:bg-amber-900/60 border border-amber-800/60 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+              title="Salin Caption & Hashtag SEO (Anti-Slop AI)"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>Salin Caption & SEO</span>
+            </button>
           )}
         </div>
 

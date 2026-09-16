@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import ClipCard from './ClipCard';
 import ClipStudioModal from './ClipStudioModal';
+import CopywritingModal from './CopywritingModal';
 import { Film, RefreshCw } from 'lucide-react';
 
 interface Clip {
@@ -43,6 +44,7 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
   const [editingTab, setEditingTab] = useState<'hook' | 'branding' | 'subtitle' | 'transition'>(
     'hook',
   );
+  const [copywritingClipId, setCopywritingClipId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchClips();
@@ -206,6 +208,9 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
                     setEditingClipId(id);
                     setEditingTab('subtitle');
                   }}
+                  onOpenCopywriting={(id) => {
+                    setCopywritingClipId(id);
+                  }}
                 />
                 {/* Job info */}
                 <div className="mt-1.5 px-1">
@@ -247,6 +252,14 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
           initialTab={editingTab}
           onClose={() => setEditingClipId(null)}
           onSuccess={() => fetchClips(true)}
+        />
+      )}
+
+      {copywritingClipId && (
+        <CopywritingModal
+          clipId={copywritingClipId}
+          isOpen={true}
+          onClose={() => setCopywritingClipId(null)}
         />
       )}
     </div>

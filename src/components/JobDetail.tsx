@@ -4,6 +4,7 @@ import { useToastStore } from '@/stores/useToastStore';
 import { Check, RefreshCw, Play, Sparkles, Film, Trash2, X, ArrowLeft } from 'lucide-react';
 import ClipCard from './ClipCard';
 import ClipStudioModal from './ClipStudioModal';
+import CopywritingModal from './CopywritingModal';
 
 interface JobDetailProps {
   jobId: string;
@@ -53,6 +54,7 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
   const [studioInitialTab, setStudioInitialTab] = React.useState<
     'hook' | 'branding' | 'subtitle' | 'transition'
   >('hook');
+  const [copywritingClipId, setCopywritingClipId] = React.useState<string | null>(null);
 
   const refreshClips = React.useCallback(() => {
     if (!jobId) return;
@@ -475,6 +477,9 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
                   setSelectedClipForStudio(id);
                   setStudioInitialTab('subtitle');
                 }}
+                onOpenCopywriting={(id) => {
+                  setCopywritingClipId(id);
+                }}
               />
             ))}
           </div>
@@ -577,6 +582,14 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
           initialTab={studioInitialTab}
           onClose={() => setSelectedClipForStudio(null)}
           onSuccess={() => refreshClips()}
+        />
+      )}
+
+      {copywritingClipId && (
+        <CopywritingModal
+          clipId={copywritingClipId}
+          isOpen={true}
+          onClose={() => setCopywritingClipId(null)}
         />
       )}
     </div>
