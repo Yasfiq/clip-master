@@ -116,9 +116,13 @@ export function cleanSlop(text: string): string {
  * Extract 1-2 sentence natural summary from transcript without hallucination.
  */
 export function extractContextualSummary(transcript?: string, fallbackHeadline?: string): string {
-  if (!transcript || !transcript.trim()) {
+  const defaultFallback = () => {
     const defaultTopic = fallbackHeadline?.trim() || 'Pembahasan menarik';
     return `${defaultTopic}. Simak obrolan lengkap dan poin pentingnya di video ini.`;
+  };
+
+  if (!transcript || !transcript.trim()) {
+    return defaultFallback();
   }
 
   const clean = cleanSlop(transcript)
@@ -126,21 +130,35 @@ export function extractContextualSummary(transcript?: string, fallbackHeadline?:
     .replace(/\s+/g, ' ')
     .trim();
 
+  // Check if there are meaningful alphanumeric characters (at least 5 letters)
+  const lettersOnly = clean.replace(/[^\p{L}\p{N}]/gu, '');
+  if (lettersOnly.length < 5) {
+    return defaultFallback();
+  }
+
   // Break into natural sentences
   const sentences = clean
     .split(/(?<=[.?!])\s+/)
     .map((s) => s.trim())
     .filter((s) => s.length >= 15 && s.length <= 160);
 
+  let result = '';
   if (sentences.length >= 2) {
-    return `${sentences[0]} ${sentences[1]}`;
+    result = `${sentences[0]} ${sentences[1]}`;
   } else if (sentences.length === 1) {
-    return `${sentences[0]}`;
+    result = sentences[0];
+  } else {
+    // Fallback if no clean sentence boundary found
+    const words = clean.split(/\s+/).slice(0, 18).join(' ');
+    result = words;
   }
 
-  // Fallback if no clean sentence boundary found
-  const words = clean.split(/\s+/).slice(0, 18).join(' ');
-  return `${words}...`;
+  // Ensure sentence ends with appropriate punctuation
+  if (!/[.?!…]$/.test(result)) {
+    result = `${result}.`;
+  }
+
+  return result;
 }
 
 /**

@@ -179,11 +179,11 @@ export const CopywritingModal: React.FC<CopywritingModalProps> = ({ clipId, isOp
         </div>
 
         {/* Platform Selector Tabs */}
-        <div className="px-5 pt-3 pb-2 bg-zinc-950/30 border-b border-zinc-800/80 flex items-center gap-1.5 overflow-x-auto text-xs font-medium">
+        <div className="px-5 pt-3 pb-2 bg-zinc-950/30 border-b border-zinc-800/80 flex items-center gap-1.5 overflow-x-auto text-xs font-medium no-scrollbar">
           <button
             type="button"
             onClick={() => setActiveTab('all')}
-            className={`px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 cursor-pointer ${
+            className={`px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap flex-shrink-0 ${
               activeTab === 'all'
                 ? 'bg-zinc-800 text-amber-300 border-zinc-700 shadow-sm'
                 : 'text-zinc-400 hover:text-zinc-200 border-transparent hover:bg-zinc-850'
@@ -195,7 +195,7 @@ export const CopywritingModal: React.FC<CopywritingModalProps> = ({ clipId, isOp
           <button
             type="button"
             onClick={() => setActiveTab('youtube')}
-            className={`px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 cursor-pointer ${
+            className={`px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap flex-shrink-0 ${
               activeTab === 'youtube'
                 ? 'bg-zinc-800 text-red-400 border-zinc-700 shadow-sm'
                 : 'text-zinc-400 hover:text-zinc-200 border-transparent hover:bg-zinc-850'
@@ -207,7 +207,7 @@ export const CopywritingModal: React.FC<CopywritingModalProps> = ({ clipId, isOp
           <button
             type="button"
             onClick={() => setActiveTab('tiktok')}
-            className={`px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 cursor-pointer ${
+            className={`px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap flex-shrink-0 ${
               activeTab === 'tiktok'
                 ? 'bg-zinc-800 text-cyan-400 border-zinc-700 shadow-sm'
                 : 'text-zinc-400 hover:text-zinc-200 border-transparent hover:bg-zinc-850'
@@ -219,7 +219,7 @@ export const CopywritingModal: React.FC<CopywritingModalProps> = ({ clipId, isOp
           <button
             type="button"
             onClick={() => setActiveTab('reels')}
-            className={`px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 cursor-pointer ${
+            className={`px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap flex-shrink-0 ${
               activeTab === 'reels'
                 ? 'bg-zinc-800 text-pink-400 border-zinc-700 shadow-sm'
                 : 'text-zinc-400 hover:text-zinc-200 border-transparent hover:bg-zinc-850'
@@ -245,7 +245,7 @@ export const CopywritingModal: React.FC<CopywritingModalProps> = ({ clipId, isOp
             <>
               {/* Ready-to-paste preview block */}
               <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3.5 space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
                     <FileText className="w-3.5 h-3.5 text-zinc-400" />
                     <span>Pratinjau Format Siap Salin ({activeTab.toUpperCase()})</span>
@@ -253,7 +253,7 @@ export const CopywritingModal: React.FC<CopywritingModalProps> = ({ clipId, isOp
                   <button
                     type="button"
                     onClick={() => copyToClipboard(getCompiledText(), 'all-compiled')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm ${
+                    className={`w-full sm:w-auto px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm ${
                       copiedKey === 'all-compiled'
                         ? 'bg-emerald-600 text-white'
                         : 'bg-amber-500 hover:bg-amber-450 text-zinc-950 font-bold'
@@ -412,12 +412,14 @@ export const CopywritingModal: React.FC<CopywritingModalProps> = ({ clipId, isOp
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 border-t border-zinc-800 bg-zinc-950/60 flex items-center justify-between text-xs text-zinc-400">
-          <span>Formula anti-slop: tanpa kata buzzword kosong & berbasis konten asli.</span>
+        <div className="px-5 py-3 border-t border-zinc-800 bg-zinc-950/60 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs text-zinc-400">
+          <span className="text-center sm:text-left text-[11px] text-zinc-400">
+            Formula anti-slop: tanpa kata buzzword kosong & berbasis konten asli.
+          </span>
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium transition-colors"
+            className="w-full sm:w-auto px-5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-750 text-zinc-200 font-medium transition-colors cursor-pointer text-center"
           >
             Tutup
           </button>
