@@ -3,7 +3,7 @@ import path from 'path';
 
 async function main() {
   console.log(
-    '🚀 Starting E2E Browser Test for Smart Face Tracking & Split-Screen Podcast Layout...',
+    '🚀 Starting E2E Browser Test for 9:16 Framing Layouts (Smart Face Tracking, Center, Blur-Fill)...',
   );
 
   const browser = await chromium.launch({
@@ -39,49 +39,41 @@ async function main() {
     await framingTab.click();
     console.log('✅ Clicked Framing & Layout Tab');
 
-    // Verify 4 framing modes exist
+    // Verify 3 framing modes exist and split-podcast is GONE
     await page.locator('[data-testid="framing-mode-auto-face"]').waitFor({ state: 'visible' });
-    await page.locator('[data-testid="framing-mode-split-podcast"]').waitFor({ state: 'visible' });
     await page.locator('[data-testid="framing-mode-center"]').waitFor({ state: 'visible' });
     await page.locator('[data-testid="framing-mode-blur-fill"]').waitFor({ state: 'visible' });
-    console.log('✅ All 4 framing modes (Smart Face, Split Podcast, Center, Blur Fill) visible');
 
-    // Screenshot 1: Smart Face Tracking default view
-    const faceScreenshotPath = path.join(artifactDir, 'framing_tab_auto_face.png');
+    const splitBtnCount = await page.locator('[data-testid="framing-mode-split-podcast"]').count();
+    if (splitBtnCount > 0) {
+      throw new Error('Split-podcast option is still present in the UI!');
+    }
+    console.log('✅ Confirmed: split-podcast option is cleanly removed');
+
+    // Screenshot: Clean Framing Layout tab
+    const faceScreenshotPath = path.join(artifactDir, 'framing_tab_clean.png');
     await page.screenshot({ path: faceScreenshotPath, fullPage: false });
     console.log(`📸 Screenshot saved: ${faceScreenshotPath}`);
 
-    // Click Podcast Split-Screen
-    const splitBtn = page.locator('[data-testid="framing-mode-split-podcast"]');
-    await splitBtn.click();
-    await page.waitForTimeout(500);
-    console.log('✅ Switched to Podcast Split-Screen mode');
+    // Click Blur-Fill
+    const blurFillBtn = page.locator('[data-testid="framing-mode-blur-fill"]');
+    await blurFillBtn.click();
+    await page.waitForTimeout(400);
+    console.log('✅ Switched to Blur-Fill framing mode');
 
-    // Verify split-screen controls
-    await page.locator('[data-testid="host-x-slider"]').waitFor({ state: 'visible' });
-    await page.locator('[data-testid="guest-x-slider"]').waitFor({ state: 'visible' });
-    console.log('✅ Dual-speaker Host & Guest sliders visible');
+    // Click Center Crop
+    const centerBtn = page.locator('[data-testid="framing-mode-center"]');
+    await centerBtn.click();
+    await page.waitForTimeout(400);
+    console.log('✅ Switched to Center Crop framing mode');
 
-    // Select Cyan divider color
-    const cyanBtn = page.locator('[data-testid="divider-color-cyan"]');
-    await cyanBtn.click();
-    console.log('✅ Selected Cyan divider line');
+    // Switch back to Smart Face Tracking
+    const autoFaceBtn = page.locator('[data-testid="framing-mode-auto-face"]');
+    await autoFaceBtn.click();
+    await page.waitForTimeout(400);
+    console.log('✅ Switched back to Smart Face Tracking framing mode');
 
-    // Select Center-Divider subtitle placement
-    const centerSubBtn = page.locator('[data-testid="sub-placement-center-divider"]');
-    await centerSubBtn.click();
-    console.log('✅ Selected Center-Divider subtitle placement');
-
-    await page.waitForTimeout(600);
-
-    // Screenshot 2: Podcast Split-Screen customized view with visual divider
-    const splitScreenshotPath = path.join(artifactDir, 'framing_tab_split_podcast.png');
-    await page.screenshot({ path: splitScreenshotPath, fullPage: false });
-    console.log(`📸 Screenshot saved: ${splitScreenshotPath}`);
-
-    console.log(
-      '🎉 E2E Test for Smart Face Tracking & Split-Screen Podcast Layout passed with 100% success!',
-    );
+    console.log('🎉 E2E Test for Clean 9:16 Framing Layouts passed with 100% success!');
   } catch (err) {
     console.error('❌ E2E Browser Test Failed:', err);
     process.exit(1);

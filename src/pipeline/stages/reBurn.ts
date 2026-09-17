@@ -245,18 +245,12 @@ export async function reBurnClipSubtitles(
     targetW,
     targetH,
     framingMode,
-    splitConfig: finalStudioConfig.splitConfig,
     detections,
     kenBurnsEnabled: portrait && framingMode === 'auto-face',
   });
 
   let baseFilter = framingResult.filter;
-
-  const effectiveStyle = {
-    ...style,
-    marginV: framingResult.recommendedMarginV,
-  };
-  const forceStyle = buildForceStyle(effectiveStyle);
+  const forceStyle = buildForceStyle(style);
   const renderTag = `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
   // 1. Generate hook TTS voiceover if enabled and hook text exists
@@ -380,7 +374,7 @@ export async function reBurnClipSubtitles(
           outlineColorHex: '&H00000000', // Solid black outline
           dialogueFontSize: style.fontSize || 62,
           dialogueOutline: style.outline || 5.0,
-          dialogueMarginV: effectiveStyle.marginV || style.marginV || 380,
+          dialogueMarginV: style.marginV || 380,
         });
 
         const assDestPath = path.join(
