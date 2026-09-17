@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { apiSuccess, catchApiErrors } from '@/server/api-utils';
+import { apiError, apiSuccess, catchApiErrors, ErrorCode } from '@/server/api-utils';
 import { getAggregatedClipsSchedule, parsePlatformsParam } from '@/server/scheduleService';
 
 /**
@@ -16,10 +16,37 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
 
     const startDate = searchParams.get('startDate') || undefined;
+    if (startDate) {
+      const parsed = new Date(startDate);
+      if (isNaN(parsed.getTime())) {
+        return apiError(
+          ErrorCode.VALIDATION_FAILED,
+          'startDate must be a valid date string (e.g. YYYY-MM-DD)',
+        );
+      }
+    }
+
     const platformParam = searchParams.get('platform');
     const platforms = parsePlatformsParam(platformParam);
+    if (platformParam && platforms && platforms.length === 0) {
+      return apiError(
+        ErrorCode.VALIDATION_FAILED,
+        `Invalid platform '${platformParam}'. Supported: youtube, tiktok, reels, all`,
+      );
+    }
+
     const maxClipsPerDayRaw = parseInt(searchParams.get('maxClipsPerDay') || '3', 10);
-    const maxClipsPerDay = Number.isFinite(maxClipsPerDayRaw) ? maxClipsPerDayRaw : 3;
+    if (
+      searchParams.has('maxClipsPerDay') &&
+      (!Number.isFinite(maxClipsPerDayRaw) || maxClipsPerDayRaw <= 0)
+    ) {
+      return apiError(
+        ErrorCode.VALIDATION_FAILED,
+        'maxClipsPerDay must be a positive integer greater than 0',
+      );
+    }
+    const maxClipsPerDay =
+      Number.isFinite(maxClipsPerDayRaw) && maxClipsPerDayRaw > 0 ? maxClipsPerDayRaw : 3;
 
     const result = await getAggregatedClipsSchedule({
       startDate,

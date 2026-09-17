@@ -222,7 +222,9 @@ async function main() {
     console.log('   ✅ Framing tab verified: Smart Face, Center, Blur-Fill (split-podcast clean)');
 
     // 4.6 Check Branding Tab
-    const brandTab = page.locator('[data-testid="studio-tab-brand"]');
+    const brandTab = page
+      .locator('[data-testid="studio-tab-branding"], [data-testid="studio-tab-brand"]')
+      .first();
     await brandTab.click();
     await page.waitForTimeout(500);
     console.log('   ✅ Branding tab verified');

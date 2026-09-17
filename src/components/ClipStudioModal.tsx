@@ -833,7 +833,7 @@ export default function ClipStudioModal({
                 : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
             }`}
             title="Branding & Sumber"
-            data-testid="studio-tab-brand"
+            data-testid="studio-tab-branding"
           >
             <ImageIcon className="w-4 h-4" />
             <span>Brand</span>
@@ -863,6 +863,7 @@ export default function ClipStudioModal({
                 : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
             }`}
             title="Audio & Narator AI"
+            data-testid="studio-tab-audio"
           >
             <Music className="w-4 h-4" />
             <span>Audio</span>

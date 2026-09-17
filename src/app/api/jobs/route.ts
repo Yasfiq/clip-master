@@ -32,6 +32,9 @@ export async function POST(req: NextRequest) {
 
     // Validate URL scheme if URL provided
     if (sourceUrl) {
+      if (typeof sourceUrl !== 'string') {
+        return apiError(ErrorCode.VALIDATION_FAILED, 'sourceUrl must be a string');
+      }
       try {
         const parsed = new URL(sourceUrl);
         if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
@@ -42,14 +45,35 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const job = await jobService.createJob({
-      sourceUrl,
-      sourcePath,
-      configId,
-    });
+    // Validate filesystem path if local source provided
+    if (sourcePath) {
+      if (typeof sourcePath !== 'string' || !sourcePath.startsWith('/')) {
+        return apiError(
+          ErrorCode.VALIDATION_FAILED,
+          'sourcePath must be an absolute filesystem path',
+        );
+      }
+    }
 
-    logger.info('Created job via API', { jobId: job.id });
-    return apiSuccess(job, 201);
+    try {
+      const job = await jobService.createJob({
+        sourceUrl,
+        sourcePath,
+        configId,
+      });
+
+      logger.info('Created job via API', { jobId: job.id });
+      return apiSuccess(job, 201);
+    } catch (err: any) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('not found') || msg.includes('ENOENT') || msg.includes('Failed to copy')) {
+        return apiError(
+          ErrorCode.VALIDATION_FAILED,
+          'Local source file does not exist or is not readable',
+        );
+      }
+      return apiError(ErrorCode.VALIDATION_FAILED, msg);
+    }
   }, req);
 }
 

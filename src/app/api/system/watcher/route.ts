@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { apiSuccess, catchApiErrors } from '@/server/api-utils';
+import { apiError, apiSuccess, catchApiErrors, ErrorCode } from '@/server/api-utils';
 import {
   getWatcherStatus,
   isWatcherActive,
@@ -27,6 +27,17 @@ export async function POST(req: NextRequest) {
   return catchApiErrors(async () => {
     const body = (await req.json().catch(() => ({}))) || {};
 
+    if (
+      body.action !== undefined &&
+      typeof body.action === 'string' &&
+      !['start', 'stop', 'toggle'].includes(body.action)
+    ) {
+      return apiError(
+        ErrorCode.VALIDATION_FAILED,
+        `Invalid action '${body.action}'. Supported actions: 'start', 'stop', 'toggle'`,
+      );
+    }
+
     let targetActive: boolean;
     if (typeof body.active === 'boolean') {
       targetActive = body.active;
@@ -34,8 +45,13 @@ export async function POST(req: NextRequest) {
       targetActive = true;
     } else if (body.action === 'stop') {
       targetActive = false;
-    } else {
+    } else if (body.action === 'toggle' || Object.keys(body).length === 0) {
       targetActive = !isWatcherActive();
+    } else {
+      return apiError(
+        ErrorCode.VALIDATION_FAILED,
+        'Provide valid active boolean or action (start, stop, toggle)',
+      );
     }
 
     if (targetActive) {

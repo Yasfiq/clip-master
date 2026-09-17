@@ -5,7 +5,7 @@ import ClipCard from './ClipCard';
 import ClipStudioModal from './ClipStudioModal';
 import CopywritingModal from './CopywritingModal';
 import DripSchedulerModal from './DripSchedulerModal';
-import { Film, RefreshCw, Calendar } from 'lucide-react';
+import { Film, RefreshCw, Calendar, Search } from 'lucide-react';
 
 interface Clip {
   id: string;
@@ -49,6 +49,7 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
   const [copywritingClipId, setCopywritingClipId] = useState<string | null>(null);
   const [isDripModalOpen, setIsDripModalOpen] = useState(false);
   const [isZipping, setIsZipping] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     fetchClips();
@@ -92,6 +93,13 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
       if (jobId && clip.jobId !== jobId) return false;
       if (filter === 'exported') return clip.isExported;
       if (filter === 'pending') return !clip.isExported;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchesHook = clip.hookHeadline?.toLowerCase().includes(q);
+        const matchesJob = getJobName(clip)?.toLowerCase().includes(q);
+        const matchesId = clip.id.toLowerCase().includes(q);
+        if (!matchesHook && !matchesJob && !matchesId) return false;
+      }
       return true;
     })
     .sort((a, b) => {
@@ -244,6 +252,18 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
               <Calendar className="w-3.5 h-3.5 text-amber-400" />
               <span>📅 Jadwal Jam Emas (Drip)</span>
             </button>
+
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Cari klip, headline, ID..."
+                className="text-xs bg-zinc-800 border border-zinc-700 rounded-lg pl-8 pr-3 py-1.5 text-zinc-200 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-400 w-40 sm:w-52"
+                aria-label="Cari klip video"
+              />
+            </div>
 
             <select
               value={filter}

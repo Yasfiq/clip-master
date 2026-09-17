@@ -48,7 +48,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     if (!finalAudioPath) {
-      return apiError(ErrorCode.INTERNAL, 'Berkas audio TTS belum digenerate untuk klip ini');
+      return apiError(ErrorCode.JOB_NOT_FOUND, 'Berkas audio TTS belum digenerate untuk klip ini');
     }
 
     const st = await fsPromises.stat(finalAudioPath);

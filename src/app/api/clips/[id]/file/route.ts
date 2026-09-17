@@ -37,7 +37,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       ? clip.editedPath || clip.cutPath || clip.exportPath
       : clip.exportPath || clip.editedPath || clip.cutPath;
     if (!rel) {
-      return apiError(ErrorCode.INTERNAL, `Clip ${id} has no media file on disk`);
+      return apiError(ErrorCode.JOB_NOT_FOUND, `Clip ${id} has no media file on disk`);
     }
 
     let base =
@@ -79,13 +79,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
             size = fallbackSt.size;
             isCleanServed = false;
           } catch {
-            return apiError(ErrorCode.INTERNAL, `Clip media file missing on disk: ${rel}`);
+            return apiError(ErrorCode.JOB_NOT_FOUND, `Clip media file missing on disk: ${rel}`);
           }
         } else {
-          return apiError(ErrorCode.INTERNAL, `Clip media file missing on disk: ${rel}`);
+          return apiError(ErrorCode.JOB_NOT_FOUND, `Clip media file missing on disk: ${rel}`);
         }
       } else {
-        return apiError(ErrorCode.INTERNAL, `Clip media file missing on disk: ${rel}`);
+        return apiError(ErrorCode.JOB_NOT_FOUND, `Clip media file missing on disk: ${rel}`);
       }
     }
 
@@ -123,10 +123,19 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
           end = rawEnd ? Math.min(parseInt(rawEnd, 10), size - 1) : size - 1;
         }
         if (start >= size || end < start) {
-          return new NextResponse(null, {
-            status: 416,
-            headers: { 'Content-Range': `bytes */${size}` },
-          });
+          return NextResponse.json(
+            {
+              success: false,
+              error: {
+                code: 'RANGE_NOT_SATISFIABLE',
+                message: 'Requested range not satisfiable',
+              },
+            },
+            {
+              status: 416,
+              headers: { 'Content-Range': `bytes */${size}` },
+            },
+          );
         }
         headers['Content-Range'] = `bytes ${start}-${end}/${size}`;
         headers['Content-Length'] = String(end - start + 1);
