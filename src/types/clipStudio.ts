@@ -1,3 +1,13 @@
+export type FramingMode = 'auto-face' | 'split-podcast' | 'center' | 'blur-fill';
+
+export interface SplitPodcastConfig {
+  topCropXPercent?: number; // 0..100, default 25 (left speaker/host)
+  bottomCropXPercent?: number; // 0..100, default 75 (right speaker/guest)
+  dividerColor?: 'gold' | 'cyan' | 'zinc' | 'white' | 'none';
+  dividerThickness?: number; // px: 2, 4, 6
+  subtitlePlacement?: 'center-divider' | 'bottom';
+}
+
 export interface StudioConfig {
   hookText: string;
   hookPosition?: 'center' | 'top';
@@ -17,6 +27,8 @@ export interface StudioConfig {
   fadeInDuration: number; // seconds, e.g. 0.3
   fadeOutDuration: number; // seconds, e.g. 0.5
   filmBurnIntro?: boolean; // CapCut-style warm light leak intro
+  framingMode?: FramingMode; // 9:16 layout framing strategy
+  splitConfig?: SplitPodcastConfig; // settings when framingMode is 'split-podcast'
 }
 
 export const DEFAULT_STUDIO_CONFIG: StudioConfig = {
@@ -37,4 +49,12 @@ export const DEFAULT_STUDIO_CONFIG: StudioConfig = {
   subtitleDelay: 0,
   fadeInDuration: 0.3,
   fadeOutDuration: 0.5,
+  framingMode: 'auto-face',
+  splitConfig: {
+    topCropXPercent: 25,
+    bottomCropXPercent: 75,
+    dividerColor: 'gold',
+    dividerThickness: 4,
+    subtitlePlacement: 'bottom',
+  },
 };

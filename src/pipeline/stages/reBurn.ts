@@ -23,6 +23,7 @@ import {
 import { StudioConfig, DEFAULT_STUDIO_CONFIG } from '../../types/clipStudio';
 import { buildStudioFilterGraph } from '../logic/studioFilterGraph';
 import { generateHookTtsAudio } from '../logic/ttsVoiceover';
+import { buildFramingFilterGraph } from '../logic/framingLayout';
 import { parseSrt, serializeSrt, delaySubtitleCues } from '../logic/srtParser';
 import { writeSourcePillSvg } from '../logic/brandingPill';
 import { WordTiming, SrtCueInput } from '../logic/wordChunker';
@@ -214,10 +215,10 @@ export async function reBurnClipSubtitles(
   const srcFps = probe.fps || 30;
   const duration = probe.durationSec || clip.duration || 60;
 
-  let baseFilter = `scale=${targetW}:${targetH}:force_original_aspect_ratio=increase,scale=trunc(iw/2)*2:trunc(ih/2)*2`;
-  let faceCropApplied = false;
+  const framingMode = finalStudioConfig.framingMode || 'auto-face';
+  let detections: any[] = [];
 
-  if (portrait) {
+  if (portrait && framingMode === 'auto-face') {
     try {
       const faceConfig = DEFAULT_FACE_CROP;
       const faceErr = validateFaceCropConfig(faceConfig);
@@ -228,25 +229,7 @@ export async function reBurnClipSubtitles(
           sampleFps,
           maxFrames,
         });
-
-        if (det.detections.length > 0) {
-          const segments = computeDynamicCropSegments(
-            det.detections,
-            duration,
-            srcW,
-            srcH,
-            targetAspect,
-            faceConfig,
-          );
-          const scaledH = targetH;
-          const scaledSrcW = Math.round((srcW * scaledH) / srcH);
-          const rawCropW = Math.round(Math.round(srcH * targetAspect) * (scaledSrcW / srcW));
-          const cropW = Math.floor(rawCropW / 2) * 2;
-          const cropResult = buildFfmpegCropFilter(segments, srcW, scaledSrcW, cropW, scaledH);
-
-          baseFilter = `scale=-1:${scaledH},${cropResult.filter}`;
-          faceCropApplied = true;
-        }
+        detections = det.detections;
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -254,30 +237,26 @@ export async function reBurnClipSubtitles(
     }
   }
 
-  let kenBurnsApplied = false;
-  if (portrait && faceCropApplied) {
-    const kbConfig = {
-      ...DEFAULT_KEN_BURNS,
-      outWidth: targetW,
-      outHeight: targetH,
-      duration: duration,
-      zoomStart: 1.0,
-      zoomEnd: 1.12,
-      fps: srcFps,
-    };
-    const kbErr = validateKenBurnsConfig(kbConfig);
-    if (!kbErr) {
-      const kb = buildKenBurnsFilter(kbConfig);
-      baseFilter += ',' + kb;
-      kenBurnsApplied = true;
-    }
-  }
+  const framingResult = buildFramingFilterGraph({
+    srcW,
+    srcH,
+    srcFps,
+    duration,
+    targetW,
+    targetH,
+    framingMode,
+    splitConfig: finalStudioConfig.splitConfig,
+    detections,
+    kenBurnsEnabled: portrait && framingMode === 'auto-face',
+  });
 
-  if (!kenBurnsApplied && !faceCropApplied) {
-    baseFilter += `,crop=${targetW}:${targetH}:(iw-${targetW})/2:0`;
-  }
+  let baseFilter = framingResult.filter;
 
-  const forceStyle = buildForceStyle(style);
+  const effectiveStyle = {
+    ...style,
+    marginV: framingResult.recommendedMarginV,
+  };
+  const forceStyle = buildForceStyle(effectiveStyle);
   const renderTag = `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
   // 1. Generate hook TTS voiceover if enabled and hook text exists
@@ -401,7 +380,7 @@ export async function reBurnClipSubtitles(
           outlineColorHex: '&H00000000', // Solid black outline
           dialogueFontSize: style.fontSize || 62,
           dialogueOutline: style.outline || 5.0,
-          dialogueMarginV: style.marginV || 380,
+          dialogueMarginV: effectiveStyle.marginV || style.marginV || 380,
         });
 
         const assDestPath = path.join(

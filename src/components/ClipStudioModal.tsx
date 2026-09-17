@@ -17,6 +17,7 @@ import {
   Trash2,
   Plus,
   Scissors,
+  Crop,
   ZoomIn,
   ZoomOut,
   Maximize2,
@@ -38,7 +39,7 @@ interface ClipStudioModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
-  initialTab?: 'hook' | 'branding' | 'subtitle' | 'transition' | 'audio';
+  initialTab?: 'hook' | 'framing' | 'branding' | 'subtitle' | 'transition' | 'audio';
 }
 
 const FREEZE_OPTIONS = [0, 1.0, 1.2, 1.5, 2.0];
@@ -59,7 +60,7 @@ export default function ClipStudioModal({
   initialTab = 'subtitle',
 }: ClipStudioModalProps) {
   const [activeTab, setActiveTab] = useState<
-    'hook' | 'branding' | 'subtitle' | 'transition' | 'audio'
+    'hook' | 'framing' | 'branding' | 'subtitle' | 'transition' | 'audio'
   >(initialTab);
   const [cues, setCues] = useState<SubtitleCue[]>([]);
   const [studioConfig, setStudioConfig] = useState<StudioConfig>({
@@ -806,6 +807,21 @@ export default function ClipStudioModal({
 
           <button
             type="button"
+            onClick={() => setActiveTab('framing')}
+            className={`w-12 h-12 rounded-lg flex flex-col items-center justify-center gap-1 text-[10px] transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+              activeTab === 'framing'
+                ? 'bg-blue-600/20 text-blue-400 font-semibold border border-blue-500/40 shadow-inner'
+                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
+            }`}
+            title="Layout & Framing (Smart Face / Split Podcast)"
+            data-testid="studio-tab-framing"
+          >
+            <Crop className="w-4 h-4" />
+            <span>Framing</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveTab('branding')}
             className={`w-12 h-12 rounded-lg flex flex-col items-center justify-center gap-1 text-[10px] transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
               activeTab === 'branding'
@@ -854,6 +870,7 @@ export default function ClipStudioModal({
             <span className="text-xs font-semibold text-zinc-200 uppercase tracking-wider flex items-center gap-1.5">
               {activeTab === 'subtitle' && <>💬 Subtitle ({cues.length} Cues)</>}
               {activeTab === 'hook' && <>🪝 Hook & Headline</>}
+              {activeTab === 'framing' && <>📐 Layout & Framing</>}
               {activeTab === 'branding' && <>🏷️ Branding & Sumber</>}
               {activeTab === 'transition' && <>✨ Efek Transisi</>}
               {activeTab === 'audio' && <>🎵 Audio & Narator AI</>}
@@ -862,6 +879,7 @@ export default function ClipStudioModal({
             {/* Legacy Tab Switchers for E2E Test Compatibility */}
             <div className="hidden">
               <button onClick={() => setActiveTab('hook')}>Hook & Headline</button>
+              <button onClick={() => setActiveTab('framing')}>Layout & Framing</button>
               <button onClick={() => setActiveTab('branding')}>Branding & Sumber</button>
               <button onClick={() => setActiveTab('subtitle')}>Subtitle ({cues.length})</button>
               <button onClick={() => setActiveTab('transition')}>Transisi</button>
@@ -1207,6 +1225,255 @@ export default function ClipStudioModal({
                         </div>
                       )}
                     </div>
+                  </div>
+                )}
+
+                {/* 2.5. DRAWER: FRAMING & LAYOUT */}
+                {activeTab === 'framing' && (
+                  <div className="space-y-4">
+                    <div className="bg-zinc-900/90 border border-zinc-800 rounded-lg p-3 space-y-3">
+                      <div>
+                        <label className="text-xs font-semibold text-zinc-200 block mb-1">
+                          Mode Framing Video (9:16)
+                        </label>
+                        <p className="text-[11px] text-zinc-400 mb-2 leading-relaxed">
+                          Pilih strategi pemotongan frame horizontal menjadi vertikal 9:16 untuk
+                          media sosial.
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        {[
+                          {
+                            id: 'auto-face',
+                            title: '🎯 Smart Face Tracking',
+                            desc: 'Kamera otomatis melacak wajah pembicara aktif & panning dinamis.',
+                            badge: 'Rekomendasi AI',
+                          },
+                          {
+                            id: 'split-podcast',
+                            title: '🎙️ Podcast Split-Screen',
+                            desc: 'Tampilan tumpuk 2 pembicara vertikal (Host di atas, Guest di bawah).',
+                            badge: 'Paling Populer',
+                          },
+                          {
+                            id: 'center',
+                            title: '⏹️ Classic Center Crop',
+                            desc: 'Potong bagian tengah frame 9:16 statis standar.',
+                          },
+                          {
+                            id: 'blur-fill',
+                            title: '📱 Fit & Blur Background',
+                            desc: 'Format 16:9 utuh di tengah dengan latar belakang blur vertikal.',
+                          },
+                        ].map((mode) => {
+                          const isSelected = (studioConfig.framingMode || 'auto-face') === mode.id;
+                          return (
+                            <button
+                              key={mode.id}
+                              type="button"
+                              onClick={() =>
+                                setStudioConfig((prev) => ({
+                                  ...prev,
+                                  framingMode: mode.id as any,
+                                }))
+                              }
+                              className={`w-full text-left p-2.5 rounded-lg border transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'bg-blue-600/20 border-blue-500/60 text-zinc-100 shadow-sm'
+                                  : 'bg-zinc-950/60 border-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
+                              }`}
+                              data-testid={`framing-mode-${mode.id}`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-semibold text-zinc-200">
+                                  {mode.title}
+                                </span>
+                                {mode.badge && (
+                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                    {mode.badge}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-zinc-400 mt-1 leading-relaxed">
+                                {mode.desc}
+                              </p>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Split-Podcast Dedicated Settings */}
+                    {(studioConfig.framingMode || 'auto-face') === 'split-podcast' && (
+                      <div className="bg-zinc-900/90 border border-amber-800/40 rounded-lg p-3 space-y-3.5 animate-in fade-in duration-150">
+                        <div className="border-b border-zinc-800 pb-2">
+                          <span className="text-xs font-semibold text-amber-300 flex items-center gap-1.5">
+                            🎙️ Konfigurasi Split Podcast
+                          </span>
+                          <p className="text-[10px] text-zinc-400 mt-0.5">
+                            Atur posisi fokus kamera masing-masing pembicara pada frame video asal.
+                          </p>
+                        </div>
+
+                        {/* Host Crop Slider */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="text-zinc-300 font-medium">Posisi Host (Atas):</span>
+                            <span className="font-mono text-amber-400 font-bold">
+                              {studioConfig.splitConfig?.topCropXPercent ?? 25}%
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={studioConfig.splitConfig?.topCropXPercent ?? 25}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              setStudioConfig((prev) => ({
+                                ...prev,
+                                splitConfig: {
+                                  ...prev.splitConfig,
+                                  topCropXPercent: val,
+                                },
+                              }));
+                            }}
+                            className="w-full accent-amber-500 cursor-pointer"
+                            data-testid="host-x-slider"
+                          />
+                          <div className="flex justify-between text-[9px] text-zinc-500">
+                            <span>Kiri (0%)</span>
+                            <span>Tengah (50%)</span>
+                            <span>Kanan (100%)</span>
+                          </div>
+                        </div>
+
+                        {/* Guest Crop Slider */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="text-zinc-300 font-medium">Posisi Guest (Bawah):</span>
+                            <span className="font-mono text-amber-400 font-bold">
+                              {studioConfig.splitConfig?.bottomCropXPercent ?? 75}%
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={studioConfig.splitConfig?.bottomCropXPercent ?? 75}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              setStudioConfig((prev) => ({
+                                ...prev,
+                                splitConfig: {
+                                  ...prev.splitConfig,
+                                  bottomCropXPercent: val,
+                                },
+                              }));
+                            }}
+                            className="w-full accent-amber-500 cursor-pointer"
+                            data-testid="guest-x-slider"
+                          />
+                          <div className="flex justify-between text-[9px] text-zinc-500">
+                            <span>Kiri (0%)</span>
+                            <span>Tengah (50%)</span>
+                            <span>Kanan (100%)</span>
+                          </div>
+                        </div>
+
+                        {/* Divider Color */}
+                        <div className="space-y-1.5 pt-2 border-t border-zinc-800">
+                          <label className="text-[11px] font-medium text-zinc-300 block">
+                            Warna Garis Pembatas Tengah
+                          </label>
+                          <div className="grid grid-cols-5 gap-1.5">
+                            {[
+                              { id: 'gold', label: 'Emas', color: '#EAB308' },
+                              { id: 'cyan', label: 'Cyan', color: '#06B6D4' },
+                              { id: 'white', label: 'Putih', color: '#FFFFFF' },
+                              { id: 'zinc', label: 'Zinc', color: '#52525B' },
+                              { id: 'none', label: 'Polos', color: 'transparent' },
+                            ].map((c) => {
+                              const isSelected =
+                                (studioConfig.splitConfig?.dividerColor || 'gold') === c.id;
+                              return (
+                                <button
+                                  key={c.id}
+                                  type="button"
+                                  onClick={() =>
+                                    setStudioConfig((prev) => ({
+                                      ...prev,
+                                      splitConfig: {
+                                        ...prev.splitConfig,
+                                        dividerColor: c.id as any,
+                                      },
+                                    }))
+                                  }
+                                  className={`py-1 text-[10px] rounded border flex flex-col items-center gap-1 cursor-pointer transition-all ${
+                                    isSelected
+                                      ? 'border-amber-400 bg-amber-950/40 text-amber-200 font-bold'
+                                      : 'border-zinc-800 bg-zinc-950 text-zinc-400 hover:text-zinc-200'
+                                  }`}
+                                  data-testid={`divider-color-${c.id}`}
+                                >
+                                  <span
+                                    className="w-3 h-3 rounded-full border border-zinc-600"
+                                    style={{ backgroundColor: c.color }}
+                                  />
+                                  <span>{c.label}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Subtitle Placement in Split Mode */}
+                        <div className="space-y-1.5 pt-2 border-t border-zinc-800">
+                          <label className="text-[11px] font-medium text-zinc-300 block">
+                            Posisi Subtitle
+                          </label>
+                          <div className="grid grid-cols-2 gap-2">
+                            {[
+                              { id: 'bottom', label: '⬇️ Bawah Layar', desc: 'Standar' },
+                              {
+                                id: 'center-divider',
+                                label: '🎯 Garis Tengah',
+                                desc: 'Podcast Style',
+                              },
+                            ].map((sub) => {
+                              const isSelected =
+                                (studioConfig.splitConfig?.subtitlePlacement || 'bottom') ===
+                                sub.id;
+                              return (
+                                <button
+                                  key={sub.id}
+                                  type="button"
+                                  onClick={() =>
+                                    setStudioConfig((prev) => ({
+                                      ...prev,
+                                      splitConfig: {
+                                        ...prev.splitConfig,
+                                        subtitlePlacement: sub.id as any,
+                                      },
+                                    }))
+                                  }
+                                  className={`p-2 rounded border text-left cursor-pointer transition-all ${
+                                    isSelected
+                                      ? 'border-amber-400 bg-amber-950/40 text-amber-200'
+                                      : 'border-zinc-800 bg-zinc-950 text-zinc-400 hover:text-zinc-200'
+                                  }`}
+                                  data-testid={`sub-placement-${sub.id}`}
+                                >
+                                  <div className="text-[11px] font-semibold">{sub.label}</div>
+                                  <div className="text-[9px] text-zinc-500">{sub.desc}</div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1619,6 +1886,39 @@ export default function ClipStudioModal({
               {/* Overlaid Mockup Layers (Draft Simulation Mode Only) */}
               {viewMode === 'draft' && (
                 <>
+                  {/* Layer 0: Split-Screen Podcast Live Visual Guides (Draft Simulation Mode Only) */}
+                  {(studioConfig.framingMode || 'auto-face') === 'split-podcast' && (
+                    <>
+                      {/* Center Divider Line */}
+                      {(studioConfig.splitConfig?.dividerColor || 'gold') !== 'none' && (
+                        <div
+                          className="absolute left-0 right-0 z-20 pointer-events-none shadow-lg"
+                          style={{
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            height: `${studioConfig.splitConfig?.dividerThickness ?? 4}px`,
+                            backgroundColor:
+                              studioConfig.splitConfig?.dividerColor === 'cyan'
+                                ? '#06B6D4'
+                                : studioConfig.splitConfig?.dividerColor === 'white'
+                                  ? '#FFFFFF'
+                                  : studioConfig.splitConfig?.dividerColor === 'zinc'
+                                    ? '#52525B'
+                                    : '#EAB308',
+                          }}
+                        />
+                      )}
+                      {/* Host Tag */}
+                      <div className="absolute top-2 right-2 z-20 px-2 py-0.5 rounded bg-black/75 backdrop-blur-sm border border-amber-500/40 text-[9px] font-mono text-amber-300 pointer-events-none shadow">
+                        🎙️ Host: {studioConfig.splitConfig?.topCropXPercent ?? 25}%
+                      </div>
+                      {/* Guest Tag */}
+                      <div className="absolute bottom-2 right-2 z-20 px-2 py-0.5 rounded bg-black/75 backdrop-blur-sm border border-amber-500/40 text-[9px] font-mono text-amber-300 pointer-events-none shadow">
+                        🎙️ Guest: {studioConfig.splitConfig?.bottomCropXPercent ?? 75}%
+                      </div>
+                    </>
+                  )}
+
                   {/* Layer 1A: Watermark Logo */}
                   {studioConfig.logoEnabled && logoExists && isCleanVideo && (
                     <div
@@ -1695,7 +1995,14 @@ export default function ClipStudioModal({
 
                   {/* Layer 3: Active Subtitle Preview (Shown only after freeze frame ends, with Karaoke Active Word Highlight) */}
                   {activeCue && isCleanVideo && (
-                    <div className="absolute bottom-16 left-3 right-3 text-center pointer-events-none z-20">
+                    <div
+                      className={`text-center pointer-events-none z-20 ${
+                        (studioConfig.framingMode || 'auto-face') === 'split-podcast' &&
+                        studioConfig.splitConfig?.subtitlePlacement === 'center-divider'
+                          ? 'absolute top-[48%] -translate-y-1/2 left-3 right-3'
+                          : 'absolute bottom-16 left-3 right-3'
+                      }`}
+                    >
                       <div className="font-montserrat font-black text-xs sm:text-sm px-2 py-1 drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)] [text-shadow:_1.5px_1.5px_0_rgb(0_0_0),_-1.5px_-1.5px_0_rgb(0_0_0),_1.5px_-1.5px_0_rgb(0_0_0),_-1.5px_1.5px_0_rgb(0_0_0)] tracking-tight leading-snug whitespace-pre-line flex flex-wrap items-center justify-center gap-1">
                         {(() => {
                           const words = activeCue.text.trim().split(/\s+/).filter(Boolean);
