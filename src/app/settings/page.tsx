@@ -3,6 +3,7 @@
 import Navigation from '@/components/Navigation';
 import SettingsPanel from '@/components/SettingsPanel';
 import FolderWatcherSettings from '@/components/FolderWatcherSettings';
+import YouTubeWatcherSettings from '@/components/YouTubeWatcherSettings';
 
 export default function SettingsPage() {
   return (
@@ -16,6 +17,7 @@ export default function SettingsPage() {
           </p>
         </div>
         <FolderWatcherSettings />
+        <YouTubeWatcherSettings />
         <SettingsPanel />
       </div>
     </main>

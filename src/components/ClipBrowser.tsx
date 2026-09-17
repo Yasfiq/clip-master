@@ -4,7 +4,8 @@ import React, { useEffect, useState } from 'react';
 import ClipCard from './ClipCard';
 import ClipStudioModal from './ClipStudioModal';
 import CopywritingModal from './CopywritingModal';
-import { Film, RefreshCw } from 'lucide-react';
+import DripSchedulerModal from './DripSchedulerModal';
+import { Film, RefreshCw, Calendar } from 'lucide-react';
 
 interface Clip {
   id: string;
@@ -20,6 +21,7 @@ interface Clip {
   createdAt: string;
   jobName?: string;
   jobStatus?: string;
+  hookHeadline?: string;
 }
 
 interface Job {
@@ -45,6 +47,7 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
     'hook',
   );
   const [copywritingClipId, setCopywritingClipId] = useState<string | null>(null);
+  const [isDripModalOpen, setIsDripModalOpen] = useState(false);
   const [isZipping, setIsZipping] = useState(false);
 
   useEffect(() => {
@@ -228,6 +231,20 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
               )}
             </button>
 
+            <button
+              onClick={() => setIsDripModalOpen(true)}
+              disabled={filteredClips.length === 0}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors inline-flex items-center gap-1.5 shadow-sm ${
+                filteredClips.length === 0
+                  ? 'bg-zinc-800/50 text-zinc-500 border border-zinc-800 cursor-not-allowed'
+                  : 'bg-amber-950/60 hover:bg-amber-900/70 text-amber-200 border border-amber-700/60 cursor-pointer'
+              }`}
+              title="Buka kalender jadwal jam emas (WIB) untuk klip video ini"
+            >
+              <Calendar className="w-3.5 h-3.5 text-amber-400" />
+              <span>📅 Jadwal Jam Emas (Drip)</span>
+            </button>
+
             <select
               value={filter}
               onChange={(e) => setFilter(e.target.value as typeof filter)}
@@ -342,6 +359,14 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
           clipId={copywritingClipId}
           isOpen={true}
           onClose={() => setCopywritingClipId(null)}
+        />
+      )}
+
+      {isDripModalOpen && (
+        <DripSchedulerModal
+          isOpen={true}
+          clips={filteredClips}
+          onClose={() => setIsDripModalOpen(false)}
         />
       )}
     </div>

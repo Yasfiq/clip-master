@@ -20,12 +20,27 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   const router = useRouter();
   const setSelectedJob = useJobStore((s) => s.setSelectedJob);
   const [watcherActive, setWatcherActive] = useState<boolean | null>(null);
+  const [ytWatcher, setYtWatcher] = useState<{ active: boolean; channelCount: number } | null>(
+    null,
+  );
 
   useEffect(() => {
     fetch('/api/system/watcher')
       .then((r) => r.json())
       .then((d) => {
         if (d.success) setWatcherActive(d.data?.active);
+      })
+      .catch(() => {});
+
+    fetch('/api/system/youtube-watcher')
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.success && d.data) {
+          setYtWatcher({
+            active: !!d.data.active,
+            channelCount: d.data.channels?.length ?? 0,
+          });
+        }
       })
       .catch(() => {});
   }, []);
@@ -70,6 +85,24 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                 }`}
               />
               📁 Watcher {watcherActive ? 'Aktif' : 'Nonaktif'}
+            </span>
+          )}
+          {ytWatcher !== null && (
+            <span
+              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border ${
+                ytWatcher.active
+                  ? 'bg-rose-950/60 border-rose-800/60 text-rose-300'
+                  : 'bg-zinc-800 border-zinc-700 text-zinc-400'
+              }`}
+              data-testid="yt-watcher-header-badge"
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  ytWatcher.active ? 'bg-rose-400 animate-pulse' : 'bg-zinc-500'
+                }`}
+              />
+              📡 YouTube Watcher:{' '}
+              {ytWatcher.active ? `Aktif (${ytWatcher.channelCount} Channel)` : 'Nonaktif'}
             </span>
           )}
         </div>

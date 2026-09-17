@@ -5,6 +5,7 @@ import { Check, RefreshCw, Play, Sparkles, Film, Trash2, X, ArrowLeft } from 'lu
 import ClipCard from './ClipCard';
 import ClipStudioModal from './ClipStudioModal';
 import CopywritingModal from './CopywritingModal';
+import DripSchedulerModal from './DripSchedulerModal';
 
 interface JobDetailProps {
   jobId: string;
@@ -55,6 +56,7 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
     'hook' | 'branding' | 'subtitle' | 'transition'
   >('hook');
   const [copywritingClipId, setCopywritingClipId] = React.useState<string | null>(null);
+  const [isSchedulerOpen, setIsSchedulerOpen] = React.useState<boolean>(false);
 
   const refreshClips = React.useCallback(() => {
     if (!jobId) return;
@@ -463,6 +465,15 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
               >
                 <span>📦 Unduh Paket Klip (ZIP)</span>
               </a>
+              <button
+                type="button"
+                onClick={() => setIsSchedulerOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-300 bg-amber-950/40 hover:bg-amber-900/60 border border-amber-800/60 rounded-lg transition-colors shadow-sm cursor-pointer"
+                title="Buka Kalender Jam Emas Publikasi & Unduh Jadwal CSV/JSON"
+                data-testid="job-detail-drip-schedule-button"
+              >
+                <span>📅 Jadwal Publikasi</span>
+              </button>
               <a
                 href={`/clips?job=${encodeURIComponent(job.id)}`}
                 className="text-xs text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
@@ -600,6 +611,15 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
           clipId={copywritingClipId}
           isOpen={true}
           onClose={() => setCopywritingClipId(null)}
+        />
+      )}
+
+      {isSchedulerOpen && (
+        <DripSchedulerModal
+          isOpen={isSchedulerOpen}
+          onClose={() => setIsSchedulerOpen(false)}
+          clips={jobClips}
+          jobName={job?.sourceTitle || (job as any)?.sourceFilename || job?.id}
         />
       )}
     </div>

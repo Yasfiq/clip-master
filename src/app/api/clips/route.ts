@@ -48,6 +48,7 @@ export async function GET(req: NextRequest) {
       isExported: c.isExported,
       exportPath: c.exportPath,
       thumbnailPath: c.thumbnailPath,
+      hookHeadline: c.hookHeadline,
       createdAt: c.createdAt,
       jobName: c.job.sourceFilename || c.job.sourceUrl || c.jobId,
       jobStatus: c.job.status,

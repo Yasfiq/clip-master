@@ -13,5 +13,7 @@ export async function register() {
     await recoverStaleJobs();
     const { initFolderWatcher } = await import('./src/server/folderWatcher');
     await initFolderWatcher();
+    const { initYouTubeWatcher } = await import('./src/server/youtubeWatcher');
+    await initYouTubeWatcher();
   }
 }
