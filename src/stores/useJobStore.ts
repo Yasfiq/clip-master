@@ -23,6 +23,8 @@ interface Job {
   updatedAt: string;
   errorCode?: string;
   errorMessage?: string;
+  sourceChannel?: string;
+  sourceTitle?: string;
 }
 
 interface Clip {

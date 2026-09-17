@@ -48,9 +48,11 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
           // Map Prisma DTO -> store Job shape (field names differ).
           const mapped = (data.data.jobs as any[]).map((j) => ({
             id: j.id,
-            name: j.sourceFilename || j.sourceUrl || j.id,
+            name: j.sourceTitle || j.sourceFilename || j.sourceUrl || j.id,
             sourceUrl: j.sourceUrl ?? undefined,
             sourcePath: j.sourcePath ?? undefined,
+            sourceChannel: j.sourceChannel ?? undefined,
+            sourceTitle: j.sourceTitle ?? undefined,
             status: j.status,
             // progress is 0..1 in Prisma, store Job expects 0..100.
             progress: typeof j.progress === 'number' ? Math.round(j.progress * 100) : 0,
@@ -343,10 +345,20 @@ const JobList: React.FC<JobListProps> = ({ onJobSelect, limit = 50 }) => {
                 <td className="py-3 pr-3 align-top">
                   <div
                     className="text-sm font-medium text-zinc-200 truncate"
-                    title={job.sourceUrl || job.name}
+                    title={job.sourceTitle || job.sourceUrl || job.name}
                   >
-                    {job.sourceUrl || job.name || '-'}
+                    {job.sourceTitle || job.sourceUrl || job.name || '-'}
                   </div>
+                  {job.sourceChannel && (
+                    <div
+                      className="flex items-center gap-1 mt-0.5"
+                      data-testid="job-source-channel"
+                    >
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-zinc-800 text-sky-400 border border-zinc-700/80">
+                        📺 {job.sourceChannel}
+                      </span>
+                    </div>
+                  )}
                   <div
                     className="font-mono text-[10px] text-zinc-500 truncate mt-0.5"
                     title={job.id}

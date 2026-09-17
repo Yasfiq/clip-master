@@ -45,6 +45,7 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
     'hook',
   );
   const [copywritingClipId, setCopywritingClipId] = useState<string | null>(null);
+  const [isZipping, setIsZipping] = useState(false);
 
   useEffect(() => {
     fetchClips();
@@ -111,6 +112,61 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
     a.click();
   };
 
+  const hasExportedClips = clips.some((c) => c.isExported);
+
+  const handleDownloadAllZip = async () => {
+    const exportedClips = clips.filter((c) => c.isExported);
+    if (exportedClips.length === 0 || isZipping) return;
+
+    setIsZipping(true);
+    try {
+      let res: Response;
+      if (jobId) {
+        res = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/download-all`);
+      } else {
+        const uniqueJobIds = Array.from(new Set(exportedClips.map((c) => c.jobId)));
+        if (uniqueJobIds.length === 1) {
+          res = await fetch(`/api/jobs/${encodeURIComponent(uniqueJobIds[0])}/download-all`);
+        } else {
+          res = await fetch('/api/clips/batch-download', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clipIds: exportedClips.map((c) => c.id) }),
+          });
+        }
+      }
+
+      if (!res.ok) {
+        const errPayload = await res.json().catch(() => ({}));
+        throw new Error(errPayload?.error?.message || `HTTP ${res.status}`);
+      }
+
+      const disposition = res.headers.get('content-disposition');
+      let filename = jobId ? `Clips_${jobId}.zip` : `Clips_Batch_${Date.now()}.zip`;
+      if (disposition && disposition.includes('filename=')) {
+        const match = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (match && match[1]) {
+          filename = match[1].replace(/['"]/g, '');
+        }
+      }
+
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (e: any) {
+      console.error('Batch ZIP download error:', e);
+      alert(e.message || 'Gagal mengunduh paket ZIP');
+    } finally {
+      setIsZipping(false);
+    }
+  };
+
   if (loading && clips.length === 0) {
     return (
       <div className={`bg-zinc-900 border border-zinc-800 rounded-xl shadow-sm p-6 ${className}`}>
@@ -144,8 +200,34 @@ const ClipBrowser: React.FC<ClipBrowserProps> = ({ className = '', jobId }) => {
             </h2>
           </div>
 
-          {/* Filters */}
-          <div className="flex items-center gap-2.5">
+          {/* Actions & Filters */}
+          <div className="flex items-center flex-wrap gap-2.5">
+            <button
+              onClick={handleDownloadAllZip}
+              disabled={!hasExportedClips || isZipping}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors inline-flex items-center gap-1.5 shadow-sm ${
+                !hasExportedClips
+                  ? 'bg-zinc-800/50 text-zinc-500 border border-zinc-800 cursor-not-allowed'
+                  : isZipping
+                    ? 'bg-indigo-950 text-indigo-300 border border-indigo-800 cursor-wait'
+                    : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700 cursor-pointer'
+              }`}
+              title={
+                !hasExportedClips
+                  ? 'Belum ada klip yang berstatus diekspor'
+                  : `Unduh ${clips.filter((c) => c.isExported).length} klip yang sudah diekspor dalam satu file ZIP`
+              }
+            >
+              {isZipping ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Sedang Mengompres ZIP...</span>
+                </>
+              ) : (
+                <span>📦 Unduh Semua Klip (ZIP)</span>
+              )}
+            </button>
+
             <select
               value={filter}
               onChange={(e) => setFilter(e.target.value as typeof filter)}

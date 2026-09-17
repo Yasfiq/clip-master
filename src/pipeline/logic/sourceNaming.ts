@@ -83,3 +83,5 @@ export function parseLocalSourceFilename(inputPathOrName: string): ParsedSourceM
     isCustomPattern: false,
   };
 }
+
+export const parseSourceFileName = parseLocalSourceFilename;

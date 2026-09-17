@@ -8,6 +8,7 @@ export const PATHS = {
   root: __dirname,
   media: path.join(__dirname, process.env.MEDIA_ROOT || './media'),
   sources: path.join(__dirname, process.env.MEDIA_SOURCES || './media/sources'),
+  incoming: path.join(__dirname, process.env.MEDIA_INCOMING || './media/incoming'),
   work: path.join(__dirname, process.env.MEDIA_WORK || './media/work'),
   exports: path.join(__dirname, process.env.MEDIA_EXPORTS || './media/exports'),
   assets: path.join(__dirname, process.env.MEDIA_ASSETS || './media/assets'),
@@ -25,6 +26,7 @@ export const BINARIES = {
   ytdlp: process.env.YTDLP_PATH || 'yt-dlp',
   whisper: process.env.WHISPER_PATH || 'whisper',
   faceModel: process.env.FACE_MODEL_PATH || './models/blazeface/blazeface_front_e2e.onnx',
+  zip: process.env.ZIP_PATH || '/usr/bin/zip',
 };
 
 export const RETENTION = {

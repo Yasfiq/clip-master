@@ -11,5 +11,7 @@ export async function register() {
     // Server-side only (not in Edge Runtime)
     const { recoverStaleJobs } = await import('./src/server/recovery');
     await recoverStaleJobs();
+    const { initFolderWatcher } = await import('./src/server/folderWatcher');
+    await initFolderWatcher();
   }
 }

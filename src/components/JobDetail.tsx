@@ -454,12 +454,22 @@ const JobDetail: React.FC<JobDetailProps> = ({ jobId, onClose }) => {
                 transisi.
               </p>
             </div>
-            <a
-              href={`/clips?job=${encodeURIComponent(job.id)}`}
-              className="text-xs text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
-            >
-              Lihat di Browser Klip &rarr;
-            </a>
+            <div className="flex items-center gap-2.5">
+              <a
+                href={`/api/jobs/${encodeURIComponent(job.id)}/download-all`}
+                download
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-zinc-100 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg transition-colors shadow-sm"
+                title="Unduh seluruh klip beserta copywriting dan manifest dalam format ZIP"
+              >
+                <span>📦 Unduh Paket Klip (ZIP)</span>
+              </a>
+              <a
+                href={`/clips?job=${encodeURIComponent(job.id)}`}
+                className="text-xs text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
+              >
+                Lihat di Browser Klip &rarr;
+              </a>
+            </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
             {jobClips.map((clip, idx) => (
