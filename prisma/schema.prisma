@@ -1,6 +1,6 @@
 generator client {
-  provider        = "prisma-client-js"
-  previewFeatures = []
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
 }
 
 datasource db {
@@ -74,10 +74,14 @@ model Job {
   config   PipelineConfig @relation(fields: [configId], references: [id])
   configId String
 
+  campaign   Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  campaignId String?
+
   @@index([status])
   @@index([createdAt])
   @@index([configId])
   @@index([currentStage])
+  @@index([campaignId])
 }
 
 model JobLog {
@@ -95,25 +99,27 @@ model JobLog {
 }
 
 model Clip {
-  id              String   @id @default(cuid())
-  job             Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  id              String       @id @default(cuid())
+  job             Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
   jobId           String
   startTime       Float // start timestamp di source (detik)
   endTime         Float // end timestamp di source (detik)
   duration        Float // end - start (detik)
   viralScore      Float? // 0.0 - 1.0 skor potensial viralitas
   confidence      String? // "HIGH", "MEDIUM", "LOW"
-  fallbackApplied Boolean  @default(false)
+  fallbackApplied Boolean      @default(false)
   cutPath         String? // relatif terhadap media/work/{jobId}/cuts/ (NEW: raw cut)
   editedPath      String? // relatif terhadap media/work/{jobId}/edited/ (NEW: after color+audio)
   subtitlePath    String? // relatif terhadap media/work/{jobId}/subtitles/ (NEW: SRT sidecar)
   exportPath      String? // relatif terhadap media/exports/
   thumbnailPath   String? // relatif terhadap media/assets/
-  isExported      Boolean  @default(false)
+  isExported      Boolean      @default(false)
   hookHeadline    String? // 3-5 word uppercase hook headline
   studioConfig    Json? // StudioConfig json
   metadata        Json? // hasil deteksi subtitle/audio detail
-  createdAt       DateTime @default(now())
+  variantSeed     String? // ID grup variasi klip dari segmen yang sama
+  createdAt       DateTime     @default(now())
+  submissions     Submission[]
 
   @@index([jobId])
   @@index([viralScore])
@@ -144,4 +150,64 @@ model PipelineConfig {
   jobs      Job[]
 
   @@index([isDefault])
+}
+
+enum CampaignPlatform {
+  TIKTOK
+  INSTAGRAM
+  BOTH
+}
+
+enum PayoutModel {
+  FIXED_CPM
+  TIERED
+}
+
+model Campaign {
+  id               String           @id @default(cuid())
+  name             String
+  brand            String
+  platform         CampaignPlatform @default(BOTH)
+  cpmRate          Float            @default(0)
+  payoutModel      PayoutModel      @default(FIXED_CPM)
+  minViews         Int              @default(10000)
+  minDuration      Float            @default(15)
+  maxDuration      Float            @default(60)
+  requiredHashtags String           @default("[]") // JSON array of strings without #
+  requiredMentions String           @default("[]") // JSON array of strings without @
+  style            String           @default("kinetic")
+  capMaxViews      Int?
+  deadline         DateTime?
+  note             String?
+  isClippingViable Boolean          @default(true)
+  nonViableReason  String?
+  rawBriefText     String?
+  sourceVideoUrl   String?
+  isActive         Boolean          @default(true)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  submissions      Submission[]
+  jobs             Job[]
+
+  @@index([isActive])
+}
+
+model Submission {
+  id             String           @id @default(cuid())
+  campaign       Campaign         @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaignId     String
+  clip           Clip?            @relation(fields: [clipId], references: [id], onDelete: SetNull)
+  clipId         String?
+  platform       CampaignPlatform
+  postedUrl      String
+  viewsAtSubmit  Int              @default(0)
+  status         String           @default("pending") // pending | approved | rejected
+  verifiedViews  Int?
+  earningGross   Float? // Rp
+  rejectedReason String?
+  submittedAt    DateTime         @default(now())
+  resolvedAt     DateTime?
+
+  @@index([campaignId])
+  @@index([status])
 }

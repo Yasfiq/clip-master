@@ -660,6 +660,7 @@ export default function ClipStudioModal({
             disabled={saving || reBurning}
             className="text-zinc-400 hover:text-white flex items-center gap-1.5 px-2.5 py-1.5 rounded-md hover:bg-zinc-800/80 transition-colors text-xs font-medium cursor-pointer disabled:opacity-50"
             aria-label="Tutup jendela editor"
+            data-testid="studio-back-button"
           >
             <ChevronLeft className="w-4 h-4" />
             <span>Kembali</span>
@@ -751,6 +752,7 @@ export default function ClipStudioModal({
             disabled={saving || reBurning}
             className="text-zinc-400 hover:text-zinc-200 p-1.5 min-h-[38px] min-w-[38px] rounded hover:bg-zinc-800 transition-colors ml-1 cursor-pointer flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
             title="Batal / Tutup"
+            data-testid="studio-close-button"
           >
             <X className="w-4 h-4" />
           </button>
@@ -786,6 +788,7 @@ export default function ClipStudioModal({
                 : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
             }`}
             title="Subtitle & Auto Captions"
+            data-testid="studio-tab-subtitle"
           >
             <MessageSquare className="w-4 h-4" />
             <span>Subtitle</span>
@@ -800,6 +803,7 @@ export default function ClipStudioModal({
                 : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
             }`}
             title="Hook & Headline"
+            data-testid="studio-tab-hook"
           >
             <Type className="w-4 h-4" />
             <span>Hook</span>
@@ -813,7 +817,7 @@ export default function ClipStudioModal({
                 ? 'bg-blue-600/20 text-blue-400 font-semibold border border-blue-500/40 shadow-inner'
                 : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
             }`}
-            title="Layout & Framing (Smart Face / Split Podcast)"
+            title="Layout & Framing (Smart Face / Center / Blur-Fill)"
             data-testid="studio-tab-framing"
           >
             <Crop className="w-4 h-4" />
@@ -829,6 +833,7 @@ export default function ClipStudioModal({
                 : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
             }`}
             title="Branding & Sumber"
+            data-testid="studio-tab-brand"
           >
             <ImageIcon className="w-4 h-4" />
             <span>Brand</span>
@@ -843,6 +848,7 @@ export default function ClipStudioModal({
                 : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
             }`}
             title="Transisi & Fade"
+            data-testid="studio-tab-transition"
           >
             <Sliders className="w-4 h-4" />
             <span>Transisi</span>

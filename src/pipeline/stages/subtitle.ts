@@ -253,17 +253,24 @@ export class SubtitleStage implements PipelineStageHandler {
     clipId: string,
     subtitleDir: string,
   ): Promise<void> {
-    const modelPath = path.join(
-      path.dirname(BINARIES.whisper),
-      '..',
-      '..',
-      'models',
-      'ggml-small.bin',
-    );
-    try {
-      await fs.access(modelPath);
-    } catch {
-      throw new Error(`Whisper model not found at ${modelPath}`);
+    const modelCandidates = [
+      process.env.WHISPER_MODEL_PATH,
+      path.join(path.dirname(BINARIES.whisper), '..', '..', 'models', 'ggml-small.bin'),
+      path.join(path.dirname(BINARIES.whisper), '..', 'models', 'ggml-small.bin'),
+      '/home/mohammad-yasfiq/whisper.cpp/models/ggml-small.bin',
+      '/home/mohammad-yasfiq/whisper.cpp/models/ggml-base.bin',
+    ].filter(Boolean) as string[];
+
+    let modelPath = '';
+    for (const candidate of modelCandidates) {
+      try {
+        await fs.access(candidate);
+        modelPath = candidate;
+        break;
+      } catch {}
+    }
+    if (!modelPath) {
+      throw new Error(`Whisper model not found in candidates: ${modelCandidates.join(', ')}`);
     }
 
     const audioTemp = path.join(subtitleDir, `${clipId}_audio.wav`);

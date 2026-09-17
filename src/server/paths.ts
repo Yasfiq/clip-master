@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -24,7 +25,7 @@ export const BINARIES = {
   ffmpeg: process.env.FFMPEG_PATH || 'ffmpeg',
   ffprobe: process.env.FFPROBE_PATH || 'ffprobe',
   ytdlp: process.env.YTDLP_PATH || 'yt-dlp',
-  whisper: process.env.WHISPER_PATH || 'whisper',
+  whisper: process.env.WHISPER_PATH || '/home/mohammad-yasfiq/whisper.cpp/build/bin/whisper-cli',
   faceModel: process.env.FACE_MODEL_PATH || './models/blazeface/blazeface_front_e2e.onnx',
   zip: process.env.ZIP_PATH || '/usr/bin/zip',
 };

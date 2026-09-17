@@ -59,18 +59,25 @@ export class TranscribeStage implements PipelineStageHandler {
     }
 
     // Model path: ggml-small.bin for multilingual support (Indonesian)
-    const modelPath = path.join(
-      path.dirname(BINARIES.whisper),
-      '..',
-      '..',
-      'models',
-      'ggml-small.bin',
-    );
-    try {
-      await fs.access(modelPath);
-    } catch {
+    const modelCandidates = [
+      process.env.WHISPER_MODEL_PATH,
+      path.join(path.dirname(BINARIES.whisper), '..', '..', 'models', 'ggml-small.bin'),
+      path.join(path.dirname(BINARIES.whisper), '..', 'models', 'ggml-small.bin'),
+      '/home/mohammad-yasfiq/whisper.cpp/models/ggml-small.bin',
+      '/home/mohammad-yasfiq/whisper.cpp/models/ggml-base.bin',
+    ].filter(Boolean) as string[];
+
+    let modelPath = '';
+    for (const candidate of modelCandidates) {
+      try {
+        await fs.access(candidate);
+        modelPath = candidate;
+        break;
+      } catch {}
+    }
+    if (!modelPath) {
       throw new Error(
-        `Whisper model not found at ${modelPath}. Run 'bash ./models/download-ggml-model.sh base' in whisper.cpp directory.`,
+        `Whisper model not found in candidates: ${modelCandidates.join(', ')}. Run 'bash ./models/download-ggml-model.sh base' in whisper.cpp directory.`,
       );
     }
 
