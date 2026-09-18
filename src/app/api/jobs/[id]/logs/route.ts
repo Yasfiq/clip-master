@@ -34,6 +34,24 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       where.timestamp = { gte: sinceDate };
     }
 
+    const levelParam = searchParams.get('level');
+    if (levelParam && levelParam.toUpperCase() !== 'ALL') {
+      const l = levelParam.trim().toLowerCase();
+      if (l === 'warn' || l === 'warning') {
+        where.level = { in: ['warn', 'warning', 'WARN', 'WARNING'] };
+      } else if (l === 'error' || l === 'err') {
+        where.level = { in: ['error', 'err', 'ERROR', 'ERR'] };
+      } else if (l === 'info' || l === 'information') {
+        where.level = { in: ['info', 'information', 'INFO', 'INFORMATION'] };
+      } else if (l === 'stage') {
+        where.OR = [{ level: { in: ['stage', 'STAGE'] } }, { stage: { not: null } }];
+      } else if (l === 'debug' || l === 'trace') {
+        where.level = { in: ['debug', 'trace', 'DEBUG', 'TRACE'] };
+      } else {
+        where.level = { in: [l, l.toUpperCase()] };
+      }
+    }
+
     const logs = await db.jobLog.findMany({
       where,
       orderBy: { timestamp: 'desc' },

@@ -25,7 +25,7 @@ export default function DashboardPage() {
           {selectedJobId ? (
             <div className="mt-8 animate-in fade-in zoom-in-95 duration-200">
               <JobDetail jobId={selectedJobId} onClose={() => setSelectedJob(null)} />
-              <LogViewer jobId={selectedJobId} autoRefresh={true} maxLines={200} />
+              <LogViewer jobId={selectedJobId} autoRefresh={true} maxLines={500} />
             </div>
           ) : (
             <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in slide-in-from-bottom-4 duration-300">

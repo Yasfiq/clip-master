@@ -7,29 +7,43 @@ interface LogViewerProps {
   autoRefresh?: boolean;
   maxLines?: number;
   showTimestamps?: boolean;
-  filterLevel?: 'ALL' | 'INFO' | 'WARN' | 'ERROR' | 'STAGE';
+  filterLevel?: 'ALL' | 'INFO' | 'WARN' | 'ERROR' | 'STAGE' | 'DEBUG';
 }
 
 interface LogEntry {
   id: string;
   level: 'INFO' | 'WARN' | 'ERROR' | 'STAGE' | 'DEBUG';
+  rawLevel?: string;
   message: string;
   timestamp: string;
   stage?: string;
 }
+
+export const normalizeLogLevel = (raw?: string): 'INFO' | 'WARN' | 'ERROR' | 'STAGE' | 'DEBUG' => {
+  if (!raw) return 'INFO';
+  const l = String(raw).trim().toUpperCase();
+  if (l === 'INFO' || l === 'INFORMATION') return 'INFO';
+  if (l === 'WARN' || l === 'WARNING') return 'WARN';
+  if (l === 'ERROR' || l === 'ERR' || l === 'FATAL') return 'ERROR';
+  if (l === 'STAGE') return 'STAGE';
+  if (l === 'DEBUG' || l === 'TRACE') return 'DEBUG';
+  return 'INFO';
+};
 
 const EMPTY_LOGS: any[] = [];
 
 const LogViewer: React.FC<LogViewerProps> = ({
   jobId,
   autoRefresh = true,
-  maxLines = 200,
+  maxLines = 500,
   showTimestamps = true,
   filterLevel = 'ALL',
 }) => {
   const storeLogs = useJobStore((state) => state.logs[jobId] ?? EMPTY_LOGS);
   const [isPaused, setIsPaused] = useState(false);
-  const [selectedLevel, setSelectedLevel] = useState(filterLevel);
+  const [selectedLevel, setSelectedLevel] = useState<
+    'ALL' | 'INFO' | 'WARN' | 'ERROR' | 'STAGE' | 'DEBUG'
+  >(filterLevel);
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const clearedAtRef = useRef<number | null>(null);
@@ -38,7 +52,8 @@ const LogViewer: React.FC<LogViewerProps> = ({
     () =>
       storeLogs.map((log) => ({
         id: log.id || Math.random().toString(36),
-        level: log.level as any,
+        level: normalizeLogLevel(log.level),
+        rawLevel: log.level,
         message: log.message,
         timestamp: log.timestamp || new Date().toISOString(),
         stage: log.stage,
@@ -58,7 +73,7 @@ const LogViewer: React.FC<LogViewerProps> = ({
         const res = await fetch(`/api/jobs/${jobId}/logs?limit=${maxLines}`);
         const data = await res.json();
         const payload = data.success ? data.data : data;
-        if (payload.logs) {
+        if (payload?.logs) {
           useJobStore.getState().setLogs(jobId, payload.logs);
         }
       } catch (e) {
@@ -71,30 +86,32 @@ const LogViewer: React.FC<LogViewerProps> = ({
   useEffect(() => {
     if (!autoRefresh) return;
     const tick = async () => {
-      if (clearedAtRef.current !== null) return;
       try {
         const storeLogs = useJobStore.getState().logs[jobId] || [];
-        if (storeLogs.length === 0) return;
         const tail = storeLogs[storeLogs.length - 1];
-        if (!tail?.timestamp) return;
-        const res = await fetch(
-          `/api/jobs/${jobId}/logs?limit=${maxLines}&since=${encodeURIComponent(tail.timestamp)}`,
-        );
+
+        // If user cleared logs manually, only fetch logs strictly newer than cleared timestamp
+        let url = `/api/jobs/${jobId}/logs?limit=${maxLines}`;
+        if (clearedAtRef.current !== null) {
+          url += `&since=${encodeURIComponent(new Date(clearedAtRef.current).toISOString())}`;
+        } else if (tail?.timestamp) {
+          url += `&since=${encodeURIComponent(tail.timestamp)}`;
+        }
+
+        const res = await fetch(url);
         const data = await res.json();
         const payload = data.success ? data.data : data;
-        if (
-          payload.logs &&
-          payload.status &&
-          payload.status !== 'RUNNING_PHASE1' &&
-          payload.status !== 'RUNNING_PHASE2'
-        ) {
+        if (payload?.logs && Array.isArray(payload.logs) && payload.logs.length > 0) {
+          if (clearedAtRef.current !== null) {
+            clearedAtRef.current = null;
+          }
           useJobStore.getState().mergeLogs(jobId, payload.logs);
         }
       } catch (e) {
         // Network blip
       }
     };
-    const id = setInterval(tick, 5000);
+    const id = setInterval(tick, 3000);
     return () => clearInterval(id);
   }, [autoRefresh, jobId, maxLines]);
 
@@ -104,10 +121,16 @@ const LogViewer: React.FC<LogViewerProps> = ({
     }
   }, [uiLogs, isPaused]);
 
-  const filteredLogs =
-    selectedLevel === 'ALL' ? uiLogs : uiLogs.filter((log) => log.level === selectedLevel);
+  const filteredLogs = useMemo(() => {
+    if (selectedLevel === 'ALL') return uiLogs;
+    if (selectedLevel === 'STAGE') {
+      return uiLogs.filter((log) => log.level === 'STAGE' || Boolean(log.stage));
+    }
+    return uiLogs.filter((log) => log.level === selectedLevel);
+  }, [uiLogs, selectedLevel]);
 
-  const getLevelColor = (level: string) => {
+  const getLevelColor = (rawLevel: string) => {
+    const level = normalizeLogLevel(rawLevel);
     switch (level) {
       case 'INFO':
         return 'text-sky-300';
@@ -124,7 +147,8 @@ const LogViewer: React.FC<LogViewerProps> = ({
     }
   };
 
-  const getLevelBadge = (level: string) => {
+  const getLevelBadge = (rawLevel: string) => {
+    const level = normalizeLogLevel(rawLevel);
     switch (level) {
       case 'INFO':
         return 'bg-sky-950/60 text-sky-400 border border-sky-800/60';
@@ -173,6 +197,7 @@ const LogViewer: React.FC<LogViewerProps> = ({
             <option value="INFO">Informasi (INFO)</option>
             <option value="WARN">Peringatan (WARN)</option>
             <option value="ERROR">Kesalahan (ERROR)</option>
+            <option value="DEBUG">Debug (DEBUG)</option>
           </select>
 
           {/* Pause/Resume */}
