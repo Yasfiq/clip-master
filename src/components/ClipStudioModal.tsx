@@ -32,6 +32,8 @@ import {
   Palette,
   Eye,
   Volume1,
+  Repeat,
+  RotateCcw,
 } from 'lucide-react';
 
 interface ClipStudioModalProps {
@@ -52,21 +54,18 @@ function formatTimecode(sec: number): string {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${f.toString().padStart(2, '0')}`;
 }
 
-export default function ClipStudioModal({
+const ClipStudioModal: React.FC<ClipStudioModalProps> = ({
   clipId,
   isOpen,
   onClose,
   onSuccess,
   initialTab = 'subtitle',
-}: ClipStudioModalProps) {
+}) => {
   const [activeTab, setActiveTab] = useState<
     'hook' | 'framing' | 'branding' | 'subtitle' | 'transition' | 'audio'
   >(initialTab);
+  const [studioConfig, setStudioConfig] = useState<StudioConfig>(DEFAULT_STUDIO_CONFIG);
   const [cues, setCues] = useState<SubtitleCue[]>([]);
-  const [studioConfig, setStudioConfig] = useState<StudioConfig>({
-    ...DEFAULT_STUDIO_CONFIG,
-    sourcePosition: DEFAULT_STUDIO_CONFIG.sourcePosition || 'top-right',
-  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [reBurning, setReBurning] = useState(false);
@@ -79,6 +78,9 @@ export default function ClipStudioModal({
   const [duration, setDuration] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
+  const [isLooping, setIsLooping] = useState<boolean>(true); // Short-form video editing defaults to loop playback
+  const [loopingCueIndex, setLoopingCueIndex] = useState<number | null>(null);
+  const [cumulativeNudge, setCumulativeNudge] = useState<number>(0);
   const [selectedCueIndex, setSelectedCueIndex] = useState<number | null>(0);
   const [timelineZoom, setTimelineZoom] = useState<number>(1.0); // 1x to 3x
   const [isCleanVideo, setIsCleanVideo] = useState<boolean>(true);
@@ -99,13 +101,17 @@ export default function ClipStudioModal({
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
+  const initialCuesRef = useRef<SubtitleCue[]>([]);
+  const cueRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  // Freeze Frame duration: in draft mode, freeze duration is active if TTS is enabled or manual duration > 0
+  // Freeze Frame duration: only active if freeze duration > 0, or if hook voiceover is configured with duration
   const freezeSec =
     viewMode === 'draft' &&
-    (studioConfig.hookTtsEnabled !== false ||
-      (typeof studioConfig.freezeDuration === 'number' && studioConfig.freezeDuration > 0))
-      ? Number((studioConfig.freezeDuration || studioConfig.hookDuration || 2.0).toFixed(2))
+    ((typeof studioConfig.freezeDuration === 'number' && studioConfig.freezeDuration > 0) ||
+      (Boolean(studioConfig.hookText?.trim()) &&
+        studioConfig.hookTtsEnabled &&
+        (studioConfig.hookDuration || 0) > 0))
+      ? Number((studioConfig.freezeDuration || studioConfig.hookDuration || 0).toFixed(2))
       : 0;
 
   const totalTimelineDuration = (duration || 60) + (viewMode === 'draft' ? freezeSec : 0);
@@ -113,29 +119,40 @@ export default function ClipStudioModal({
   const togglePlay = useCallback(() => {
     if (isPlaying) {
       setIsPlaying(false);
+      setLoopingCueIndex(null);
       if (videoRef.current) videoRef.current.pause();
       if (ttsAudioRef.current) ttsAudioRef.current.pause();
     } else {
+      // If at or near the end, reset cleanly to beginning (clean replay)
+      const isAtEnd = currentTime >= totalTimelineDuration - 0.2;
+      const startSec = isAtEnd ? 0 : currentTime;
+      if (isAtEnd) {
+        setCurrentTime(0);
+        if (videoRef.current) {
+          videoRef.current.currentTime = 0;
+        }
+      }
+
       setIsPlaying(true);
-      if (viewMode === 'draft' && freezeSec > 0 && currentTime < freezeSec) {
+      if (viewMode === 'draft' && freezeSec > 0 && startSec < freezeSec) {
         if (videoRef.current) {
           videoRef.current.currentTime = 0;
           videoRef.current.pause();
         }
         if (ttsAudioRef.current) {
-          ttsAudioRef.current.currentTime = currentTime;
+          ttsAudioRef.current.currentTime = startSec;
           ttsAudioRef.current.play().catch(() => {});
         }
       } else {
         if (videoRef.current) {
-          if (viewMode === 'draft' && freezeSec > 0) {
-            videoRef.current.currentTime = Math.max(0, currentTime - freezeSec);
-          }
+          const videoTarget =
+            viewMode === 'draft' && freezeSec > 0 ? Math.max(0, startSec - freezeSec) : startSec;
+          videoRef.current.currentTime = videoTarget;
           videoRef.current.play().catch(() => {});
         }
       }
     }
-  }, [isPlaying, viewMode, freezeSec, currentTime]);
+  }, [isPlaying, viewMode, freezeSec, currentTime, totalTimelineDuration]);
 
   // Freeze Frame animation loop during draft mode playback (frame 1 frozen while clock advances)
   useEffect(() => {
@@ -172,6 +189,16 @@ export default function ClipStudioModal({
       if (animId) cancelAnimationFrame(animId);
     };
   }, [isPlaying, viewMode, freezeSec, currentTime]);
+
+  // Auto-scroll subtitle drawer to active speaking cue during playback
+  useEffect(() => {
+    if (activeTab === 'subtitle' && selectedCueIndex !== null && isPlaying) {
+      const el = cueRefs.current[selectedCueIndex];
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+  }, [selectedCueIndex, activeTab, isPlaying]);
 
   const fetchStudioData = useCallback(
     async (signal?: AbortSignal) => {
@@ -213,6 +240,8 @@ export default function ClipStudioModal({
         }
         if (Array.isArray(data.cues)) {
           setCues(data.cues);
+          initialCuesRef.current = JSON.parse(JSON.stringify(data.cues));
+          setCumulativeNudge(0);
         }
 
         if (logoRes.ok) {
@@ -312,6 +341,26 @@ export default function ClipStudioModal({
   const handleTimeUpdate = () => {
     if (!videoRef.current) return;
 
+    // Handle single cue looping if active
+    if (loopingCueIndex !== null) {
+      const cue = cues[loopingCueIndex];
+      if (cue) {
+        const dTime =
+          viewMode === 'draft' && freezeSec > 0
+            ? Math.max(0, currentTime - freezeSec)
+            : videoRef.current.currentTime;
+        if (dTime >= cue.end) {
+          const cueOffset = viewMode === 'draft' ? freezeSec : 0;
+          handleSeek(cue.start + cueOffset);
+          if (videoRef.current) {
+            videoRef.current.currentTime = cue.start;
+            videoRef.current.play().catch(() => {});
+          }
+          return;
+        }
+      }
+    }
+
     if (viewMode === 'draft' && freezeSec > 0) {
       if (currentTime >= freezeSec) {
         const cur = freezeSec + videoRef.current.currentTime;
@@ -329,6 +378,37 @@ export default function ClipStudioModal({
       const activeIdx = cues.findIndex((c) => cur >= c.start && cur <= c.end);
       if (activeIdx !== -1 && activeIdx !== selectedCueIndex) {
         setSelectedCueIndex(activeIdx);
+      }
+    }
+  };
+
+  const handlePlayFromCue = (startSec: number) => {
+    setLoopingCueIndex(null);
+    const cueOffset = viewMode === 'draft' ? freezeSec : 0;
+    const targetTimelineSec = startSec + cueOffset;
+    handleSeek(targetTimelineSec);
+    setIsPlaying(true);
+    if (videoRef.current) {
+      videoRef.current.currentTime = startSec;
+      videoRef.current.play().catch(() => {});
+    }
+  };
+
+  const handleToggleLoopCue = (index: number) => {
+    if (loopingCueIndex === index) {
+      setLoopingCueIndex(null);
+    } else {
+      setLoopingCueIndex(index);
+      setSelectedCueIndex(index);
+      const cue = cues[index];
+      if (cue) {
+        const cueOffset = viewMode === 'draft' ? freezeSec : 0;
+        handleSeek(cue.start + cueOffset);
+        setIsPlaying(true);
+        if (videoRef.current) {
+          videoRef.current.currentTime = cue.start;
+          videoRef.current.play().catch(() => {});
+        }
       }
     }
   };
@@ -435,7 +515,16 @@ export default function ClipStudioModal({
         };
       }),
     );
+    setCumulativeNudge((prev) => Number((prev + delta).toFixed(3)));
     setStatusMessage(`Semua timing subtitle digeser ${delta > 0 ? '+' : ''}${delta}s.`);
+  };
+
+  const handleResetAllNudges = () => {
+    if (initialCuesRef.current && initialCuesRef.current.length > 0) {
+      setCues(JSON.parse(JSON.stringify(initialCuesRef.current)));
+      setCumulativeNudge(0);
+      setStatusMessage('Timing subtitle berhasil dikembalikan ke sinkronisasi awal.');
+    }
   };
 
   const handleNudgeSingleCue = (index: number, delta: number) => {
@@ -944,41 +1033,81 @@ export default function ClipStudioModal({
                           <Clock className="w-3.5 h-3.5 text-blue-400" />
                           <span>Sinkronisasi Timing ({cues.length} Cues)</span>
                         </label>
-                        <span className="text-[10px] text-zinc-400 font-mono">Nudge Serentak</span>
+                        <div className="flex items-center gap-1.5">
+                          {cumulativeNudge !== 0 && (
+                            <button
+                              type="button"
+                              onClick={handleResetAllNudges}
+                              className="text-[10px] text-zinc-400 hover:text-amber-300 transition-colors flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-zinc-800 border border-zinc-700 hover:border-amber-500/50 cursor-pointer"
+                              title="Reset pergeseran timing ke posisi awal"
+                            >
+                              <RotateCcw className="w-2.5 h-2.5" />
+                              <span>Reset</span>
+                            </button>
+                          )}
+                          <span
+                            className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+                              cumulativeNudge !== 0
+                                ? 'bg-blue-950/80 text-blue-300 border-blue-700/80 font-bold'
+                                : 'text-zinc-500 border-zinc-800 bg-zinc-950/50'
+                            }`}
+                          >
+                            Offset:{' '}
+                            {cumulativeNudge > 0
+                              ? `+${cumulativeNudge.toFixed(2)}s`
+                              : `${cumulativeNudge.toFixed(2)}s`}
+                          </span>
+                        </div>
                       </div>
                       <p className="text-[10px] text-zinc-400 leading-relaxed">
-                        Geser kemunculan subtitle agar selaras dengan ketukan suara:
+                        Geser kemunculan subtitle serentak agar selaras dengan ketukan suara:
                       </p>
-                      <div className="grid grid-cols-4 gap-1.5">
+                      <div className="grid grid-cols-6 gap-1">
                         <button
                           type="button"
                           onClick={() => handleNudgeAllCues(-0.25)}
-                          className="py-1 px-1.5 text-[10px] font-mono font-medium rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 hover:text-white transition-colors text-center"
-                          title="Percepat kemunculan subtitle 0.25 detik (muncul lebih awal)"
+                          className="py-1 px-1 text-[10px] font-mono font-medium rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 hover:text-white transition-colors text-center cursor-pointer"
+                          title="Percepat subtitle 0.25 detik"
                         >
                           -0.25s
                         </button>
                         <button
                           type="button"
                           onClick={() => handleNudgeAllCues(-0.1)}
-                          className="py-1 px-1.5 text-[10px] font-mono font-medium rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 hover:text-white transition-colors text-center"
-                          title="Percepat kemunculan subtitle 0.10 detik"
+                          className="py-1 px-1 text-[10px] font-mono font-medium rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 hover:text-white transition-colors text-center cursor-pointer"
+                          title="Percepat subtitle 0.10 detik"
                         >
                           -0.10s
                         </button>
                         <button
                           type="button"
+                          onClick={() => handleNudgeAllCues(-0.05)}
+                          className="py-1 px-1 text-[10px] font-mono font-medium rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 hover:text-white transition-colors text-center cursor-pointer"
+                          title="Percepat subtitle 0.05 detik (micro-sync)"
+                        >
+                          -0.05s
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleNudgeAllCues(0.05)}
+                          className="py-1 px-1 text-[10px] font-mono font-medium rounded bg-blue-950/60 hover:bg-blue-900/60 text-blue-300 border border-blue-800/60 transition-colors text-center cursor-pointer"
+                          title="Tunda subtitle 0.05 detik (micro-sync)"
+                        >
+                          +0.05s
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => handleNudgeAllCues(0.1)}
-                          className="py-1 px-1.5 text-[10px] font-mono font-medium rounded bg-blue-950/60 hover:bg-blue-900/60 text-blue-300 border border-blue-800/60 transition-colors text-center"
-                          title="Tunda kemunculan subtitle 0.10 detik (lebih lambat)"
+                          className="py-1 px-1 text-[10px] font-mono font-medium rounded bg-blue-950/60 hover:bg-blue-900/60 text-blue-300 border border-blue-800/60 transition-colors text-center cursor-pointer"
+                          title="Tunda subtitle 0.10 detik"
                         >
                           +0.10s
                         </button>
                         <button
                           type="button"
                           onClick={() => handleNudgeAllCues(0.25)}
-                          className="py-1 px-1.5 text-[10px] font-mono font-medium rounded bg-blue-950/60 hover:bg-blue-900/60 text-blue-300 border border-blue-800/60 transition-colors text-center"
-                          title="Tunda kemunculan subtitle 0.25 detik (lebih lambat)"
+                          className="py-1 px-1 text-[10px] font-mono font-medium rounded bg-blue-950/60 hover:bg-blue-900/60 text-blue-300 border border-blue-800/60 transition-colors text-center cursor-pointer"
+                          title="Tunda subtitle 0.25 detik"
                         >
                           +0.25s
                         </button>
@@ -988,10 +1117,13 @@ export default function ClipStudioModal({
                     {/* Cues List */}
                     <div className="space-y-2">
                       {cues.map((cue, index) => {
-                        const isCueActive = currentTime >= cue.start && currentTime <= cue.end;
+                        const isCueActive = dialogueTime >= cue.start && dialogueTime <= cue.end;
                         return (
                           <div
                             key={cue.id || index}
+                            ref={(el) => {
+                              cueRefs.current[index] = el;
+                            }}
                             className={`p-2.5 rounded-lg border transition-all ${
                               isCueActive
                                 ? 'bg-blue-950/40 border-blue-500 shadow-sm'
@@ -1002,12 +1134,9 @@ export default function ClipStudioModal({
                               <div className="flex items-center gap-1">
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    setSelectedCueIndex(index);
-                                    handleSeek(cue.start);
-                                  }}
+                                  onClick={() => handlePlayFromCue(cue.start)}
                                   className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 hover:bg-blue-600 hover:text-white transition-colors cursor-pointer flex items-center gap-1"
-                                  title="Klik untuk memutar video dari detik ini"
+                                  title="Klik untuk langsung memutar video dari detik ini"
                                 >
                                   <Play className="w-2.5 h-2.5 fill-current" />
                                   <span>
@@ -1016,19 +1145,36 @@ export default function ClipStudioModal({
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => handleNudgeSingleCue(index, -0.1)}
-                                  className="text-[9px] font-mono text-zinc-400 hover:text-zinc-200 px-1 py-0.5 rounded bg-zinc-800 hover:bg-zinc-750 transition-colors"
-                                  title="Nudge cue ini -0.1s"
+                                  onClick={() => handleToggleLoopCue(index)}
+                                  className={`text-[9px] font-mono px-1.5 py-0.5 rounded transition-colors cursor-pointer flex items-center gap-0.5 ${
+                                    loopingCueIndex === index
+                                      ? 'bg-amber-400 text-black font-bold shadow-sm'
+                                      : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-750'
+                                  }`}
+                                  title={
+                                    loopingCueIndex === index
+                                      ? 'Matikan loop cue ini'
+                                      : 'Putar berulang kalimat ini (Loop Cue)'
+                                  }
                                 >
-                                  -0.1s
+                                  <Repeat className="w-2.5 h-2.5" />
+                                  <span>Loop</span>
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => handleNudgeSingleCue(index, 0.1)}
+                                  onClick={() => handleNudgeSingleCue(index, -0.05)}
                                   className="text-[9px] font-mono text-zinc-400 hover:text-zinc-200 px-1 py-0.5 rounded bg-zinc-800 hover:bg-zinc-750 transition-colors"
-                                  title="Nudge cue ini +0.1s"
+                                  title="Nudge cue ini -0.05s"
                                 >
-                                  +0.1s
+                                  -0.05s
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleNudgeSingleCue(index, 0.05)}
+                                  className="text-[9px] font-mono text-zinc-400 hover:text-zinc-200 px-1 py-0.5 rounded bg-zinc-800 hover:bg-zinc-750 transition-colors"
+                                  title="Nudge cue ini +0.05s"
+                                >
+                                  +0.05s
                                 </button>
                               </div>
 
@@ -1691,8 +1837,29 @@ export default function ClipStudioModal({
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
                 onEnded={() => {
-                  setIsPlaying(false);
-                  if (ttsAudioRef.current) ttsAudioRef.current.pause();
+                  if (isLooping) {
+                    const isFreeze = viewMode === 'draft' && freezeSec > 0;
+                    setCurrentTime(0);
+                    if (isFreeze) {
+                      if (videoRef.current) {
+                        videoRef.current.currentTime = 0;
+                        videoRef.current.pause();
+                      }
+                      if (ttsAudioRef.current) {
+                        ttsAudioRef.current.currentTime = 0;
+                        ttsAudioRef.current.play().catch(() => {});
+                      }
+                    } else {
+                      if (videoRef.current) {
+                        videoRef.current.currentTime = 0;
+                        videoRef.current.play().catch(() => {});
+                      }
+                    }
+                    setIsPlaying(true);
+                  } else {
+                    setIsPlaying(false);
+                    if (ttsAudioRef.current) ttsAudioRef.current.pause();
+                  }
                 }}
                 onError={() =>
                   setError(
@@ -1846,8 +2013,9 @@ export default function ClipStudioModal({
               <button
                 type="button"
                 onClick={() => {
-                  const prevCue = cues.filter((c) => c.start < currentTime - 0.2).pop();
-                  if (prevCue) handleSeek(prevCue.start);
+                  const cueOffset = viewMode === 'draft' ? freezeSec : 0;
+                  const prevCue = cues.filter((c) => c.start + cueOffset < currentTime - 0.2).pop();
+                  if (prevCue) handleSeek(prevCue.start + cueOffset);
                   else handleSeek(0);
                 }}
                 className="text-zinc-400 hover:text-white p-1 rounded hover:bg-zinc-800 transition-colors cursor-pointer"
@@ -1872,8 +2040,9 @@ export default function ClipStudioModal({
               <button
                 type="button"
                 onClick={() => {
-                  const nextCue = cues.find((c) => c.start > currentTime + 0.1);
-                  if (nextCue) handleSeek(nextCue.start);
+                  const cueOffset = viewMode === 'draft' ? freezeSec : 0;
+                  const nextCue = cues.find((c) => c.start + cueOffset > currentTime + 0.1);
+                  if (nextCue) handleSeek(nextCue.start + cueOffset);
                 }}
                 className="text-zinc-400 hover:text-white p-1 rounded hover:bg-zinc-800 transition-colors cursor-pointer"
                 title="Cue Selanjutnya"
@@ -1887,6 +2056,24 @@ export default function ClipStudioModal({
             </div>
 
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsLooping(!isLooping)}
+                className={`p-1 rounded transition-colors cursor-pointer flex items-center gap-1 text-[10px] font-mono font-medium ${
+                  isLooping
+                    ? 'text-amber-400 bg-amber-950/60 border border-amber-800/60 shadow-sm'
+                    : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+                }`}
+                title={
+                  isLooping
+                    ? 'Loop aktif (Video berulang otomatis)'
+                    : 'Aktifkan loop pemutaran video'
+                }
+              >
+                <Repeat className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Loop</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => {
@@ -2221,4 +2408,6 @@ export default function ClipStudioModal({
       </footer>
     </div>
   );
-}
+};
+
+export default ClipStudioModal;
