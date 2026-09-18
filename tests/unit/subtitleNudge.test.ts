@@ -96,4 +96,64 @@ describe('Subtitle Timing Nudge & Sync Invariants', () => {
     const activeCue = initialCues.find((c) => timeAt1Point1 >= c.start && timeAt1Point1 <= c.end);
     expect(activeCue?.id).toBe(1);
   });
+
+  it('guarantees DEFAULT_SUBTITLE_ONSET_OFFSET is 0.0 for zero speech latency', async () => {
+    const { DEFAULT_SUBTITLE_ONSET_OFFSET } = await import('@/pipeline/stages/subtitle');
+    expect(DEFAULT_SUBTITLE_ONSET_OFFSET).toBe(0.0);
+  });
+
+  it('correctly applies sync presets without stacking offset drift', () => {
+    function applySyncPreset(base: SubtitleCue[], targetOffset: number): SubtitleCue[] {
+      return base.map((c) => {
+        const newStart = Math.max(0, Number((c.start + targetOffset).toFixed(3)));
+        const newEnd = Math.max(newStart + 0.1, Number((c.end + targetOffset).toFixed(3)));
+        return { ...c, start: newStart, end: newEnd };
+      });
+    }
+
+    // Lead-In preset (-0.15s)
+    const leadIn = applySyncPreset(initialCues, -0.15);
+    expect(leadIn[0].start).toBe(0.85);
+    expect(leadIn[0].end).toBe(3.35);
+
+    // Precise preset (0.00s) resets back to original
+    const precise = applySyncPreset(initialCues, 0.0);
+    expect(precise[0].start).toBe(1.0);
+    expect(precise[0].end).toBe(3.5);
+
+    // Relaxed preset (+0.15s)
+    const relaxed = applySyncPreset(initialCues, 0.15);
+    expect(relaxed[0].start).toBe(1.15);
+    expect(relaxed[0].end).toBe(3.65);
+  });
+
+  it('snaps cue start to playhead while enforcing minimum duration', () => {
+    function snapCueToPlayhead(
+      cues: SubtitleCue[],
+      index: number,
+      playheadSec: number,
+    ): SubtitleCue[] {
+      const copy = [...cues];
+      const target = copy[index];
+      if (!target) return cues;
+      const newStart = Math.max(0, Number(playheadSec.toFixed(3)));
+      const minDuration = 0.2;
+      const newEnd =
+        target.end > newStart + minDuration
+          ? target.end
+          : Number((newStart + minDuration).toFixed(3));
+      copy[index] = { ...target, start: newStart, end: newEnd };
+      return copy;
+    }
+
+    // Snapping Cue 0 start from 1.0s to 1.25s (where end is 3.5s)
+    const snapped = snapCueToPlayhead(initialCues, 0, 1.25);
+    expect(snapped[0].start).toBe(1.25);
+    expect(snapped[0].end).toBe(3.5);
+
+    // Snapping when playhead is very close to end (enforces min 0.2s duration)
+    const snappedNearEnd = snapCueToPlayhead(initialCues, 0, 3.45);
+    expect(snappedNearEnd[0].start).toBe(3.45);
+    expect(snappedNearEnd[0].end).toBe(3.65);
+  });
 });

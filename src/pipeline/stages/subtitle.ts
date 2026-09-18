@@ -20,7 +20,7 @@ import { parseWhisperTranscriptJson, reassembleWhisperTokens } from '../logic/to
 import fs from 'fs/promises';
 import path from 'path';
 
-export const DEFAULT_SUBTITLE_ONSET_OFFSET = 0.28;
+export const DEFAULT_SUBTITLE_ONSET_OFFSET = 0.0;
 
 export class SubtitleStage implements PipelineStageHandler {
   stage = PipelineStage.SUBTITLE;

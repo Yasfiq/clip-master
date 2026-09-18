@@ -34,6 +34,10 @@ import {
   Volume1,
   Repeat,
   RotateCcw,
+  ChevronRight,
+  Sparkles,
+  Target,
+  Zap,
 } from 'lucide-react';
 
 interface ClipStudioModalProps {
@@ -115,6 +119,8 @@ const ClipStudioModal: React.FC<ClipStudioModalProps> = ({
       : 0;
 
   const totalTimelineDuration = (duration || 60) + (viewMode === 'draft' ? freezeSec : 0);
+  const dialogueTime =
+    viewMode === 'draft' && freezeSec > 0 ? Math.max(0, currentTime - freezeSec) : currentTime;
 
   const togglePlay = useCallback(() => {
     if (isPlaying) {
@@ -277,31 +283,6 @@ const ClipStudioModal: React.FC<ClipStudioModalProps> = ({
       };
     }
   }, [isOpen, initialTab, fetchStudioData]);
-
-  // Keyboard accessibility: Close on Escape, Play/Pause on Space, ArrowLeft/ArrowRight to seek ±1s
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      const isInteractive =
-        target.closest('button, input, textarea, select, [role="button"], [role="tab"]') !== null ||
-        target.isContentEditable;
-
-      if (e.key === 'Escape' && isOpen && !saving && !reBurning) {
-        onClose();
-      } else if (e.code === 'Space' && isOpen && !isInteractive) {
-        e.preventDefault();
-        togglePlay();
-      } else if (e.key === 'ArrowLeft' && isOpen && !isInteractive) {
-        e.preventDefault();
-        handleSeek(Math.max(0, currentTime - 1.0));
-      } else if (e.key === 'ArrowRight' && isOpen && !isInteractive) {
-        e.preventDefault();
-        handleSeek(Math.min(totalTimelineDuration, currentTime + 1.0));
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, saving, reBurning, totalTimelineDuration, currentTime, onClose, togglePlay]);
 
   const handleSeek = (seconds: number) => {
     const targetSec = Math.max(0, Math.min(seconds, totalTimelineDuration));
@@ -592,6 +573,145 @@ const ClipStudioModal: React.FC<ClipStudioModalProps> = ({
     });
   };
 
+  const handleApplySyncPreset = (targetOffset: number, label: string) => {
+    const base =
+      initialCuesRef.current && initialCuesRef.current.length > 0 ? initialCuesRef.current : cues;
+    setCues(
+      base.map((c) => {
+        const newStart = Math.max(0, Number((c.start + targetOffset).toFixed(3)));
+        const newEnd = Math.max(newStart + 0.1, Number((c.end + targetOffset).toFixed(3)));
+        return {
+          ...c,
+          start: newStart,
+          end: newEnd,
+        };
+      }),
+    );
+    setCumulativeNudge(targetOffset);
+    setStatusMessage(
+      `Preset sinkronisasi '${label}' diterapkan (${targetOffset > 0 ? '+' : ''}${targetOffset.toFixed(2)}s).`,
+    );
+  };
+
+  const handleSnapCueToPlayhead = (index: number) => {
+    setCues((prev) => {
+      const copy = [...prev];
+      const target = copy[index];
+      if (!target) return prev;
+      const newStart = Math.max(0, Number(dialogueTime.toFixed(3)));
+      const minDuration = 0.2;
+      const newEnd =
+        target.end > newStart + minDuration
+          ? target.end
+          : Number((newStart + minDuration).toFixed(3));
+      copy[index] = {
+        ...target,
+        start: newStart,
+        end: newEnd,
+      };
+      return copy;
+    });
+    setStatusMessage(
+      `Cue #${index + 1} awal diselaraskan ke playhead (${dialogueTime.toFixed(2)}s).`,
+    );
+  };
+
+  const handleSelectPrevCue = () => {
+    if (cues.length === 0) return;
+    const currentIdx = selectedCueIndex !== null ? selectedCueIndex : 0;
+    const prevIdx = Math.max(0, currentIdx - 1);
+    setSelectedCueIndex(prevIdx);
+    const targetCue = cues[prevIdx];
+    if (targetCue) {
+      handlePlayFromCue(targetCue.start);
+    }
+  };
+
+  const handleSelectNextCue = () => {
+    if (cues.length === 0) return;
+    const currentIdx = selectedCueIndex !== null ? selectedCueIndex : -1;
+    const nextIdx = Math.min(cues.length - 1, currentIdx + 1);
+    setSelectedCueIndex(nextIdx);
+    const targetCue = cues[nextIdx];
+    if (targetCue) {
+      handlePlayFromCue(targetCue.start);
+    }
+  };
+
+  // Keyboard accessibility & Subtitle Editing Shortcuts:
+  // Space: Play/Pause
+  // ArrowLeft/ArrowRight: Seek ±1s
+  // [/]: Nudge active cue ±0.05s (Shift+[/]: Nudge all cues ±0.10s)
+  // J/K: Previous/Next Cue (with auto-play)
+  // L: Toggle Loop active cue
+  // S: Snap active cue start to current playhead
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      const isInput =
+        target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+
+      if (e.key === 'Escape' && isOpen && !saving && !reBurning) {
+        onClose();
+      } else if (e.code === 'Space' && isOpen && !isInput) {
+        e.preventDefault();
+        togglePlay();
+      } else if (e.key === 'ArrowLeft' && isOpen && !isInput) {
+        e.preventDefault();
+        handleSeek(Math.max(0, currentTime - 1.0));
+      } else if (e.key === 'ArrowRight' && isOpen && !isInput) {
+        e.preventDefault();
+        handleSeek(Math.min(totalTimelineDuration, currentTime + 1.0));
+      } else if (isOpen && !isInput) {
+        if (e.key === '[') {
+          e.preventDefault();
+          if (e.shiftKey) {
+            handleNudgeAllCues(-0.1);
+          } else if (selectedCueIndex !== null) {
+            handleNudgeSingleCue(selectedCueIndex, -0.05);
+          }
+        } else if (e.key === ']') {
+          e.preventDefault();
+          if (e.shiftKey) {
+            handleNudgeAllCues(0.1);
+          } else if (selectedCueIndex !== null) {
+            handleNudgeSingleCue(selectedCueIndex, 0.05);
+          }
+        } else if (e.key === 'j' || e.key === 'J') {
+          e.preventDefault();
+          handleSelectPrevCue();
+        } else if (e.key === 'k' || e.key === 'K') {
+          e.preventDefault();
+          handleSelectNextCue();
+        } else if (e.key === 'l' || e.key === 'L') {
+          e.preventDefault();
+          if (selectedCueIndex !== null) {
+            handleToggleLoopCue(selectedCueIndex);
+          }
+        } else if (e.key === 's' || e.key === 'S') {
+          e.preventDefault();
+          if (selectedCueIndex !== null) {
+            handleSnapCueToPlayhead(selectedCueIndex);
+          }
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    isOpen,
+    saving,
+    reBurning,
+    totalTimelineDuration,
+    currentTime,
+    onClose,
+    togglePlay,
+    selectedCueIndex,
+    cues,
+    dialogueTime,
+  ]);
+
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -725,8 +845,6 @@ const ClipStudioModal: React.FC<ClipStudioModalProps> = ({
       : `/api/clips/${clipId}/file?clean=1&t=${videoTimestampKey}`;
   const pixelsPerSecond = 24 * timelineZoom;
   const totalTimelineWidth = Math.max(totalTimelineDuration * pixelsPerSecond, 800);
-  const dialogueTime =
-    viewMode === 'draft' && freezeSec > 0 ? currentTime - freezeSec : currentTime;
   const activeCue =
     dialogueTime >= 0 ? cues.find((c) => dialogueTime >= c.start && dialogueTime <= c.end) : null;
 
@@ -1026,12 +1144,51 @@ const ClipStudioModal: React.FC<ClipStudioModalProps> = ({
                       </select>
                     </div>
 
+                    {/* Quick Cue Navigation & Snap Bar */}
+                    <div className="bg-zinc-900/90 border border-zinc-800 rounded-lg p-2 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={handleSelectPrevCue}
+                          className="px-2 py-1 text-[11px] font-medium rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition-colors flex items-center gap-1 cursor-pointer"
+                          title="Lompat ke cue sebelumnya dan langsung putar (Shortcut: J)"
+                        >
+                          <ChevronLeft className="w-3.5 h-3.5" />
+                          <span>Prev (J)</span>
+                        </button>
+                        <span className="text-[10px] font-mono font-semibold px-2 py-1 rounded bg-zinc-950 border border-zinc-800 text-zinc-300">
+                          Cue {selectedCueIndex !== null ? selectedCueIndex + 1 : '-'}/{cues.length}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleSelectNextCue}
+                          className="px-2 py-1 text-[11px] font-medium rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition-colors flex items-center gap-1 cursor-pointer"
+                          title="Lompat ke cue berikutnya dan langsung putar (Shortcut: K)"
+                        >
+                          <span>Next (K)</span>
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      {selectedCueIndex !== null && (
+                        <button
+                          type="button"
+                          onClick={() => handleSnapCueToPlayhead(selectedCueIndex)}
+                          className="px-2 py-1 text-[10px] font-semibold rounded bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 transition-colors flex items-center gap-1 cursor-pointer"
+                          title={`Kunci waktu mulai cue ini persis di detik ${dialogueTime.toFixed(2)}s saat ini (Shortcut: S)`}
+                        >
+                          <Target className="w-3 h-3 text-amber-400" />
+                          <span>Snap Mulai ({dialogueTime.toFixed(2)}s)</span>
+                        </button>
+                      )}
+                    </div>
+
                     {/* Timing & Audio-Sync Nudge Card */}
-                    <div className="bg-zinc-900/90 border border-zinc-800 rounded-lg p-2.5 space-y-2">
+                    <div className="bg-zinc-900/90 border border-zinc-800 rounded-lg p-2.5 space-y-2.5">
                       <div className="flex items-center justify-between">
                         <label className="text-[11px] font-semibold text-zinc-300 flex items-center gap-1.5">
                           <Clock className="w-3.5 h-3.5 text-blue-400" />
-                          <span>Sinkronisasi Timing ({cues.length} Cues)</span>
+                          <span>Sinkronisasi Audio & Timing</span>
                         </label>
                         <div className="flex items-center gap-1.5">
                           {cumulativeNudge !== 0 && (
@@ -1059,58 +1216,102 @@ const ClipStudioModal: React.FC<ClipStudioModalProps> = ({
                           </span>
                         </div>
                       </div>
-                      <p className="text-[10px] text-zinc-400 leading-relaxed">
-                        Geser kemunculan subtitle serentak agar selaras dengan ketukan suara:
-                      </p>
-                      <div className="grid grid-cols-6 gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleNudgeAllCues(-0.25)}
-                          className="py-1 px-1 text-[10px] font-mono font-medium rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 hover:text-white transition-colors text-center cursor-pointer"
-                          title="Percepat subtitle 0.25 detik"
-                        >
-                          -0.25s
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleNudgeAllCues(-0.1)}
-                          className="py-1 px-1 text-[10px] font-mono font-medium rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 hover:text-white transition-colors text-center cursor-pointer"
-                          title="Percepat subtitle 0.10 detik"
-                        >
-                          -0.10s
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleNudgeAllCues(-0.05)}
-                          className="py-1 px-1 text-[10px] font-mono font-medium rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 hover:text-white transition-colors text-center cursor-pointer"
-                          title="Percepat subtitle 0.05 detik (micro-sync)"
-                        >
-                          -0.05s
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleNudgeAllCues(0.05)}
-                          className="py-1 px-1 text-[10px] font-mono font-medium rounded bg-blue-950/60 hover:bg-blue-900/60 text-blue-300 border border-blue-800/60 transition-colors text-center cursor-pointer"
-                          title="Tunda subtitle 0.05 detik (micro-sync)"
-                        >
-                          +0.05s
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleNudgeAllCues(0.1)}
-                          className="py-1 px-1 text-[10px] font-mono font-medium rounded bg-blue-950/60 hover:bg-blue-900/60 text-blue-300 border border-blue-800/60 transition-colors text-center cursor-pointer"
-                          title="Tunda subtitle 0.10 detik"
-                        >
-                          +0.10s
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleNudgeAllCues(0.25)}
-                          className="py-1 px-1 text-[10px] font-mono font-medium rounded bg-blue-950/60 hover:bg-blue-900/60 text-blue-300 border border-blue-800/60 transition-colors text-center cursor-pointer"
-                          title="Tunda subtitle 0.25 detik"
-                        >
-                          +0.25s
-                        </button>
+
+                      {/* 1-Click Sync Presets */}
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-medium text-zinc-400 flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 text-amber-400" />
+                          <span>Preset Sinkronisasi Cepat:</span>
+                        </span>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleApplySyncPreset(0.0, 'Presisi Audio (0.00s)')}
+                            className="py-1 px-1.5 text-[10px] font-medium rounded bg-zinc-800 hover:bg-zinc-750 text-zinc-200 border border-zinc-700 hover:border-zinc-600 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                            title="Reset tepat ke onset ucapan audio murni (0.00s)"
+                          >
+                            <Target className="w-3 h-3 text-blue-400" />
+                            <span>Presisi (0.0s)</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleApplySyncPreset(-0.15, 'Lead-In Cepat (-0.15s)')}
+                            className="py-1 px-1.5 text-[10px] font-medium rounded bg-zinc-800 hover:bg-zinc-750 text-zinc-200 border border-zinc-700 hover:border-zinc-600 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                            title="Subtitle muncul 150ms lebih cepat agar audiens siap membaca (Gaya TikTok)"
+                          >
+                            <Zap className="w-3 h-3 text-amber-400" />
+                            <span>Lead-In (-0.15s)</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleApplySyncPreset(0.15, 'Jeda Santai (+0.15s)')}
+                            className="py-1 px-1.5 text-[10px] font-medium rounded bg-zinc-800 hover:bg-zinc-750 text-zinc-200 border border-zinc-700 hover:border-zinc-600 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                            title="Beri jeda 150ms untuk tempo video santai (+0.15s)"
+                          >
+                            <Clock className="w-3 h-3 text-purple-400" />
+                            <span>Santai (+0.15s)</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Micro Nudge Controls */}
+                      <div className="space-y-1 pt-1 border-t border-zinc-800/80">
+                        <div className="flex justify-between items-center text-[10px] text-zinc-400">
+                          <span>Geser serentak semua ({cues.length} cues):</span>
+                          <span className="text-[9px] font-mono text-zinc-500">
+                            Shift+[ / Shift+]
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-6 gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleNudgeAllCues(-0.25)}
+                            className="py-1 px-1 text-[10px] font-mono font-medium rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 hover:text-white transition-colors text-center cursor-pointer"
+                            title="Percepat subtitle 0.25 detik"
+                          >
+                            -0.25s
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleNudgeAllCues(-0.1)}
+                            className="py-1 px-1 text-[10px] font-mono font-medium rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 hover:text-white transition-colors text-center cursor-pointer"
+                            title="Percepat subtitle 0.10 detik"
+                          >
+                            -0.10s
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleNudgeAllCues(-0.05)}
+                            className="py-1 px-1 text-[10px] font-mono font-medium rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 hover:text-white transition-colors text-center cursor-pointer"
+                            title="Percepat subtitle 0.05 detik (micro-sync)"
+                          >
+                            -0.05s
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleNudgeAllCues(0.05)}
+                            className="py-1 px-1 text-[10px] font-mono font-medium rounded bg-blue-950/60 hover:bg-blue-900/60 text-blue-300 border border-blue-800/60 transition-colors text-center cursor-pointer"
+                            title="Tunda subtitle 0.05 detik (micro-sync)"
+                          >
+                            +0.05s
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleNudgeAllCues(0.1)}
+                            className="py-1 px-1 text-[10px] font-mono font-medium rounded bg-blue-950/60 hover:bg-blue-900/60 text-blue-300 border border-blue-800/60 transition-colors text-center cursor-pointer"
+                            title="Tunda subtitle 0.10 detik"
+                          >
+                            +0.10s
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleNudgeAllCues(0.25)}
+                            className="py-1 px-1 text-[10px] font-mono font-medium rounded bg-blue-950/60 hover:bg-blue-900/60 text-blue-300 border border-blue-800/60 transition-colors text-center cursor-pointer"
+                            title="Tunda subtitle 0.25 detik"
+                          >
+                            +0.25s
+                          </button>
+                        </div>
                       </div>
                     </div>
 
@@ -1118,24 +1319,38 @@ const ClipStudioModal: React.FC<ClipStudioModalProps> = ({
                     <div className="space-y-2">
                       {cues.map((cue, index) => {
                         const isCueActive = dialogueTime >= cue.start && dialogueTime <= cue.end;
+                        const isSelected = selectedCueIndex === index;
+                        const cueDuration = Math.max(0, cue.end - cue.start);
+
                         return (
                           <div
                             key={cue.id || index}
                             ref={(el) => {
                               cueRefs.current[index] = el;
                             }}
+                            onClick={() => setSelectedCueIndex(index)}
                             className={`p-2.5 rounded-lg border transition-all ${
                               isCueActive
-                                ? 'bg-blue-950/40 border-blue-500 shadow-sm'
-                                : 'bg-zinc-900/80 border-zinc-800 hover:border-zinc-700'
+                                ? 'bg-blue-950/50 border-blue-500 shadow-md ring-1 ring-blue-400/40'
+                                : isSelected
+                                  ? 'bg-zinc-900/90 border-blue-600/60'
+                                  : 'bg-zinc-900/80 border-zinc-800 hover:border-zinc-700'
                             }`}
                           >
                             <div className="flex items-center justify-between mb-1.5">
-                              <div className="flex items-center gap-1">
+                              <div className="flex items-center gap-1 flex-wrap">
                                 <button
                                   type="button"
-                                  onClick={() => handlePlayFromCue(cue.start)}
-                                  className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 hover:bg-blue-600 hover:text-white transition-colors cursor-pointer flex items-center gap-1"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedCueIndex(index);
+                                    handlePlayFromCue(cue.start);
+                                  }}
+                                  className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded transition-colors cursor-pointer flex items-center gap-1 ${
+                                    isCueActive
+                                      ? 'bg-blue-600 text-white shadow'
+                                      : 'bg-zinc-800 text-zinc-300 hover:bg-blue-600 hover:text-white'
+                                  }`}
                                   title="Klik untuk langsung memutar video dari detik ini"
                                 >
                                   <Play className="w-2.5 h-2.5 fill-current" />
@@ -1143,9 +1358,20 @@ const ClipStudioModal: React.FC<ClipStudioModalProps> = ({
                                     {formatSrtTimestamp(cue.start)} → {formatSrtTimestamp(cue.end)}
                                   </span>
                                 </button>
+                                <span className="text-[9px] font-mono text-zinc-400 bg-zinc-950/80 px-1 py-0.5 rounded border border-zinc-800">
+                                  {cueDuration.toFixed(2)}s
+                                </span>
+                                {isCueActive && (
+                                  <span className="text-[9px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-700/60 px-1 py-0.5 rounded animate-pulse">
+                                    🔊 Bicara
+                                  </span>
+                                )}
                                 <button
                                   type="button"
-                                  onClick={() => handleToggleLoopCue(index)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleToggleLoopCue(index);
+                                  }}
                                   className={`text-[9px] font-mono px-1.5 py-0.5 rounded transition-colors cursor-pointer flex items-center gap-0.5 ${
                                     loopingCueIndex === index
                                       ? 'bg-amber-400 text-black font-bold shadow-sm'
@@ -1154,7 +1380,7 @@ const ClipStudioModal: React.FC<ClipStudioModalProps> = ({
                                   title={
                                     loopingCueIndex === index
                                       ? 'Matikan loop cue ini'
-                                      : 'Putar berulang kalimat ini (Loop Cue)'
+                                      : 'Putar berulang kalimat ini (Loop Cue - Shortcut: L)'
                                   }
                                 >
                                   <Repeat className="w-2.5 h-2.5" />
@@ -1162,17 +1388,34 @@ const ClipStudioModal: React.FC<ClipStudioModalProps> = ({
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => handleNudgeSingleCue(index, -0.05)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSnapCueToPlayhead(index);
+                                  }}
+                                  className="text-[9px] font-mono text-amber-300 hover:text-amber-200 px-1 py-0.5 rounded bg-amber-950/40 hover:bg-amber-950/70 border border-amber-800/40 transition-colors"
+                                  title={`Set awal cue ini persis di ${dialogueTime.toFixed(2)}s (Shortcut: S)`}
+                                >
+                                  Snap
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleNudgeSingleCue(index, -0.05);
+                                  }}
                                   className="text-[9px] font-mono text-zinc-400 hover:text-zinc-200 px-1 py-0.5 rounded bg-zinc-800 hover:bg-zinc-750 transition-colors"
-                                  title="Nudge cue ini -0.05s"
+                                  title="Nudge cue ini -0.05s (Shortcut: [)"
                                 >
                                   -0.05s
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => handleNudgeSingleCue(index, 0.05)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleNudgeSingleCue(index, 0.05);
+                                  }}
                                   className="text-[9px] font-mono text-zinc-400 hover:text-zinc-200 px-1 py-0.5 rounded bg-zinc-800 hover:bg-zinc-750 transition-colors"
-                                  title="Nudge cue ini +0.05s"
+                                  title="Nudge cue ini +0.05s (Shortcut: ])"
                                 >
                                   +0.05s
                                 </button>
@@ -1181,7 +1424,10 @@ const ClipStudioModal: React.FC<ClipStudioModalProps> = ({
                               <div className="flex items-center gap-1">
                                 <button
                                   type="button"
-                                  onClick={() => handleAddCue(index)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleAddCue(index);
+                                  }}
                                   className="text-zinc-400 hover:text-blue-400 p-1 rounded hover:bg-zinc-800 transition-colors"
                                   title="Tambah baris di bawah"
                                 >
@@ -1189,7 +1435,10 @@ const ClipStudioModal: React.FC<ClipStudioModalProps> = ({
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => handleDeleteCue(index)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteCue(index);
+                                  }}
                                   disabled={cues.length <= 1}
                                   className="text-zinc-400 hover:text-red-400 p-1 rounded hover:bg-zinc-800 transition-colors disabled:opacity-30"
                                   title="Hapus baris"
@@ -1202,6 +1451,7 @@ const ClipStudioModal: React.FC<ClipStudioModalProps> = ({
                             <textarea
                               rows={2}
                               value={cue.text}
+                              onFocus={() => setSelectedCueIndex(index)}
                               onChange={(e) => handleCueTextChange(index, e.target.value)}
                               placeholder="Ketik teks subtitle..."
                               className="w-full text-xs bg-zinc-950/70 border border-zinc-800 rounded p-1.5 text-zinc-100 placeholder-zinc-500 focus:border-blue-500 focus:outline-none resize-none font-medium"
@@ -1209,6 +1459,36 @@ const ClipStudioModal: React.FC<ClipStudioModalProps> = ({
                           </div>
                         );
                       })}
+                    </div>
+
+                    {/* Keyboard Shortcuts Cheat Sheet Banner */}
+                    <div className="sticky bottom-0 bg-zinc-950/95 backdrop-blur-sm border border-zinc-800 rounded-lg p-2 text-[10px] text-zinc-400 space-y-1 shadow-lg">
+                      <div className="font-semibold text-zinc-300 flex items-center gap-1">
+                        <span>⌨️ Pintasan Keyboard (Subtitle Flow):</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 font-mono text-[9px]">
+                        <div>
+                          <span className="text-blue-400 font-bold">[ / ]</span> Nudge cue aktif
+                          (±0.05s)
+                        </div>
+                        <div>
+                          <span className="text-blue-400 font-bold">Shift+[ / ]</span> Nudge semua
+                          (±0.10s)
+                        </div>
+                        <div>
+                          <span className="text-blue-400 font-bold">J / K</span> Cue
+                          sebelumnya/berikutnya
+                        </div>
+                        <div>
+                          <span className="text-blue-400 font-bold">S</span> Snap start ke playhead
+                        </div>
+                        <div>
+                          <span className="text-blue-400 font-bold">L</span> Toggle loop cue
+                        </div>
+                        <div>
+                          <span className="text-blue-400 font-bold">Spasi</span> Putar / Jeda video
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}

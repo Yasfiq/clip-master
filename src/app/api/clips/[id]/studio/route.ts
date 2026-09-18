@@ -5,6 +5,7 @@ import { db } from '@/server/db';
 import { PATHS } from '@/server/paths';
 import { apiError, apiSuccess, catchApiErrors, ErrorCode } from '@/server/api-utils';
 import { parseSrt, serializeSrt, validateCues, SubtitleCue } from '@/pipeline/logic/srtParser';
+import { splitTextIntoWordTimings, WordTiming } from '@/pipeline/logic/wordChunker';
 import { StudioConfig, DEFAULT_STUDIO_CONFIG } from '@/types/clipStudio';
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -263,11 +264,24 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       await fs.mkdir(path.dirname(workPath), { recursive: true });
       await fs.writeFile(workPath, srtContent, 'utf8');
 
+      // Keep _words.json in sync with edited/nudged cues so re-burn uses updated timings
+      const updatedWords: WordTiming[] = [];
+      for (const cue of cues) {
+        if (cue.text && cue.text.trim()) {
+          updatedWords.push(...splitTextIntoWordTimings(cue.text, cue.start, cue.end));
+        }
+      }
+      const workWordsPath = workPath.replace(/\.srt$/, '_words.json');
+      await fs.writeFile(workWordsPath, JSON.stringify(updatedWords, null, 2), 'utf8');
+
       if (clip.exportPath) {
         const raw = clip.exportPath.replace(/\.mp4$/i, '.srt');
         const exportSrtPath = path.isAbsolute(raw) ? raw : path.join(PATHS.exports, raw);
         await fs.mkdir(path.dirname(exportSrtPath), { recursive: true });
         await fs.writeFile(exportSrtPath, srtContent, 'utf8');
+
+        const exportWordsPath = exportSrtPath.replace(/\.srt$/, '_words.json');
+        await fs.writeFile(exportWordsPath, JSON.stringify(updatedWords, null, 2), 'utf8');
       }
 
       relativeWorkPath = path.relative(PATHS.work, workPath);
