@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Play, Download, Edit3, Film, Flame } from 'lucide-react';
+import { Play, Download, Edit3, Film, Flame, SlidersHorizontal } from 'lucide-react';
 
 interface Clip {
   id: string;
@@ -21,9 +21,17 @@ interface ClipCardProps {
   onPlay?: (clipId: string) => void;
   onDownload?: (clipId: string) => void;
   onEditSubtitle?: (clipId: string) => void;
+  onOpenStudio?: (clipId: string, tab?: 'hook' | 'branding' | 'subtitle' | 'transition') => void;
 }
 
-const ClipCard: React.FC<ClipCardProps> = ({ clip, index, onPlay, onDownload, onEditSubtitle }) => {
+const ClipCard: React.FC<ClipCardProps> = ({
+  clip,
+  index,
+  onPlay,
+  onDownload,
+  onEditSubtitle,
+  onOpenStudio,
+}) => {
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
@@ -130,29 +138,50 @@ const ClipCard: React.FC<ClipCardProps> = ({ clip, index, onPlay, onDownload, on
         <div className="flex flex-col gap-2 pt-2 border-t border-zinc-800/80">
           <div className="flex gap-2">
             <button
+              type="button"
               onClick={() => onPlay?.(clip.id)}
-              className="flex-1 py-2 px-3 text-xs font-semibold text-zinc-100 bg-zinc-800 hover:bg-zinc-750 border border-zinc-700 rounded-lg transition-colors inline-flex items-center justify-center gap-1.5 cursor-pointer"
+              className="flex-1 min-h-[38px] py-2 px-3 text-xs font-semibold text-zinc-100 bg-zinc-800 hover:bg-zinc-750 border border-zinc-700 rounded-lg transition-colors inline-flex items-center justify-center gap-1.5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             >
               <Play className="w-3.5 h-3.5 fill-current" />
               <span>Putar</span>
             </button>
             <button
+              type="button"
               onClick={() => onDownload?.(clip.id)}
               disabled={!clip.isExported}
-              className="flex-1 py-2 px-3 text-xs font-semibold text-zinc-100 bg-zinc-800 hover:bg-zinc-750 border border-zinc-700 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5 cursor-pointer"
+              className="flex-1 min-h-[38px] py-2 px-3 text-xs font-semibold text-zinc-100 bg-zinc-800 hover:bg-zinc-750 border border-zinc-700 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             >
               <Download className="w-3.5 h-3.5" />
               <span>Unduh</span>
             </button>
           </div>
-          {onEditSubtitle && (
-            <button
-              onClick={() => onEditSubtitle(clip.id)}
-              className="w-full py-2 px-3 text-xs font-semibold text-zinc-200 bg-zinc-800/90 hover:bg-zinc-750 border border-zinc-700 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <Edit3 className="w-3.5 h-3.5 text-zinc-400" />
-              <span>Edit Subtitle</span>
-            </button>
+          {(onOpenStudio || onEditSubtitle) && (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  onOpenStudio ? onOpenStudio(clip.id, 'hook') : onEditSubtitle?.(clip.id)
+                }
+                className="flex-1 min-h-[38px] py-2 px-2.5 text-xs font-semibold text-zinc-100 bg-zinc-800 hover:bg-zinc-700 border border-zinc-650 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                title="Buka Studio Workspace (Hook, Branding, Subtitle, Transisi)"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5 text-zinc-300" />
+                <span>Studio Editor</span>
+              </button>
+              {onEditSubtitle && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onOpenStudio ? onOpenStudio(clip.id, 'subtitle') : onEditSubtitle(clip.id)
+                  }
+                  className="min-h-[38px] py-2 px-2.5 text-xs font-semibold text-zinc-300 bg-zinc-850 hover:bg-zinc-800 border border-zinc-700 rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  title="Edit Teks Subtitle"
+                >
+                  <Edit3 className="w-3.5 h-3.5 text-zinc-400" />
+                  <span>Edit Subtitle</span>
+                </button>
+              )}
+            </div>
           )}
         </div>
 

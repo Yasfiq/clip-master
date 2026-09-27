@@ -43,7 +43,7 @@ const DEFAULT_VALUES: PipelineConfigValues = {
   adScoreThreshold: 0.75,
   minSegmentDuration: 120,
   targetDuration: 60,
-  maxClips: 5,
+  maxClips: 10,
   colorGrading: 'natural',
   backsoundEnabled: true,
   subtitleEnabled: true,
@@ -108,7 +108,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
         throw new Error(payload?.error?.message || `HTTP ${res.status}`);
       }
       setSaveState('saved');
-      setSaveMessage('Settings saved — they apply to the next job you create.');
+      setSaveMessage('Settings saved: they apply to the next job you create.');
       window.setTimeout(() => setSaveState('idle'), 4000);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

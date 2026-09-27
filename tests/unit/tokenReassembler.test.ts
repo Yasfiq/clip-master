@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { reassembleWhisperTokens, type RawWhisperToken } from '@/pipeline/logic/tokenReassembler';
+import {
+  reassembleWhisperTokens,
+  parseWhisperTranscriptJson,
+  type RawWhisperToken,
+} from '@/pipeline/logic/tokenReassembler';
 import { chunkWords } from '@/pipeline/logic/wordChunker';
 
 describe('tokenReassembler', () => {
@@ -93,6 +97,27 @@ describe('tokenReassembler', () => {
     expect(cues[3]!.text).toBe('Beneran.');
   });
 
+  it('preserves hyphens in Indonesian reduplication words (e.g. "jalan-jalan", "anak-anak")', () => {
+    const tokens: RawWhisperToken[] = [
+      { text: ' Kita', offsets: { from: 100, to: 300 } },
+      { text: ' jalan', offsets: { from: 300, to: 600 } },
+      { text: '-', offsets: { from: 600, to: 650 } },
+      { text: 'jalan', offsets: { from: 650, to: 950 } },
+      { text: ' bersama', offsets: { from: 950, to: 1200 } },
+      { text: ' anak', offsets: { from: 1200, to: 1400 } },
+      { text: '-', offsets: { from: 1400, to: 1450 } },
+      { text: ' anak', offsets: { from: 1450, to: 1700 } },
+    ];
+
+    const words = reassembleWhisperTokens(tokens);
+    expect(words).toHaveLength(4);
+    expect(words.map((w) => w.text)).toEqual(['Kita', 'jalan-jalan', 'bersama', 'anak-anak']);
+    expect(words[1]!.start).toBeCloseTo(0.3);
+    expect(words[1]!.end).toBeCloseTo(0.95);
+    expect(words[3]!.start).toBeCloseTo(1.2);
+    expect(words[3]!.end).toBeCloseTo(1.7);
+  });
+
   it('handles first token without leading space properly', () => {
     const tokens: RawWhisperToken[] = [
       { text: 'Halo', offsets: { from: 0, to: 500 } },
@@ -108,5 +133,52 @@ describe('tokenReassembler', () => {
   it('handles empty or undefined token lists safely', () => {
     expect(reassembleWhisperTokens([])).toEqual([]);
     expect(reassembleWhisperTokens(undefined as any)).toEqual([]);
+  });
+
+  describe('parseWhisperTranscriptJson', () => {
+    it('parses raw whisper-cli json with transcription segments and tokens', () => {
+      const raw = {
+        result: { language: 'id' },
+        transcription: [
+          {
+            offsets: { from: 1000, to: 3000 },
+            text: ' Halo dunia',
+            tokens: [
+              { text: ' Halo', offsets: { from: 1000, to: 1800 } },
+              { text: ' dunia', offsets: { from: 1900, to: 2800 } },
+            ],
+          },
+        ],
+      };
+
+      const parsed = parseWhisperTranscriptJson(raw);
+      expect(parsed.language).toBe('id');
+      expect(parsed.segments).toHaveLength(1);
+      expect(parsed.segments[0]!.start).toBe(1.0);
+      expect(parsed.segments[0]!.end).toBe(3.0);
+      expect(parsed.segments[0]!.text).toBe('Halo dunia');
+      expect(parsed.segments[0]!.words).toHaveLength(2);
+      expect(parsed.segments[0]!.words![0]!.text).toBe('Halo');
+      expect(parsed.segments[0]!.words![0]!.start).toBe(1.0);
+      expect(parsed.segments[0]!.words![1]!.text).toBe('dunia');
+      expect(parsed.text).toBe('Halo dunia');
+    });
+
+    it('returns pre-normalized transcript as-is', () => {
+      const normalized = {
+        segments: [{ start: 0, end: 5, text: 'Sudah normal', words: [] }],
+        language: 'id',
+        text: 'Sudah normal',
+      };
+      const parsed = parseWhisperTranscriptJson(normalized);
+      expect(parsed.segments).toHaveLength(1);
+      expect(parsed.text).toBe('Sudah normal');
+      expect(parsed.language).toBe('id');
+    });
+
+    it('handles empty or invalid inputs safely', () => {
+      expect(parseWhisperTranscriptJson(null)).toEqual({ segments: [], language: null, text: '' });
+      expect(parseWhisperTranscriptJson({})).toEqual({ segments: [], language: null, text: '' });
+    });
   });
 });

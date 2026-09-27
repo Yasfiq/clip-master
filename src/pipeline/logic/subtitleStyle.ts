@@ -27,19 +27,34 @@ export interface SubtitleStyle {
   fontSize: number;
 }
 
+export const CLIPAJAIB_STYLE: SubtitleStyle = {
+  id: 'clipajaib',
+  label: 'Clip Ajaib (CapCut Yellow + Bold Black Outline)',
+  primaryColour: '&H0000EEFF', // Bright yellow #FFEE00
+  outlineColour: '&H00000000', // Deep black outline
+  backColour: '&H00000000',
+  outline: 4.5,
+  shadow: 0,
+  bold: -1,
+  italic: 0,
+  marginV: 420,
+  alignment: 2,
+  fontSize: 62,
+};
+
 export const SULE_STYLE: SubtitleStyle = {
   id: 'sule',
   label: 'SULE (yellow + thick black outline)',
   primaryColour: '&H0000FFFF',
   outlineColour: '&H00000000',
   backColour: '&H00000000',
-  outline: 3,
+  outline: 4.5,
   shadow: 0,
   bold: -1,
   italic: 0,
-  marginV: 450,
+  marginV: 420,
   alignment: 2,
-  fontSize: 52,
+  fontSize: 62,
 };
 
 export const TIKTOK_STYLE: SubtitleStyle = {
@@ -48,13 +63,13 @@ export const TIKTOK_STYLE: SubtitleStyle = {
   primaryColour: '&H00FFFFFF',
   outlineColour: '&H00000000',
   backColour: '&H00000000',
-  outline: 2,
+  outline: 4.5,
   shadow: 0,
   bold: -1,
   italic: 0,
-  marginV: 250,
+  marginV: 420,
   alignment: 2,
-  fontSize: 52,
+  fontSize: 62,
 };
 
 export const KAMAL_STYLE: SubtitleStyle = {
@@ -63,14 +78,17 @@ export const KAMAL_STYLE: SubtitleStyle = {
   primaryColour: '&H0000FFFF',
   outlineColour: '&H00000000',
   backColour: '&H000000FF',
-  outline: 2,
+  outline: 4.5,
   shadow: 2,
   bold: -1,
   italic: 0,
-  marginV: 250,
+  marginV: 420,
   alignment: 2,
-  fontSize: 52,
+  fontSize: 62,
 };
+
+/** All available subtitle styles. */
+export const ALL_STYLES: SubtitleStyle[] = [CLIPAJAIB_STYLE, SULE_STYLE, TIKTOK_STYLE, KAMAL_STYLE];
 
 /** Ordered list of styles for the 3 produced clips. */
 export const CLIP_STYLE_POOL: SubtitleStyle[] = [SULE_STYLE, TIKTOK_STYLE, KAMAL_STYLE];
@@ -88,7 +106,7 @@ export function pickStyle(clipIndex: number): SubtitleStyle {
 
 export function getStyleById(styleId: string): SubtitleStyle | undefined {
   if (!styleId) return undefined;
-  return CLIP_STYLE_POOL.find((s) => s.id.toLowerCase() === styleId.toLowerCase());
+  return ALL_STYLES.find((s) => s.id.toLowerCase() === styleId.toLowerCase());
 }
 
 /**

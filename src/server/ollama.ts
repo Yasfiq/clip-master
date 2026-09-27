@@ -68,17 +68,21 @@ export function ollamaModel(): string {
 }
 
 /**
- * Check whether the Ollama daemon is reachable.
+ * Check whether the Ollama daemon is reachable and the configured model is available.
  */
 export async function ollamaPing(timeoutMs = 5000): Promise<boolean> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
-    const res = await fetch(`${ollamaHost()}/api/version`, {
+    const res = await fetch(`${ollamaHost()}/api/tags`, {
       signal: controller.signal,
     });
     clearTimeout(timer);
-    return res.ok;
+    if (!res.ok) return false;
+    const data = (await res.json()) as { models?: Array<{ name: string; model?: string }> };
+    const target = ollamaModel();
+    const hasModel = data.models?.some((m) => m.name === target || m.model === target);
+    return !!hasModel;
   } catch {
     return false;
   }

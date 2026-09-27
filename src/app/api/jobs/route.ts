@@ -3,6 +3,7 @@ import { jobService } from '@/server/services/jobService';
 import { apiError, apiSuccess, catchApiErrors, ErrorCode } from '@/server/api-utils';
 import { logger } from '@/server/logger';
 import { JobListFilter } from '@/server/services/jobService';
+import { JobStatus } from '@prisma/client';
 
 /**
  * POST /api/jobs
@@ -13,6 +14,7 @@ export async function POST(req: NextRequest) {
     const body = (await req.json().catch(() => ({}))) || {};
     const { sourceUrl, sourcePath, configId } = body;
 
+    // Reject empty payload
     if (!sourceUrl && !sourcePath) {
       return apiError(
         ErrorCode.VALIDATION_FAILED,
@@ -20,33 +22,34 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (typeof sourceUrl !== 'undefined' && typeof sourceUrl !== 'string') {
-      return apiError(ErrorCode.VALIDATION_FAILED, 'sourceUrl must be a string');
-    }
-    if (typeof sourcePath !== 'undefined' && typeof sourcePath !== 'string') {
-      return apiError(ErrorCode.VALIDATION_FAILED, 'sourcePath must be a string');
+    // Reject both provided
+    if (sourceUrl && sourcePath) {
+      return apiError(
+        ErrorCode.VALIDATION_FAILED,
+        'Provide either sourceUrl or sourcePath, not both',
+      );
     }
 
-    try {
-      const job = await jobService.createJob({ sourceUrl, sourcePath, configId });
-      logger.info('Job created via API', { jobId: job.id });
-      return apiSuccess(job, 201);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      logger.error('Failed to create job', { error: msg });
-      // Operator input problem (missing local file, bad path, malformed URL,
-      // unknown config id) is a validation failure, not a server fault.
-      if (
-        msg.includes('Failed to copy local file') ||
-        msg.includes('Unknown configId') ||
-        msg.includes('must be a string') ||
-        msg.includes('must be an http(s) URL') ||
-        msg.includes('must be an absolute filesystem path')
-      ) {
-        return apiError(ErrorCode.VALIDATION_FAILED, msg);
+    // Validate URL scheme if URL provided
+    if (sourceUrl) {
+      try {
+        const parsed = new URL(sourceUrl);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          return apiError(ErrorCode.VALIDATION_FAILED, 'sourceUrl must use http or https scheme');
+        }
+      } catch {
+        return apiError(ErrorCode.VALIDATION_FAILED, 'Invalid sourceUrl format');
       }
-      return apiError(ErrorCode.INTERNAL, msg);
     }
+
+    const job = await jobService.createJob({
+      sourceUrl,
+      sourcePath,
+      configId,
+    });
+
+    logger.info('Created job via API', { jobId: job.id });
+    return apiSuccess(job, 201);
   }, req);
 }
 
@@ -57,14 +60,20 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   return catchApiErrors(async () => {
     const { searchParams } = new URL(req.url);
-    const status = searchParams.get('status') as any;
+    const status = searchParams.get('status');
     const limitRaw = parseInt(searchParams.get('limit') || '50', 10);
     const offsetRaw = parseInt(searchParams.get('offset') || '0', 10);
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 50;
     const offset = Number.isFinite(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
 
     const filter: JobListFilter = { limit, offset };
-    if (status) filter.status = status;
+    if (status) {
+      const validStatuses = Object.values(JobStatus);
+      if (!validStatuses.includes(status as any)) {
+        return apiError(ErrorCode.VALIDATION_FAILED, `Filter status tidak valid: ${status}`);
+      }
+      filter.status = status as JobStatus;
+    }
 
     try {
       const { jobs, total } = await jobService.listJobs(filter);

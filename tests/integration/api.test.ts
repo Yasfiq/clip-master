@@ -22,7 +22,7 @@ describe('API Integration Tests', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        sourcePath: FIXTURE_PATH,
+        ...(body.sourceUrl ? {} : { sourcePath: FIXTURE_PATH }),
         ...body,
       }),
     });

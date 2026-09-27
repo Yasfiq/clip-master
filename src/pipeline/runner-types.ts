@@ -8,6 +8,8 @@ export interface StageContext {
   config: any; // Active PipelineConfig schema data
   /** Source title from yt-dlp metadata or filename. Feeds the ad filter. */
   sourceTitle: string;
+  /** Source channel/uploader from yt-dlp metadata or container tags. */
+  sourceChannel?: string;
   /** Source description from yt-dlp metadata, when available. */
   sourceDescription?: string;
   metadata: {
@@ -56,6 +58,8 @@ export interface StageContext {
       reasons: string[];
       confidence: 'HIGH' | 'MEDIUM' | 'LOW';
       hasKineticTrigger: boolean;
+      hookLine?: string;
+      hookHeadline?: string;
     }>;
     segments?: Array<{
       startTime: number;
@@ -63,6 +67,7 @@ export interface StageContext {
       duration: number;
       viralScore: number;
       confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+      hookHeadline?: string;
     }>;
     clips?: Array<{
       id: string;
@@ -75,6 +80,10 @@ export interface StageContext {
       exportPath?: string; // path to final combined export
       viralScore?: number;
       confidence?: 'HIGH' | 'MEDIUM' | 'LOW';
+      hookHeadline?: string;
+      sourceChannel?: string;
+      studioConfig?: any;
+      error?: string;
     }>;
   };
 }

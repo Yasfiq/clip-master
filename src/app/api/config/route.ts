@@ -27,8 +27,8 @@ export async function POST(req: NextRequest) {
     const body = (await req.json().catch(() => ({}))) || {};
     const { name, description, isDefault, ...rest } = body;
 
-    if (!name) {
-      return apiError(ErrorCode.VALIDATION_FAILED, 'Config name is required');
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return apiError(ErrorCode.VALIDATION_FAILED, 'Config name is required and must be a string');
     }
 
     // Keep only the writable keys, validate them, drop the rest.

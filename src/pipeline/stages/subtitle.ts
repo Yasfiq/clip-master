@@ -16,8 +16,11 @@ import { logger } from '../../server/logger';
 import { db } from '../../server/db';
 import { BINARIES, PATHS } from '../../server/paths';
 import { chunkWords, renderSrt, splitTextIntoWordTimings, WordTiming } from '../logic/wordChunker';
+import { parseWhisperTranscriptJson, reassembleWhisperTokens } from '../logic/tokenReassembler';
 import fs from 'fs/promises';
 import path from 'path';
+
+export const DEFAULT_SUBTITLE_ONSET_OFFSET = 0.28;
 
 export class SubtitleStage implements PipelineStageHandler {
   stage = PipelineStage.SUBTITLE;
@@ -39,8 +42,72 @@ export class SubtitleStage implements PipelineStageHandler {
       return;
     }
 
-    const transcript = ctx.stageData.transcript;
-    const hasFullTranscript = transcript && transcript.segments.length > 0;
+    let transcript = ctx.stageData.transcript;
+    let hasFullTranscript = !!(transcript && transcript.segments && transcript.segments.length > 0);
+
+    if (!hasFullTranscript) {
+      const candidatePaths: string[] = [path.join(ctx.workDir, 'transcript', 'full.json')];
+
+      if (ctx.sourcePath) {
+        const base = path.basename(ctx.sourcePath);
+        const nameWithoutExt = path.parse(ctx.sourcePath).name;
+        candidatePaths.push(path.join(PATHS.sources, `${base}.transcript.json`));
+        candidatePaths.push(path.join(PATHS.sources, `${nameWithoutExt}.transcript.json`));
+        candidatePaths.push(`${ctx.sourcePath}.transcript.json`);
+      }
+
+      let foundPath: string | null = null;
+      for (const p of candidatePaths) {
+        try {
+          await fs.access(p);
+          foundPath = p;
+          break;
+        } catch {}
+      }
+
+      if (!foundPath) {
+        try {
+          const files = await fs.readdir(PATHS.sources);
+          for (const f of files) {
+            if (f.endsWith('.transcript.json')) {
+              if (ctx.sourcePath && f.includes(path.parse(ctx.sourcePath).name)) {
+                foundPath = path.join(PATHS.sources, f);
+                break;
+              }
+            }
+          }
+          if (!foundPath) {
+            const first = files.find((f) => f.endsWith('.transcript.json'));
+            if (first) {
+              foundPath = path.join(PATHS.sources, first);
+            }
+          }
+        } catch {}
+      }
+
+      if (foundPath) {
+        try {
+          const content = await fs.readFile(foundPath, 'utf8');
+          const parsed = parseWhisperTranscriptJson(JSON.parse(content));
+          if (parsed.segments.length > 0) {
+            ctx.stageData.transcript = parsed;
+            transcript = parsed;
+            hasFullTranscript = true;
+            logger.info('SUBTITLE: Loaded transcript from file', {
+              jobId: ctx.jobId,
+              file: foundPath,
+              segmentsCount: parsed.segments.length,
+            });
+          }
+        } catch (err: any) {
+          logger.warn('SUBTITLE: Failed to parse transcript from file', {
+            jobId: ctx.jobId,
+            file: foundPath,
+            error: err.message,
+          });
+        }
+      }
+    }
 
     const subtitleDir = path.join(ctx.workDir, 'subtitles');
     await fs.mkdir(subtitleDir, { recursive: true });
@@ -59,7 +126,7 @@ export class SubtitleStage implements PipelineStageHandler {
       if (hasFullTranscript) {
         // Slice transcript segments that fall within this clip's window
         const srtPath = path.join(subtitleDir, `${clip.id}.srt`);
-        await this.sliceSrt(transcript.segments, clip.startTime, clip.endTime, srtPath);
+        await this.sliceSrt(transcript!.segments, clip.startTime, clip.endTime, srtPath);
         clip.subtitlePath = srtPath;
 
         // Update DB with subtitle path
@@ -83,6 +150,18 @@ export class SubtitleStage implements PipelineStageHandler {
           continue;
         }
         await this.transcribeClip(inputPath, clip.id, subtitleDir);
+        const srtPath = path.join(subtitleDir, `${clip.id}.srt`);
+        clip.subtitlePath = srtPath;
+
+        const relativeSubtitlePath = path.relative(PATHS.work, srtPath);
+        await db.clip
+          .update({
+            where: { id: clip.id },
+            data: { subtitlePath: relativeSubtitlePath },
+          })
+          .catch((err) => {
+            logger.warn(`Failed to update Clip ${clip.id} subtitlePath in DB: ${err.message}`);
+          });
       }
 
       completed++;
@@ -115,20 +194,26 @@ export class SubtitleStage implements PipelineStageHandler {
       if (seg.words && seg.words.length > 0) {
         for (const w of seg.words) {
           if (w.end <= clipStart || w.start >= clipEnd) continue;
-          const s = Math.max(0, w.start - clipStart);
-          const e = Math.min(clipEnd - clipStart, w.end - clipStart);
+          const s = Math.max(0, w.start - clipStart + DEFAULT_SUBTITLE_ONSET_OFFSET);
+          const e = Math.min(
+            clipEnd - clipStart,
+            w.end - clipStart + DEFAULT_SUBTITLE_ONSET_OFFSET,
+          );
           if (e > s) {
             clipWords.push({
               text: w.text,
-              start: s,
-              end: e,
+              start: Number(s.toFixed(3)),
+              end: Number(e.toFixed(3)),
             });
           }
         }
       } else {
         // Fallback: estimate word timings from segment text
-        const s = Math.max(0, seg.start - clipStart);
-        const e = Math.min(clipEnd - clipStart, seg.end - clipStart);
+        const s = Math.max(0, seg.start - clipStart + DEFAULT_SUBTITLE_ONSET_OFFSET);
+        const e = Math.min(
+          clipEnd - clipStart,
+          seg.end - clipStart + DEFAULT_SUBTITLE_ONSET_OFFSET,
+        );
         if (e > s && seg.text.trim().length > 0) {
           const estimated = splitTextIntoWordTimings(seg.text, s, e);
           clipWords.push(...estimated);
@@ -179,6 +264,8 @@ export class SubtitleStage implements PipelineStageHandler {
 
     const audioTemp = path.join(subtitleDir, `${clipId}_audio.wav`);
     const srtPath = path.join(subtitleDir, `${clipId}.srt`);
+    const jsonBase = path.join(subtitleDir, `${clipId}_transcription`);
+    const jsonPath = `${jsonBase}.json`;
 
     // Extract audio
     await runBinaryChecked(
@@ -201,7 +288,8 @@ export class SubtitleStage implements PipelineStageHandler {
       { timeoutMs: 1800000 },
     );
 
-    // Run whisper
+    // Run whisper with --output-json-full
+    let whisperSuccess = false;
     try {
       await runBinaryChecked(
         BINARIES.whisper,
@@ -210,9 +298,9 @@ export class SubtitleStage implements PipelineStageHandler {
           modelPath,
           '--file',
           audioTemp,
-          '--output-srt',
+          '--output-json-full',
           '--output-file',
-          srtPath.replace('.srt', ''),
+          jsonBase,
           '--language',
           'auto',
           '--threads',
@@ -225,32 +313,78 @@ export class SubtitleStage implements PipelineStageHandler {
         ],
         { timeoutMs: 1800000 },
       );
+      whisperSuccess = true;
     } catch {
       logger.warn(`Whisper failed for ${clipId}, retrying simpler`);
-      await runBinaryChecked(
-        BINARIES.whisper,
-        [
-          '--model',
-          modelPath,
-          '--file',
-          audioTemp,
-          '--output-srt',
-          '--output-file',
-          srtPath.replace('.srt', ''),
-          '--language',
-          'en',
-          '--threads',
-          '4',
-        ],
-        { timeoutMs: 1800000 },
-      );
+      try {
+        await runBinaryChecked(
+          BINARIES.whisper,
+          [
+            '--model',
+            modelPath,
+            '--file',
+            audioTemp,
+            '--output-json-full',
+            '--output-file',
+            jsonBase,
+            '--language',
+            'en',
+            '--threads',
+            '4',
+          ],
+          { timeoutMs: 1800000 },
+        );
+        whisperSuccess = true;
+      } catch (err: any) {
+        logger.error(`Whisper fallback failed for ${clipId}: ${err.message}`);
+      }
+    }
+
+    if (whisperSuccess) {
+      try {
+        const raw = JSON.parse(await fs.readFile(jsonPath, 'utf8'));
+        const parsed = parseWhisperTranscriptJson(raw);
+        const clipWords: WordTiming[] = [];
+        for (const seg of parsed.segments) {
+          if (seg.words && seg.words.length > 0) {
+            clipWords.push(
+              ...seg.words.map((w) => ({
+                text: w.text,
+                start: Number(Math.max(0, w.start + DEFAULT_SUBTITLE_ONSET_OFFSET).toFixed(3)),
+                end: Number((w.end + DEFAULT_SUBTITLE_ONSET_OFFSET).toFixed(3)),
+              })),
+            );
+          } else if (seg.text && seg.text.trim()) {
+            const estimated = splitTextIntoWordTimings(
+              seg.text,
+              Math.max(0, seg.start + DEFAULT_SUBTITLE_ONSET_OFFSET),
+              seg.end + DEFAULT_SUBTITLE_ONSET_OFFSET,
+            );
+            clipWords.push(...estimated);
+          }
+        }
+
+        if (clipWords.length > 0) {
+          const cues = chunkWords(clipWords, 3);
+          const srt = renderSrt(cues);
+          await fs.writeFile(srtPath, srt, 'utf8');
+        } else {
+          await fs.writeFile(srtPath, '', 'utf8');
+        }
+      } catch (e: any) {
+        logger.warn(`Failed to parse whisper json for clip ${clipId}: ${e.message}`);
+        await fs.writeFile(srtPath, '', 'utf8');
+      }
+    } else {
+      await fs.writeFile(srtPath, '', 'utf8');
     }
 
     try {
       await fs.unlink(audioTemp);
-    } catch {
-      /* ok */
-    }
+    } catch {}
+    try {
+      await fs.unlink(jsonPath);
+    } catch {}
   }
 
   private async fileExists(filePath: string): Promise<boolean> {

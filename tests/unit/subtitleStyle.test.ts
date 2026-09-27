@@ -3,6 +3,8 @@ import {
   pickStyle,
   buildForceStyle,
   CLIP_STYLE_POOL,
+  ALL_STYLES,
+  CLIPAJAIB_STYLE,
   SULE_STYLE,
   TIKTOK_STYLE,
   KAMAL_STYLE,
@@ -42,24 +44,35 @@ describe('subtitleStyle', () => {
   });
 
   describe('style constants', () => {
+    it('CLIPAJAIB: bright yellow + thick outline + chest height', () => {
+      expect(CLIPAJAIB_STYLE.primaryColour).toBe('&H0000EEFF');
+      expect(CLIPAJAIB_STYLE.shadow).toBe(0);
+      expect(CLIPAJAIB_STYLE.outline).toBe(4.5);
+      expect(CLIPAJAIB_STYLE.marginV).toBe(420);
+      expect(CLIPAJAIB_STYLE.fontSize).toBe(62);
+    });
     it('SULE: yellow + no shadow + thick outline + chest height', () => {
       expect(SULE_STYLE.primaryColour).toBe('&H0000FFFF');
       expect(SULE_STYLE.shadow).toBe(0);
-      expect(SULE_STYLE.outline).toBe(3);
-      expect(SULE_STYLE.marginV).toBe(450);
+      expect(SULE_STYLE.outline).toBe(4.5);
+      expect(SULE_STYLE.marginV).toBe(420);
+      expect(SULE_STYLE.fontSize).toBe(62);
     });
-    it('TIKTOK: white + no shadow + thin outline', () => {
+    it('TIKTOK: white + no shadow + high contrast outline', () => {
       expect(TIKTOK_STYLE.primaryColour).toBe('&H00FFFFFF');
       expect(TIKTOK_STYLE.shadow).toBe(0);
-      expect(TIKTOK_STYLE.outline).toBe(2);
+      expect(TIKTOK_STYLE.outline).toBe(4.5);
       expect(TIKTOK_STYLE.backColour).toBe('&H00000000');
+      expect(TIKTOK_STYLE.marginV).toBe(420);
+      expect(TIKTOK_STYLE.fontSize).toBe(62);
     });
     it('KAMAL: yellow + red shadow + lower third', () => {
       expect(KAMAL_STYLE.primaryColour).toBe('&H0000FFFF');
       expect(KAMAL_STYLE.backColour).toBe('&H000000FF');
       expect(KAMAL_STYLE.shadow).toBe(2);
-      expect(KAMAL_STYLE.outline).toBe(2);
-      expect(KAMAL_STYLE.marginV).toBe(250);
+      expect(KAMAL_STYLE.outline).toBe(4.5);
+      expect(KAMAL_STYLE.marginV).toBe(420);
+      expect(KAMAL_STYLE.fontSize).toBe(62);
     });
   });
 
@@ -67,9 +80,9 @@ describe('subtitleStyle', () => {
     it('produces a valid ASS force_style string for SULE', () => {
       const str = buildForceStyle(SULE_STYLE);
       expect(str).toContain('PrimaryColour=&H0000FFFF');
-      expect(str).toContain('Outline=3');
+      expect(str).toContain('Outline=4.5');
       expect(str).toContain('Shadow=0');
-      expect(str).toContain('FontSize=52');
+      expect(str).toContain('FontSize=62');
       expect(str).toContain('PlayResX=1080');
       expect(str).toContain('PlayResY=1920');
     });
@@ -83,7 +96,7 @@ describe('subtitleStyle', () => {
     it('includes FontName and MarginV', () => {
       const str = buildForceStyle(TIKTOK_STYLE);
       expect(str).toContain('FontName=DejaVu Sans');
-      expect(str).toContain('MarginV=250');
+      expect(str).toContain('MarginV=420');
     });
   });
 });

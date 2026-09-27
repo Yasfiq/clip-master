@@ -13,7 +13,7 @@ import { PipelineStage } from '@prisma/client';
 import { PipelineStageHandler, StageContext, TranscriptSegment } from '../runner-types';
 import { runBinaryChecked } from '../binaries/spawn';
 import { logger } from '../../server/logger';
-import { BINARIES } from '../../server/paths';
+import { BINARIES, PATHS } from '../../server/paths';
 import {
   buildAudioBoostFilter,
   DEFAULT_AUDIO_BOOST,
@@ -85,6 +85,28 @@ export class TranscribeStage implements PipelineStageHandler {
       await fs.access(jsonPath);
       cached = true;
     } catch {}
+
+    if (!cached) {
+      // Check if a matching pre-computed transcript exists for THIS SPECIFIC source in media/sources/
+      try {
+        const sourceBase = path.parse(ctx.sourcePath).name;
+        // Also strip UUID prefix if present (e.g. "a117096c-904b-459d-aade-718770e26550_VideoName" -> "VideoName")
+        const cleanBase = sourceBase.replace(/^[0-9a-fA-F-]{36}_/, '');
+        const candidateNames = [`${sourceBase}.transcript.json`, `${cleanBase}.transcript.json`];
+        for (const name of candidateNames) {
+          const candidatePath = path.join(PATHS.sources, name);
+          try {
+            await fs.access(candidatePath);
+            await fs.copyFile(candidatePath, jsonPath);
+            cached = true;
+            logger.info(
+              `Loaded matching pre-computed transcript from media/sources: ${candidatePath}`,
+            );
+            break;
+          } catch {}
+        }
+      } catch {}
+    }
 
     if (cached) {
       logger.info(`Using cached transcript JSON: ${jsonPath}`);

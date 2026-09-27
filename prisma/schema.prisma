@@ -47,6 +47,8 @@ model Job {
   errorCode          JobErrorCode?
   sourceUrl          String? // YouTube URL atau path lokal
   sourceFilename     String?
+  sourceTitle        String?
+  sourceChannel      String?
   sourcePath         String? // relatif terhadap media/sources/
   sourceDuration     Float? // detik
   sourceFileSize     Int? // bytes
@@ -108,6 +110,8 @@ model Clip {
   exportPath      String? // relatif terhadap media/exports/
   thumbnailPath   String? // relatif terhadap media/assets/
   isExported      Boolean  @default(false)
+  hookHeadline    String? // 3-5 word uppercase hook headline
+  studioConfig    Json? // StudioConfig json
   metadata        Json? // hasil deteksi subtitle/audio detail
   createdAt       DateTime @default(now())
 

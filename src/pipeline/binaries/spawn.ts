@@ -8,12 +8,16 @@ export interface SpawnResult {
 }
 
 export interface SpawnOptions {
-  /** Called for every stderr line — FFmpeg and yt-dlp report progress there. */
+  /** Called for every stderr line: FFmpeg and yt-dlp report progress there. */
   onStderrLine?: (line: string) => void;
   onStdoutLine?: (line: string) => void;
   cwd?: string;
   timeoutMs?: number;
   signal?: AbortSignal;
+  /** If false, do not buffer stdout string in memory (prevents OOM on long streams). Defaults to true. */
+  bufferStdout?: boolean;
+  /** If false, do not buffer stderr string in memory. Defaults to true. */
+  bufferStderr?: boolean;
 }
 
 /**
@@ -84,7 +88,9 @@ export function runBinary(
 
     child.stdout?.on('data', (chunk: Buffer) => {
       const text = chunk.toString();
-      stdout += text;
+      if (options.bufferStdout !== false) {
+        stdout += text;
+      }
       if (options.onStdoutLine) {
         stdoutRest += text;
         const lines = stdoutRest.split('\n');
@@ -99,7 +105,9 @@ export function runBinary(
 
     child.stderr?.on('data', (chunk: Buffer) => {
       const text = chunk.toString();
-      stderr += text;
+      if (options.bufferStderr !== false) {
+        stderr += text;
+      }
       if (options.onStderrLine) {
         stderrRest += text;
         const lines = stderrRest.split('\n');

@@ -49,3 +49,7 @@ media/exports/*
 
 # ONNX model files (downloaded at runtime, not tracked)
 /models/
+
+# Agent and CLI local configs
+.agents/
+skills-lock.json
