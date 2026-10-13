@@ -38,3 +38,22 @@ export const DEFAULT_STUDIO_CONFIG: StudioConfig = {
   fadeInDuration: 0.3,
   fadeOutDuration: 0.5,
 };
+
+export type StudioTab = 'subtitle' | 'hook' | 'branding' | 'transition' | 'audio';
+
+export interface StudioClipMetadata {
+  id: string;
+  sourceJobId: string;
+  videoPath?: string;
+  exportPath?: string;
+  isExported?: boolean;
+  cleanVideoPath?: string;
+}
+
+export function formatTimecode(sec: number): string {
+  if (isNaN(sec) || sec < 0) return '00:00.00';
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  const f = Math.floor((sec % 1) * 100);
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${f.toString().padStart(2, '0')}`;
+}

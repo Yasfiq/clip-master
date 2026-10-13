@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "./"]
+    },
+    "git": {
+      "command": "pipx",
+      "args": ["run", "mcp-server-git", "--repository", "./"]
+    },
+    "ripgrep": {
+      "command": "npx",
+      "args": ["-y", "mcp-ripgrep@latest"]
+    }
+  }
+}
